@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebARKit Studio</title>
+    <link rel="stylesheet" href="/src/app/studio.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong>WebARKit Studio</strong>
+      <span class="sep"></span>
+      <button id="btn-run" title="Run the graph in the preview">▶ Run</button>
+      <button id="btn-reload" title="Stop and run again (applies every param change)" disabled>⟳ Reload</button>
+      <button id="btn-stop" disabled>■ Stop</button>
+      <span class="sep"></span>
+      <select id="demo-select" title="Demo graph">
+        <option value="pinball-three">Demo: pinball · Three.js</option>
+        <option value="pinball-babylon">Demo: pinball · Babylon.js</option>
+        <option value="multi-three">Demo: multi NFT (pinball + kuva)</option>
+      </select>
+      <button id="btn-demo">Load demo</button>
+      <button id="btn-new">New</button>
+      <button id="btn-import">Import…</button>
+      <details id="export-menu" class="menu">
+        <summary>Export ▾</summary>
+        <div class="menu-items" id="export-items"></div>
+      </details>
+      <button id="btn-player">Open in player</button>
+      <input id="file-import" type="file" accept=".json,application/json" hidden />
+    </header>
+    <main class="layout">
+      <aside id="palette" class="palette"></aside>
+      <section id="editor" class="editor"></section>
+      <aside class="preview">
+        <div id="stage" class="stage"><p class="hint">Press ▶ Run to preview the graph.</p></div>
+        <pre id="log" class="log"></pre>
+      </aside>
+    </main>
+    <script type="module" src="/src/app/studio.ts"></script>
+  </body>
+</html>

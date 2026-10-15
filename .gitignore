@@ -1,0 +1,10 @@
+node_modules/
+dist/
+public/data/
+*.log
+public/__player/
+tests/fixtures/
+tests/e2e/.cache/
+playwright-report/
+test-results/
+.idea/

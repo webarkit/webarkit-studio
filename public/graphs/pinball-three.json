@@ -1,0 +1,459 @@
+{
+ "format": "webarkit-studio/graph",
+ "version": 4,
+ "name": "Pinball NFT \u00b7 Three.js",
+ "nodes": [
+  {
+   "id": "camera",
+   "type": "source.camera",
+   "params": {
+    "facingMode": "environment",
+    "width": 640,
+    "height": 480
+   },
+   "position": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "id": "camparams",
+   "type": "jsartoolkitNFT.cameraParams",
+   "params": {
+    "url": "data/camera_para.dat"
+   },
+   "position": {
+    "x": 0,
+    "y": 250
+   }
+  },
+  {
+   "id": "dataset",
+   "type": "jsartoolkitNFT.dataset",
+   "params": {
+    "url": "data/DataNFT/pinball",
+    "name": "pinball"
+   },
+   "position": {
+    "x": 0,
+    "y": 370
+   }
+  },
+  {
+   "id": "settings",
+   "type": "jsartoolkitNFT.settings",
+   "params": {
+    "continuousDetection": true,
+    "detectionInterval": 300,
+    "logLevel": "2"
+   },
+   "position": {
+    "x": 0,
+    "y": 510
+   }
+  },
+  {
+   "id": "filter",
+   "type": "filter.oneEuro",
+   "params": {
+    "minCutOff": 0.0001,
+    "beta": 0.01,
+    "warmUp": 5
+   },
+   "position": {
+    "x": 0,
+    "y": 740
+   }
+  },
+  {
+   "id": "controller",
+   "type": "jsartoolkitNFT.controller",
+   "params": {
+    "build": "simd"
+   },
+   "position": {
+    "x": 360,
+    "y": 60
+   }
+  },
+  {
+   "id": "renderer",
+   "type": "three.renderer",
+   "params": {
+    "antialias": true
+   },
+   "position": {
+    "x": 360,
+    "y": 620
+   }
+  },
+  {
+   "id": "scene",
+   "type": "scene.scene",
+   "params": {
+    "defaultLights": false
+   },
+   "position": {
+    "x": 360,
+    "y": 760
+   }
+  },
+  {
+   "id": "keylight",
+   "type": "scene.light",
+   "params": {
+    "kind": "directional",
+    "color": "#ffffff",
+    "intensity": 2.5
+   },
+   "position": {
+    "x": 360,
+    "y": 900
+   }
+  },
+  {
+   "id": "filllight",
+   "type": "scene.light",
+   "params": {
+    "kind": "ambient",
+    "color": "#ffffff",
+    "intensity": 0.6
+   },
+   "position": {
+    "x": 360,
+    "y": 1080
+   }
+  },
+  {
+   "id": "arcamera",
+   "type": "scene.arCamera",
+   "params": {},
+   "position": {
+    "x": 720,
+    "y": 0
+   }
+  },
+  {
+   "id": "markers",
+   "type": "debug.inspector",
+   "params": {},
+   "position": {
+    "x": 720,
+    "y": 120
+   }
+  },
+  {
+   "id": "stats",
+   "type": "debug.stats",
+   "params": {
+    "overlay": true
+   },
+   "position": {
+    "x": 720,
+    "y": 300
+   }
+  },
+  {
+   "id": "view",
+   "type": "output.arView",
+   "params": {
+    "stats": true
+   },
+   "position": {
+    "x": 1440,
+    "y": 60
+   }
+  },
+  {
+   "id": "select_pinball",
+   "type": "tracking.selectMarker",
+   "params": {
+    "marker": "pinball"
+   },
+   "position": {
+    "x": 720,
+    "y": 440
+   }
+  },
+  {
+   "id": "anchor_pinball",
+   "type": "scene.anchor",
+   "params": {
+    "center": true
+   },
+   "position": {
+    "x": 1080,
+    "y": 240
+   }
+  },
+  {
+   "id": "prim_pinball",
+   "type": "scene.primitive",
+   "params": {
+    "shape": "torusKnot",
+    "size": 80,
+    "color": "#ff0055",
+    "spin": true
+   },
+   "position": {
+    "x": 1080,
+    "y": 600
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "from": {
+    "node": "camera",
+    "port": "video"
+   },
+   "to": {
+    "node": "controller",
+    "port": "video"
+   }
+  },
+  {
+   "id": "e2",
+   "from": {
+    "node": "camparams",
+    "port": "params"
+   },
+   "to": {
+    "node": "controller",
+    "port": "cameraParams"
+   }
+  },
+  {
+   "id": "e3",
+   "from": {
+    "node": "dataset",
+    "port": "dataset"
+   },
+   "to": {
+    "node": "controller",
+    "port": "dataset"
+   }
+  },
+  {
+   "id": "e4",
+   "from": {
+    "node": "settings",
+    "port": "settings"
+   },
+   "to": {
+    "node": "controller",
+    "port": "settings"
+   }
+  },
+  {
+   "id": "e5",
+   "from": {
+    "node": "filter",
+    "port": "filter"
+   },
+   "to": {
+    "node": "controller",
+    "port": "filter"
+   }
+  },
+  {
+   "id": "e6",
+   "from": {
+    "node": "controller",
+    "port": "projection"
+   },
+   "to": {
+    "node": "arcamera",
+    "port": "projection"
+   }
+  },
+  {
+   "id": "e7",
+   "from": {
+    "node": "controller",
+    "port": "markers"
+   },
+   "to": {
+    "node": "markers",
+    "port": "value"
+   }
+  },
+  {
+   "id": "e8",
+   "from": {
+    "node": "controller",
+    "port": "stats"
+   },
+   "to": {
+    "node": "stats",
+    "port": "stats"
+   }
+  },
+  {
+   "id": "e9",
+   "from": {
+    "node": "renderer",
+    "port": "renderer"
+   },
+   "to": {
+    "node": "scene",
+    "port": "renderer"
+   }
+  },
+  {
+   "id": "e10",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "keylight",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e11",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "filllight",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e12",
+   "from": {
+    "node": "controller",
+    "port": "markers"
+   },
+   "to": {
+    "node": "select_pinball",
+    "port": "markers"
+   }
+  },
+  {
+   "id": "e13",
+   "from": {
+    "node": "select_pinball",
+    "port": "pose"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "pose"
+   }
+  },
+  {
+   "id": "e14",
+   "from": {
+    "node": "select_pinball",
+    "port": "found"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "found"
+   }
+  },
+  {
+   "id": "e15",
+   "from": {
+    "node": "select_pinball",
+    "port": "markerInfo"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "markerInfo"
+   }
+  },
+  {
+   "id": "e16",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e17",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "prim_pinball",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e18",
+   "from": {
+    "node": "prim_pinball",
+    "port": "object"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "children"
+   }
+  },
+  {
+   "id": "e19",
+   "from": {
+    "node": "anchor_pinball",
+    "port": "object"
+   },
+   "to": {
+    "node": "view",
+    "port": "objects"
+   }
+  },
+  {
+   "id": "e20",
+   "from": {
+    "node": "keylight",
+    "port": "object"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "children"
+   }
+  },
+  {
+   "id": "e21",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "view",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e22",
+   "from": {
+    "node": "arcamera",
+    "port": "camera"
+   },
+   "to": {
+    "node": "view",
+    "port": "camera"
+   }
+  },
+  {
+   "id": "e23",
+   "from": {
+    "node": "camera",
+    "port": "video"
+   },
+   "to": {
+    "node": "view",
+    "port": "video"
+   }
+  }
+ ]
+}
