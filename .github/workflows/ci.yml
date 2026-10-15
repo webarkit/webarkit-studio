@@ -16,6 +16,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # AGENTS.md and the per-tool pointer files stay in sync with the repository.
+      - run: npm run check:agents
       # Demo datasets + test photo (downloaded from webarkit/jsartoolkitNFT, not committed).
       - run: npm run assets
       - run: npm run typecheck

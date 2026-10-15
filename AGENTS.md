@@ -1,6 +1,6 @@
 # AGENTS.md — webarkit-studio
 
-> Canonical instructions for AI coding agents. `CLAUDE.md` imports this file.
+> Canonical instructions for AI coding agents. Every other agent file in this repository points here, and this file wins on conflict.
 
 ## What this project is
 
@@ -12,6 +12,17 @@
 
 See the [README](./README.md) for the architecture, the node list and the known issues. Read it there rather than duplicating it here.
 
+## Which tools read this file
+
+| Tool | How it gets these instructions |
+|---|---|
+| Codex, Cursor, Antigravity | Read `AGENTS.md` natively |
+| GitHub Copilot | VS Code and the cloud agent read `AGENTS.md`. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) inlines the critical rules for chat and code review on github.com. [`.github/instructions/`](.github/instructions/) adds path-specific rules (cloud agent, code review, VS Code) |
+| Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md` |
+| Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/) |
+
+Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file. `npm run check:agents` checks that the pointer files link here and that the commands and paths named here exist.
+
 ## Commands
 
 - Install: `npm install`, then `npm run assets` (camera parameters, NFT datasets, test photo; not committed).
@@ -20,8 +31,17 @@ See the [README](./README.md) for the architecture, the node list and the known 
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
 - E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium.
 - Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
+- Agent files: `npm run check:agents`.
 
-CI (`.github/workflows/ci.yml`) runs typecheck, tests, build and e2e. Do not claim a change is verified without running them.
+CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.
+
+## Test assets and the fake camera
+
+- `npm run assets` (`scripts/fetch-assets.mjs`) downloads from the jsartoolkitNFT repository:
+  - the camera parameters and the pinball and kuva NFT datasets into `public/data/`;
+  - a photo of the printed pinball marker into `tests/fixtures/pinball-demo.jpg`.
+- The e2e global setup (`tests/e2e/global-setup.ts`) turns that photo into a Y4M video for Chromium's fake camera (`tests/e2e/fake-camera.ts`), written to `tests/e2e/.cache/`. The marker is visible for 4 s, then hidden for 2 s, in a loop, so the tests see both found and lost.
+- None of these files are committed. If a test cannot find them, run `npm run assets`.
 
 ## Architecture rules
 
@@ -39,10 +59,30 @@ CI (`.github/workflows/ci.yml`) runs typecheck, tests, build and e2e. Do not cla
 - **Tracking logic lives in `ArtkSession`** (`src/runtime/trackers/`). It depends only on the controller's public API, so the worker and the Node tests share it. Keep the worker a thin relay.
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 
+## Adding a node
+
+1. Add the definition to `src/nodes/catalog.ts`: type, label, category, provider, ports, params. Mark the params that apply without a restart `live: true`. Follow the naming rules above.
+2. Implement the factory in `src/runtime/nodes/` (`init`, `update`, `onParamChange` for live params, `dispose` for anything to release; see `src/runtime/types.ts`).
+3. Register it under the same type in `NODE_REGISTRY` (`src/runtime/registry.ts`).
+4. Add a unit test in `tests/unit/` for any logic that does not need a browser; add an e2e check if the node changes what the preview shows or logs.
+5. Add the node to the README node table (⚡ for live params).
+6. A new node is not a format change. Renaming or removing an existing one is (see above).
+
+In Claude Code, the `new-node` skill (`.claude/skills/new-node/`) walks through these steps.
+
+## Review checklists
+
+Before committing, review the diff against the matching checklist:
+
+- [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets. For changes to `src/core/`, `src/nodes/`, `src/runtime/registry.ts`, `src/runtime/nodes/` and `public/graphs/`.
+- [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, readiness for the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `src/runtime/workers/`, the tracker nodes and `src/runtime/filters/`.
+
+In Claude Code, the `graph-reviewer` and `tracking-reviewer` agents run them. In other tools, ask for a review of `git diff dev...HEAD` against the checklist.
+
 ## Conventions
 
 - Every repository artifact is in English.
 - Conventional Commits; branch from `dev` and open PRs against `dev`, never `master`.
 - License: LGPL-3.0-or-later.
 - Small, reviewable diffs that match the surrounding style.
-- Don't state facts about sibling repositories (jsartoolkitNFT, ARnft, webarkit/webarkit) from memory: check the repository, because they move fast.
+- Don't state facts about sibling repositories (jsartoolkitNFT, ARnft, webarkit/webarkit) from memory: check the repository, because they move fast. In Claude Code, the `check-upstream` skill does this for the jsartoolkitNFT facade.

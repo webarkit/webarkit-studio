@@ -81,6 +81,10 @@ Search the [existing issues](https://github.com/webarkit/webarkit-studio/issues)
 - **Bugs:** include the steps to reproduce, the browser and device, the graph JSON if possible (Export → Graph JSON), and the log panel output.
 - **Feature requests:** explain what the feature is for and how it fits the node model.
 
+## AI coding agents
+
+[`AGENTS.md`](AGENTS.md) is the single source of instructions for AI coding tools. The other agent files only point to it: `CLAUDE.md`, `.github/copilot-instructions.md` and `.github/instructions/` (Copilot), `.gemini/settings.json` (Gemini CLI), `.claude/agents/` and `.claude/skills/` (Claude Code). The review checklists in `docs/agents/checklists/` are shared by all tools. When a rule, a command or a path changes, update `AGENTS.md` first, then the files that inline it (Copilot only). `npm run check:agents`, run in CI, fails when a pointer file stops linking to `AGENTS.md`, or when an agent file names a script or a path that does not exist.
+
 ## Code of Conduct
 
 This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).

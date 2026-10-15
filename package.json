@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "bench": "tsx tests/bench/run.ts",
+    "check:agents": "node scripts/check-agent-docs.mjs",
     "test:all": "npm run typecheck && npm test && npm run test:e2e"
   },
   "dependencies": {
