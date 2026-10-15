@@ -25,3 +25,7 @@ The project is in its prototype stage and has no releases yet.
   former name (`webar-studio/graph`) still load.
 - Unit, integration (Node build of jsartoolkit-nft), e2e (Playwright, fake
   camera) tests, benchmarks and CI.
+
+### Fixed
+
+- Demo graphs: nodes no longer overlap (Controller Settings grew with near / far).

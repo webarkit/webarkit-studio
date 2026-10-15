@@ -4,6 +4,10 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/images/webarkit-studio.webp" width="800" alt="WebARKit Studio: the multi NFT demo graph in the node editor, with the live preview tracking two markers (pinball and kuva)">
+</p>
+
 A node-based authoring tool for WebAR experiences. Users wire nodes
 (camera → tracker → anchor → view) in a [Rete.js](https://retejs.org) editor; the
 result is a plain JSON graph that a lightweight **player** executes with
