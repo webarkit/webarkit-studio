@@ -15,6 +15,13 @@ This file inlines the critical rules because some Copilot surfaces (chat and cod
 - **Live params** (`live: true`) are applied in `onParamChange` without a restart.
 - **Conventions.** English only; Conventional Commits; branch from `dev` and target `dev`, never `master`; LGPL-3.0-or-later.
 
+## Issues, milestones and releases
+
+- One milestone per release. Every planned issue belongs to a milestone.
+- PRs target `dev` with `Closes #<n>`; the default branch is `master`, so the issue closes only when the release reaches `master`.
+- An issue is done when its PR is merged into `dev`, its task list is ticked, its acceptance criteria are met and its sub-issues are done.
+- A milestone is closed only after its release exists, following `docs/agents/checklists/milestone-audit.md`. Never close a milestone, publish a release or move issues without the maintainer's confirmation.
+
 ## Verifying a change
 
 `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e` (run `npm run assets` once first). Review checklists: `docs/agents/checklists/`.

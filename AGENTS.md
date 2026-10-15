@@ -79,6 +79,23 @@ Before committing, review the diff against the matching checklist:
 
 In Claude Code, the `graph-reviewer` and `tracking-reviewer` agents run them. In other tools, ask for a review of `git diff dev...HEAD` against the checklist.
 
+## Planning and tracking work
+
+Work is tracked with GitHub issues and milestones. The roadmap is #1; each phase has its own issue.
+
+- **One milestone per release**, named after its version and phase (for example `v0.1.0 — Foundation`). Every issue planned for a release is assigned to its milestone. An issue without a milestone is not planned yet.
+- **Implementing an issue:**
+  1. Read the issue, its comments, its sub-issues and its milestone. If the scope is unclear or the issue has no milestone, ask before starting.
+  2. Branch from an up-to-date `dev`: `<type>/<issue number>-<slug>` (for example `feat/12-gltf-node`).
+  3. Plan the work from the issue's task list. Keep the PR to that issue's scope; open new issues for what you find along the way.
+  4. Implement, run the commands above and the matching review checklist.
+  5. Open the PR against `dev`, with `Closes #<n>` in the body. The default branch is `master`, so **merging into `dev` does not close the issue**: the keyword only takes effect when the release reaches `master`.
+  6. After the PR is merged into `dev`, tick the issue's task list and comment on the issue with the PR link and what is left, if anything.
+- **An issue is done** when a PR that references it is merged into `dev`, every task in its body is ticked (or struck out with a reason), its acceptance criteria are met and all its sub-issues are done.
+- **Releases close milestones, nothing else.** Before a release, audit the milestone with [`docs/agents/checklists/milestone-audit.md`](docs/agents/checklists/milestone-audit.md). Release only when every issue is done or explicitly moved to another milestone. Close the milestone only after the release (`dev` merged into `master`, tag and GitHub release) exists. Never close a milestone, publish a release or move issues between milestones without the maintainer's confirmation.
+
+In Claude Code, the `work-on-issue` skill follows these steps, the `milestone-auditor` agent runs the audit and the `release` skill walks through the release.
+
 ## Conventions
 
 - Every repository artifact is in English.

@@ -11,7 +11,7 @@ Thank you for your interest in contributing! These guidelines keep the project e
    ```
 2. **Create a branch** with a descriptive name, one per task or issue:
    ```bash
-   git checkout -b feat/gltf-node
+   git checkout -b feat/12-gltf-node   # <type>/<issue number>-<slug>
    ```
 3. **Develop and test** (see [Testing](#testing)).
 4. **Open the pull request against `dev`.** `master` is reserved for releases.
@@ -64,6 +64,10 @@ Examples:
 - `docs: document the export bundle layout`
 
 Mark breaking changes with `!` after the type/scope, or with a `BREAKING CHANGE:` footer.
+
+## Milestones and releases
+
+Each release has a GitHub milestone, and every planned issue is assigned to one. PRs target `dev` and reference their issue with `Closes #<n>`. Because the default branch is `master`, the issue stays open after the merge into `dev` and closes when the release reaches `master`. Before a release, every issue of the milestone is checked against [`docs/agents/checklists/milestone-audit.md`](docs/agents/checklists/milestone-audit.md). The milestone is closed only after the release is published.
 
 ## Changelog
 
