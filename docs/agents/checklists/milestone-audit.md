@@ -43,7 +43,7 @@ For every issue in the milestone:
 ## 3. Check the release as a whole
 
 - CI is green on the latest `dev` commit: `gh run list --branch dev --limit 3`.
-- `CHANGELOG.md` has a line under `## [Unreleased]` for every user-visible issue of the milestone.
+- `CHANGELOG.md` has a line under `## [Unreleased]` for every user-visible issue of the milestone, following the Changelog rules in `CONTRIBUTING.md`: a new node or param, a format change, or a fix someone could notice. Documentation, test and tooling changes need no line, so do not flag them.
 - If any issue is a format change, `GRAPH_VERSION` and `public/graphs/` are updated (see the graph review checklist).
 - No issue outside the milestone was merged into `dev` without a milestone; list those, so the maintainer can assign them.
 
