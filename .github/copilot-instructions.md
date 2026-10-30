@@ -11,7 +11,7 @@ This file inlines the critical rules because some Copilot surfaces (chat and cod
 - **Format changes.** Renaming or removing a node type, port or param, or changing what a value means, requires a `GRAPH_VERSION` bump in `src/core/graph.ts`, updated `public/graphs/` and a `CHANGELOG.md` line. A new node or a new optional param with a default is not a format change.
 - **Naming.** Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); `webarkit.*` is reserved for webarkit/webarkit trackers; never name a node after a package it does not wrap.
 - **Units and spaces.** Marker space in millimetres, marker on the XY plane with +Z up; column-major matrices; the camera looks down −Z.
-- **Tracking.** Tracking logic lives in `ArtkSession` (`src/runtime/trackers/`) and depends only on the controller's public API. The worker is a thin relay.
+- **Tracking.** The jsartoolkitNFT tracker facade (`createNFTTracker`) does the tracking; `NftSession` (`src/runtime/trackers/`) only maps the graph onto it and depends only on the facade's public API. The worker is a thin relay.
 - **Live params** (`live: true`) are applied in `onParamChange` without a restart.
 - **Conventions.** English only; Conventional Commits; branch from `dev` and target `dev`, never `master`; LGPL-3.0-or-later.
 
