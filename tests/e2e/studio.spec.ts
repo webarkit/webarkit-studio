@@ -62,7 +62,7 @@ test.describe('studio', () => {
     expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
   });
 
-  test('near / far rebuild the camera lens live (recalculateCameraLens)', async ({ page }) => {
+  test('near / far rebuild the camera lens live (configure)', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await run(page);
     await expect(nodeStatus(page, 'Inspector')).toContainText('● tracked', { timeout: 20_000 });
@@ -92,6 +92,6 @@ test.describe('studio', () => {
     await url.fill('data/DataNFT/missing');
     await url.dispatchEvent('change');
     await page.click('#btn-run');
-    await expect(page.locator('.studio-node .status.error')).toContainText('cannot load NFT datasets', { timeout: 30_000 });
+    await expect(page.locator('.studio-node .status.error')).toContainText(/cannot load NFT dataset \S*data\/DataNFT\/missing/, { timeout: 30_000 });
   });
 });

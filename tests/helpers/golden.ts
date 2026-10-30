@@ -5,11 +5,11 @@
  *
  * The sequence: the sheet with both markers in view, then blank frames (both
  * lost after the 200 ms grace period), then the sheet again (found again).
- * Each frame advances the clock by FRAME_MS. Date.now is pinned to the same
- * clock: ARControllerNFT's MarkerLostTracker reads it, and AR2 seeds rand with
- * time(NULL).
+ * Each frame advances the clock by FRAME_MS, passed to the tracker. Date.now
+ * is pinned to the same clock: AR2 seeds rand with time(NULL) (and the
+ * recording's ARControllerNFT read it for its lost timer).
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import type { RgbaFrame } from './frames';
 
 export const GOLDEN_PATH = 'tests/integration/golden/tracking.json';
@@ -65,20 +65,4 @@ export async function runGolden(
 
 export function readGolden(): GoldenRun {
   return JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as GoldenRun;
-}
-
-export function writeGolden(run: GoldenRun) {
-  writeFileSync(GOLDEN_PATH, JSON.stringify(run, null, 1) + '\n');
-}
-
-/** Largest absolute difference between two poses' translations (mm) and rotations (unitless). */
-export function poseDelta(a: number[], b: number[]) {
-  let translation = 0;
-  let rotation = 0;
-  for (let k = 0; k < 16; k++) {
-    const d = Math.abs(a[k] - b[k]);
-    if (k === 12 || k === 13 || k === 14) translation = Math.max(translation, d);
-    else rotation = Math.max(rotation, d);
-  }
-  return { translation, rotation };
 }
