@@ -51,15 +51,16 @@ describe.skipIf(!haveAssets)('golden tracking run', () => {
 
 /**
  * Found flags and transitions must match exactly. Poses cannot: the facade
- * computes the luma in WASM (lumaInternal) where the Node ARControllerNFT did
- * it in JS, so AR2 tracks from slightly different pixels, and on a static
+ * computes the luma in WASM (passVideoData(..., true)) where the Node
+ * ARControllerNFT passed a luma computed in JS (false), so AR2 tracks from slightly different pixels, and on a static
  * photo the recorded poses already wander from frame to frame (about 20 mm
  * in depth at ~580 mm). So every pose term must stay within the range the
  * recording spans for that marker, plus a margin, and the mean translation
  * must stay close to the recorded one, and each frame close to the recorded
  * frame. Measured with jsartoolkit-nft 1.15.0: at most 0.82 mm and 0.075
  * outside the recorded ranges (which span up to 26 mm and 0.21), and at most
- * ~19 mm and 0.18 from the recorded frame; the bounds leave room for that.
+ * 13.8 mm and 0.16 from the recorded frame (the same on every run, with
+ * Date.now pinned); the bounds leave room for that.
  */
 const MARGIN = { translation: 2, rotation: 0.1 };
 const MEAN_TRANSLATION = 5;
