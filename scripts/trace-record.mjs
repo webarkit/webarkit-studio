@@ -54,7 +54,11 @@ try {
     const base = replay ? parseTrace(readFileSync(replay, 'utf8')) : null;
     const overrides = {};
     if (filter !== undefined) overrides.filter = FILTERS[filter];
-    if (settings !== undefined) overrides.settings = { ...(base?.header.settings ?? GOLDEN_SETTINGS), ...JSON.parse(settings) };
+    if (settings !== undefined) {
+      // A trace recorded with the facade's defaults (settings null) has nothing to merge into.
+      if (base && !base.header.settings) throw new Error(`${replay} uses the tracker's default settings: --settings cannot be merged into them`);
+      overrides.settings = { ...(base?.header.settings ?? GOLDEN_SETTINGS), ...JSON.parse(settings) };
+    }
     trace = base ? await recorder.replayTrace(base, overrides) : await recorder.recordTrace(overrides);
   }
 } catch (err) {

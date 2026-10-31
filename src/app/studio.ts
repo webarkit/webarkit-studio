@@ -151,6 +151,7 @@ async function run(reason = 'run') {
       stage,
       log,
       onReport: (nodeId, text) => studio.setNodeStatus(nodeId, { text }),
+      studio: true,
     });
     await runtime.start();
     if (id !== runId) return; // superseded while starting

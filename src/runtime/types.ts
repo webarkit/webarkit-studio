@@ -108,6 +108,8 @@ export interface RuntimeContext {
   log: (message: string) => void;
   /** Feedback shown inside the node in the studio (no-op in the player). */
   report: (text: string) => void;
+  /** True in the studio's preview, false in the player (exported apps): debug tools that act on their own (downloads) stay off there. */
+  studio: boolean;
 }
 
 /**

@@ -57,7 +57,7 @@ export interface TargetDiff {
 
 export interface TraceDiff {
   frames: { a: number; b: number; compared: number };
-  /** Frame positions whose relative times differ. */
+  /** Frame positions whose relative times differ (informative: frames are compared by position). */
   timeMismatches: number[];
   targets: TargetDiff[];
   /** Mean process() time, ms (informative: never a failure). */
@@ -123,6 +123,29 @@ function headerNotes(a: Trace, b: Trace): string[] {
   return notes;
 }
 
+/** Transitions further apart than this are not the same transition. */
+const PAIR_WINDOW_MS = 1000;
+
+/**
+ * Pairs transition times of one type: closest pairs first, within PAIR_WINDOW_MS,
+ * so one extra flicker shows up as one unmatched transition, not as a shift of every later one.
+ */
+function pairTransitions(type: 'found' | 'lost', xa: number[], xb: number[]): TransitionShift[] {
+  const candidates = xa.flatMap((a, i) => xb.map((b, j) => ({ i, j, d: Math.abs(b - a) }))).filter((c) => c.d <= PAIR_WINDOW_MS);
+  candidates.sort((x, y) => x.d - y.d || x.i - y.i);
+  const [usedA, usedB] = [new Set<number>(), new Set<number>()];
+  const shifts: TransitionShift[] = [];
+  for (const { i, j } of candidates) {
+    if (usedA.has(i) || usedB.has(j)) continue;
+    usedA.add(i);
+    usedB.add(j);
+    shifts.push({ type, a: xa[i], b: xb[j] });
+  }
+  xa.forEach((a, i) => usedA.has(i) || shifts.push({ type, a, b: null }));
+  xb.forEach((b, j) => usedB.has(j) || shifts.push({ type, a: null, b }));
+  return shifts;
+}
+
 const sameFrame = (x: TraceFrame, y: TraceFrame, dt: number) =>
   x.time - y.time === dt && JSON.stringify([x.targets, x.transitions]) === JSON.stringify([y.targets, y.transitions]);
 
@@ -154,8 +177,7 @@ export function diffTraces(a: Trace, b: Trace, thresholds: DiffThresholds = DEFA
     const worst = deltas.reduce<(typeof deltas)[number] | null>((w, d) => (!w || d.t > w.t ? d : w), null);
     const shifts: TransitionShift[] = [];
     for (const type of ['found', 'lost'] as const) {
-      const [xa, xb] = [transitions(fa, ida, type), transitions(fb, idb, type)];
-      for (let k = 0; k < Math.max(xa.length, xb.length); k++) shifts.push({ type, a: xa[k] ?? null, b: xb[k] ?? null });
+      shifts.push(...pairTransitions(type, transitions(fa, ida, type), transitions(fb, idb, type)));
     }
     shifts.sort((x, y) => (x.a ?? x.b ?? 0) - (y.a ?? y.b ?? 0));
     const t: TargetDiff = {
@@ -191,10 +213,13 @@ export function diffTraces(a: Trace, b: Trace, thresholds: DiffThresholds = DEFA
     if (t.pose.maxRotationDeg > thresholds.rotationDeg) {
       failures.push(`${name}: rotation differs by up to ${t.pose.maxRotationDeg.toFixed(3)}° (> ${thresholds.rotationDeg})`);
     }
-    const dj = Math.abs(t.jitter.a.translationMm - t.jitter.b.translationMm);
-    if (dj > thresholds.jitterMm) failures.push(`${name}: jitter differs by ${dj.toFixed(3)} mm/frame (> ${thresholds.jitterMm})`);
-    const djr = Math.abs(t.jitter.a.rotationDeg - t.jitter.b.rotationDeg);
-    if (djr > thresholds.jitterDeg) failures.push(`${name}: jitter differs by ${djr.toFixed(3)}°/frame (> ${thresholds.jitterDeg})`);
+    // Jitter needs consecutive tracked frames on both sides.
+    if (t.jitter.a.pairs && t.jitter.b.pairs) {
+      const dj = Math.abs(t.jitter.a.translationMm - t.jitter.b.translationMm);
+      if (dj > thresholds.jitterMm) failures.push(`${name}: jitter differs by ${dj.toFixed(3)} mm/frame (> ${thresholds.jitterMm})`);
+      const djr = Math.abs(t.jitter.a.rotationDeg - t.jitter.b.rotationDeg);
+      if (djr > thresholds.jitterDeg) failures.push(`${name}: jitter differs by ${djr.toFixed(3)}°/frame (> ${thresholds.jitterDeg})`);
+    }
   }
 
   const identical =
@@ -220,7 +245,9 @@ const n = (v: number, digits = 3) => v.toFixed(digits);
 export function formatDiff(d: TraceDiff): string {
   const lines: string[] = [];
   lines.push(`frames: ${d.frames.a} vs ${d.frames.b} (${d.frames.compared} compared)`);
-  if (d.timeMismatches.length) lines.push(`relative times differ on ${d.timeMismatches.length} frames (first: frame ${d.timeMismatches[0]})`);
+  if (d.timeMismatches.length) {
+    lines.push(`relative times differ on ${d.timeMismatches.length} frames (first: frame ${d.timeMismatches[0]}; not compared)`);
+  }
   lines.push(`process(): mean ${n(d.processMs.a, 2)} ms vs ${n(d.processMs.b, 2)} ms (not compared)`);
   for (const note of d.notes) lines.push(`header ${note}`);
   for (const t of d.targets) {
@@ -235,7 +262,9 @@ export function formatDiff(d: TraceDiff): string {
     lines.push(`  transitions: ${shifts.length ? shifts.join(', ') : 'none'}`);
     const j = t.jitter;
     lines.push(
-      `  jitter: ${n(j.a.translationMm)} → ${n(j.b.translationMm)} mm/frame, ${n(j.a.rotationDeg)} → ${n(j.b.rotationDeg)}°/frame`,
+      j.a.pairs && j.b.pairs
+        ? `  jitter: ${n(j.a.translationMm)} → ${n(j.b.translationMm)} mm/frame, ${n(j.a.rotationDeg)} → ${n(j.b.rotationDeg)}°/frame`
+        : '  jitter: not compared (no consecutive tracked frames on one side)',
     );
   }
   lines.push('');

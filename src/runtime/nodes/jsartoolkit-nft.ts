@@ -122,6 +122,8 @@ export const artkController: NodeFactory = (params, ctx) => {
   // Trace records since the last graph frame (see TrackingTraceValue).
   let trace: TrackingTraceValue | null = null;
   let pendingRecords: TraceRecord[] = [];
+  // A live settings change made while a frame was in flight: recorded after that frame's result, which used the old settings.
+  let heldSettings: TraceRecord | null = null;
 
   const canvas = document.createElement('canvas');
   const g2d = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -148,6 +150,10 @@ export const artkController: NodeFactory = (params, ctx) => {
     }
     markers = next;
     pendingRecords.push(msg.frame);
+    if (heldSettings) {
+      pendingRecords.push(heldSettings);
+      heldSettings = null;
+    }
 
     const t = performance.now();
     fpsWindowFrames++;
@@ -246,8 +252,12 @@ export const artkController: NodeFactory = (params, ctx) => {
       if (settings && settings !== appliedSettings) {
         appliedSettings = settings;
         request({ type: 'configure', settings });
-        // Same clock as the frames' `time`: frames sent from now on use the new settings.
-        pendingRecords.push({ type: 'settings', time: performance.now(), settings });
+        // Same clock as the frames' `time`. The worker handles messages in order, so the next
+        // frame sent is processed after this configure (unless configure() itself awaits, as a
+        // `{ module }` filter can; the graph's filters do not).
+        const record: TraceRecord = { type: 'settings', time: performance.now(), settings };
+        if (busy) heldSettings = record;
+        else pendingRecords.push(record);
       }
 
       if (!busy) {

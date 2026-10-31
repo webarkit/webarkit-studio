@@ -1,6 +1,9 @@
 /**
- * debug.inspector — formats whatever flows into it and reports it to the
- * studio, which shows it inside the node. In the player, reports go nowhere.
+ * Debug nodes:
+ *  - debug.inspector formats whatever flows into it and reports it to the
+ *    studio, which shows it inside the node. In the player, reports go nowhere;
+ *  - debug.stats shows frame rates and tracker timings (optionally on the AR view);
+ *  - debug.trace records a tracker's trace and downloads it (studio only).
  */
 import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
@@ -206,14 +209,18 @@ function download(text: string, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** debug.trace — records a tracker's trace while Recording is on and downloads it as JSONL. */
+/**
+ * debug.trace — records a tracker's trace while Recording is on and downloads it as JSONL.
+ * Studio only: an exported app must not download files on its own, so in the player it does nothing.
+ */
 export const traceNode: NodeFactory = (params, ctx) => {
+  if (!ctx.studio) return {};
   const recorder = new TraceRecorder(Math.max(1, Math.round(Number(params.maxFrames) || 1)));
+  const filename = String(params.filename || '').trim() || 'tracking-trace';
   let lastReport = -Infinity;
   // Cleared when Max frames ends a recording: the next one needs Recording turned off and on.
   let armed = true;
 
-  const filename = () => String(params.filename || '').trim() || 'tracking-trace';
   const finish = (why: string) => {
     const frames = recorder.frames;
     const text = recorder.stop();
@@ -221,9 +228,9 @@ export const traceNode: NodeFactory = (params, ctx) => {
       ctx.report(`stopped (${why}): no frame recorded`);
       return;
     }
-    download(text, filename());
+    download(text, filename);
     ctx.log(`${ctx.nodeId}: trace of ${frames} frames downloaded (${why})`);
-    ctx.report(`downloaded ${frames} frames (${why})`);
+    ctx.report(`downloaded ${frames} frames (${why})${why === 'max frames' ? '; turn Recording off and on to record again' : ''}`);
   };
   const tryStart = () => {
     if (params.recording && armed && !recorder.recording && recorder.start()) ctx.report('recording…');

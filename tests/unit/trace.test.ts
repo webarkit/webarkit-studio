@@ -10,9 +10,9 @@ import {
   type Trace,
   type TraceFrame,
 } from '../../src/runtime/trackers/trace';
-import { TraceRecorder } from '../../src/runtime/nodes/debug';
+import { TraceRecorder, traceNode } from '../../src/runtime/nodes/debug';
 import { diffTraces } from '../helpers/trace-diff';
-import type { TrackingTraceValue } from '../../src/runtime/types';
+import type { RuntimeContext, TrackingTraceValue } from '../../src/runtime/types';
 
 const pose = (x = 0, y = 0, z = -500) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 const settings = { continuousDetection: true, detectionInterval: 0, logLevel: 3, near: 10, far: 10000 };
@@ -139,6 +139,19 @@ describe('trace diff', () => {
     expect(d.failures).toContain('target 0 (pinball): found differs on 2 frames (> 0)');
   });
 
+  it('reports an extra flicker as one unmatched transition, not a shift of every later one', () => {
+    const d = diffTraces(trace(found), trace([true, false, true, false, false, true, true]));
+    expect(d.targets[0].transitions).toEqual([
+      { type: 'found', a: 0, b: 0 },
+      { type: 'lost', a: null, b: 33 },
+      { type: 'found', a: null, b: 66 },
+      { type: 'lost', a: 99, b: 99 },
+      { type: 'found', a: 165, b: 165 },
+    ]);
+    expect(d.failures.filter((f) => f.includes('moved'))).toEqual([]);
+    expect(d.failures.filter((f) => f.includes('only in b'))).toHaveLength(2);
+  });
+
   it('accepts differences within custom thresholds, but never calls them identical', () => {
     const d = diffTraces(trace(found), trace(found, () => 0.5), {
       translationMm: 1, rotationDeg: 1, transitionMs: 0, foundFrames: 0, jitterMm: 1, jitterDeg: 1,
@@ -199,5 +212,12 @@ describe('debug.trace recorder', () => {
     r.observe(value(trace([true]), 0, 0));
     r.start();
     expect(r.stop()).toBeNull();
+  });
+});
+
+describe('debug.trace node', () => {
+  it('does nothing in the player, so an exported app never downloads on its own', () => {
+    const ctx: RuntimeContext = { nodeId: 'rec', stage: {} as HTMLElement, baseUrl: 'http://localhost/', log: () => {}, report: () => {}, studio: false };
+    expect(traceNode({ recording: true, maxFrames: 1, filename: 'x' }, ctx)).toEqual({});
   });
 });

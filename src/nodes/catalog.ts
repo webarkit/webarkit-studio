@@ -339,7 +339,8 @@ const defs: NodeDefinition[] = [
     provider: 'core',
     description:
       "Records the tracker's frame-by-frame results (poses, found / lost, timing) while Recording is on, and downloads them as a " +
-      'JSONL trace when it is turned off, when Max frames is reached or when the preview stops. Compare two traces with npm run trace:diff.',
+      'JSONL trace when it is turned off, when Max frames is reached (turn Recording off and on to record again) or when the preview ' +
+      'stops or restarts (a restart starts a new trace). Studio only: does nothing in exported apps. Compare two traces with npm run trace:diff.',
     inputs: { trace: { type: 'trackingTrace', label: 'Trace' } },
     outputs: {},
     params: {

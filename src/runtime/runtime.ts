@@ -33,6 +33,8 @@ export interface RuntimeOptions {
   log?: (message: string) => void;
   /** Receives per-node feedback (Inspector values). */
   onReport?: (nodeId: string, text: string) => void;
+  /** Running in the studio, where someone controls the graph (see RuntimeContext.studio). */
+  studio?: boolean;
   /** Node definitions and implementations; injectable for tests and benchmarks. */
   catalog?: Record<string, NodeDefinition>;
   registry?: Record<string, NodeFactory>;
@@ -86,6 +88,7 @@ export class GraphRuntime {
         baseUrl: this.opts.baseUrl ?? globalThis.document?.baseURI ?? 'http://localhost/',
         log,
         report: (text) => this.opts.onReport?.(node.id, text),
+        studio: this.opts.studio ?? false,
       };
       const params = resolveParams(this.catalog[node.type], node.params);
       const instance: Instance = { node, inputs: [], impl: factory(params, ctx), params, outputs: {} };
