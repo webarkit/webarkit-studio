@@ -2,9 +2,11 @@
 
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The project is in its prototype stage and has no releases yet.
+The project is in its prototype stage: versions follow SemVer, and 0.x releases may change the graph format.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-31
 
 ### Added
 
