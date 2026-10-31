@@ -35,6 +35,14 @@ Browser: in the studio, wire the controller's `trace` output to a **Trace Record
 - **Playwright MCP** opens the studio with the e2e fake camera. Run `npm run mcp:setup` once first: it generates the video and writes the server's config into `tests/e2e/.cache/playwright-mcp.json` from `.claude/mcp/playwright.json`, with the video's absolute path (with a relative one, Chromium finds no file and the page gets "Requested device not found"). Restart the server, or the Claude Code session, after running it. It ships its own Playwright, which needs its own Chromium revision: the e2e tests' Chromium is not enough. Install it once per `@playwright/mcp` version. For 0.0.83 (Playwright `1.64.0-alpha-1790635538000`, Chromium revision 1247), run `npx -y playwright@1.64.0-alpha-1790635538000 install chromium`, or call the server's `browser_install` tool. When the pin in `.mcp.json` changes, take the new version from `npm view @playwright/mcp@<version> dependencies`. Serve the build (`npm run build`, then `npx vite preview --port 4173`; check nothing else is on 4173), and drive the studio: load a demo, add the Trace Recorder, run, collect the download.
 - **Chrome DevTools MCP** (`--isolated`) uses Chrome's synthetic camera, with the permission granted, so the graph starts without a webcam or a prompt; it never finds a marker, so use Playwright MCP for tracking. It shows the console, including the worker's, the network (a 404 on `.zft` probes is expected; an HTML 200 is the hosting bug), and performance traces of the tracking loop.
 
+For the real webcam, give Chrome DevTools a local override, without the synthetic camera but with the permission still granted. It applies only to that user and checkout, takes precedence over `.mcp.json`, and is removed with `claude mcp remove -s local chrome-devtools`:
+
+```bash
+claude mcp add -s local chrome-devtools -- npx -y chrome-devtools-mcp@1.12.0 --isolated --usageStatistics=false --performanceCrux=false --chrome-arg=--use-fake-ui-for-media-stream
+```
+
+Reconnect the server afterwards (`/mcp`). With the permission granted automatically, Chrome opens the default camera. If the machine has several cameras, leave out `--use-fake-ui-for-media-stream` as well and pick the camera in Chrome's permission prompt. Do not edit `.mcp.json` for this: the shared setup stays reproducible.
+
 On native Windows, Claude Code may need the servers wrapped as `cmd /c npx …`: say so to the user rather than editing `.mcp.json`.
 
 If the project's `playwright` server fails (no browser, not approved), do not fall back to another Playwright server, such as a plugin's: it has no fake camera and no `--isolated`, so it tests the user's webcam, not this setup. Fix the project server instead, and save screenshots and downloads under `.traces/` or the scratchpad, never the repository root.
