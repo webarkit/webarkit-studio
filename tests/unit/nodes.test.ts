@@ -32,16 +32,23 @@ describe('letterbox', () => {
     });
   });
 
-  it('letterboxes other aspects into 4:3, with integer sizes for odd videos', () => {
-    for (const [vw, vh] of [[1280, 720], [641, 359], [480, 640], [1001, 333]]) {
+  it('letterboxes other aspects into 4:3, with integer sizes and offsets for odd videos', () => {
+    for (const [vw, vh] of [[1280, 720], [641, 359], [1366, 768], [480, 640], [1001, 333]]) {
       const g = letterbox(vw, vh);
-      for (const v of [g.frameWidth, g.frameHeight, g.width, g.height]) expect(Number.isInteger(v)).toBe(true);
-      expect(g.width).toBeLessThanOrEqual(g.frameWidth);
-      expect(g.height).toBeLessThanOrEqual(g.frameHeight);
+      for (const v of [g.frameWidth, g.frameHeight, g.width, g.height, g.x, g.y]) expect(Number.isInteger(v)).toBe(true);
+      expect(g.rotated).toBe(false);
+      expect(g.x + g.width).toBeLessThanOrEqual(g.frameWidth);
+      expect(g.y + g.height).toBeLessThanOrEqual(g.frameHeight);
       expect(Math.max(g.frameWidth, (g.frameHeight / 3) * 4)).toBeLessThanOrEqual(321);
-      expect(g.x).toBe((g.frameWidth - g.width) / 2);
-      expect(g.y).toBe((g.frameHeight - g.height) / 2);
+      // Centred: the offset is half the margin, rounded down.
+      expect(g.x).toBe(Math.floor((g.frameWidth - g.width) / 2));
+      expect(g.y).toBe(Math.floor((g.frameHeight - g.height) / 2));
     }
+  });
+
+  it('rounds an odd margin down to a whole-pixel offset', () => {
+    // 1366 × 768: 320 × 179 in a 320 × 240 frame, a margin of 61 rows.
+    expect(letterbox(1366, 768)).toMatchObject({ frameWidth: 320, frameHeight: 240, width: 320, height: 179, x: 0, y: 30 });
   });
 });
 

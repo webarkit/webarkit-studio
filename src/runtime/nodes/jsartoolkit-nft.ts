@@ -25,29 +25,18 @@ import type {
 } from '../types';
 import type { WorkerRequest, WorkerResponse } from '../workers/nft-protocol';
 import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
+import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
 
 /**
  * Where the video goes in the processing frame: scaled to fit ~320px, then
- * letterboxed into 4:3. Every size is an integer, so the canvas, its
- * ImageData and the tracker's frame size are the same.
+ * letterboxed into 4:3. The rule is @webarkit/camera-view's (ARnft's, also
+ * used by the jsartoolkitNFT tracker example), floored so every value is an
+ * integer: the canvas, its ImageData and the tracker's frame size are the same.
+ * Portrait videos are letterboxed, not rotated. A video more extreme than about
+ * 320:1 gets a width or height of 0, which no real camera produces.
  */
 export function letterbox(videoWidth: number, videoHeight: number): FrameGeometry {
-  const pscale = 320 / Math.max(videoWidth, (videoHeight / 3) * 4);
-  const width = Math.max(1, Math.floor(videoWidth * pscale));
-  const height = Math.max(1, Math.floor(videoHeight * pscale));
-  const frameWidth = Math.max(width, Math.floor((height / 3) * 4));
-  const frameHeight = Math.max(height, Math.floor((width / 4) * 3));
-  return {
-    frameWidth,
-    frameHeight,
-    videoWidth,
-    videoHeight,
-    x: (frameWidth - width) / 2,
-    y: (frameHeight - height) / 2,
-    width,
-    height,
-    rotated: false,
-  };
+  return toFrameGeometry(videoWidth, videoHeight, getProcessGeometry(videoWidth, videoHeight, false, true));
 }
 
 /** jsartoolkitNFT.cameraParams — resolves the calibration file URL. */

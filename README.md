@@ -316,8 +316,9 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
   name (`webar-studio/graph`) still load, and so does its last autosave.
 - JsartoolkitNFT ≥ 1.15.0 is required (the tracker facade). Its lens follows
   the planes from the start: the near 0.0001 init lens of 1.14.0 is gone.
-- The processing frame has integer sizes (`letterbox()`): the facade rejects a
-  frame whose size differs from the tracker's.
+- The processing frame has integer sizes (`letterbox()`, which calls
+  `@webarkit/camera-view`): the facade rejects a frame whose size differs from
+  the tracker's.
 - Near / far are in marker units (mm). Controller Settings defaults to
   10 mm / 10 m; without a settings node the library planes (0.1 / 1000) are used,
   so content farther than 1 m from the camera is clipped.

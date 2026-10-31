@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.30.0",
+    "@webarkit/camera-view": "^0.1.0",
     "@webarkit/jsartoolkit-nft": "^1.15.0",
     "fflate": "^0.8.3",
     "lit": "^3.3.3",

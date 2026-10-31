@@ -49,8 +49,10 @@ in `tests/integration/golden/` checks them):
   touches near / far; `NftSession` only reads `cameraMatrix` and reports a change.
 - Near / far are in marker units (mm).
 - The controller node letterboxes the video into the ~320 px 4:3 processing frame with
-  `letterbox()`. Every size is an integer: the canvas, its `ImageData` and the tracker's
-  `width` × `height` must be the same, or `process()` throws a `RangeError`.
+  `letterbox()`, which calls `@webarkit/camera-view` (`getProcessGeometry` with `floor`,
+  then `toFrameGeometry`). Do not reimplement the rule in this repository.
+- Every size is an integer: the canvas, its `ImageData` and the tracker's `width` ×
+  `height` must be the same, or `process()` throws a `RangeError`.
 - The projection is `projectionFor()` with that `FrameGeometry`. A change to the processing
   frame goes through `letterbox()`, never through a hand-written rescale.
 

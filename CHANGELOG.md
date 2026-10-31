@@ -42,6 +42,9 @@ The project is in its prototype stage and has no releases yet.
   through unfiltered), as in the tracker facade.
 - `@webarkit/oneeurofilter-ts` is no longer a direct dependency (the tracker
   bundles it).
+- The processing frame's geometry comes from `@webarkit/camera-view` (ARnft's
+  rule, also used by the jsartoolkitNFT tracker example). The video's offset in the frame
+  is now rounded down to a whole pixel.
 
 ### Fixed
 
