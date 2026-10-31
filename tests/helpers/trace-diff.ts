@@ -72,17 +72,31 @@ export interface TraceDiff {
 
 const translation = (a: number[], b: number[]) => Math.hypot(a[12] - b[12], a[13] - b[13], a[14] - b[14]);
 
-/** Angle of the rotation between two poses (upper 3x3, column-major), degrees. */
+/**
+ * The rotation part of a pose (upper 3x3, column-major) made orthonormal (Gram-Schmidt on the
+ * columns). A filtered pose is not always rigid: the facade's One Euro filter smooths the 16
+ * values independently, so its columns drift from unit length by up to about 1% on a hand-held
+ * camera, which the angle formula below would read as several degrees of rotation.
+ */
+function orthonormal(p: number[]): number[][] {
+  const unit = (v: number[]) => {
+    const n = Math.hypot(v[0], v[1], v[2]);
+    return v.map((x) => x / n);
+  };
+  const x = unit([p[0], p[1], p[2]]);
+  const c1 = [p[4], p[5], p[6]];
+  const d = c1[0] * x[0] + c1[1] * x[1] + c1[2] * x[2];
+  const y = unit(c1.map((v, i) => v - d * x[i]));
+  const z = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+  return [x, y, z];
+}
+
+/** Angle of the rotation between two poses, degrees. */
 function rotation(a: number[], b: number[]): number {
+  if (a.every((v, i) => i % 4 === 3 || i >= 12 || v === b[i])) return 0;
+  const [ra, rb] = [orthonormal(a), orthonormal(b)];
   let trace = 0;
-  let same = true;
-  for (let c = 0; c < 3; c++) {
-    for (let r = 0; r < 3; r++) {
-      trace += a[c * 4 + r] * b[c * 4 + r];
-      same &&= a[c * 4 + r] === b[c * 4 + r];
-    }
-  }
-  if (same) return 0;
+  for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) trace += ra[c][r] * rb[c][r];
   return (Math.acos(Math.min(1, Math.max(-1, (trace - 1) / 2))) * 180) / Math.PI;
 }
 

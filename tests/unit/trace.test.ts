@@ -127,6 +127,17 @@ describe('trace diff', () => {
     expect(diffTraces(trace(found), b).targets[0].pose.maxRotationDeg).toBeCloseTo(1, 6);
   });
 
+  it('measures rotation on non-rigid poses as the rotation alone (a filtered pose is not always orthonormal)', () => {
+    // Same orientation, columns scaled by 1% (as an element-wise filter can leave them): no rotation.
+    const b = trace(found);
+    for (const r of b.records) {
+      if (r.type === 'frame' && r.targets[0].pose) r.targets[0].pose = r.targets[0].pose.map((v, k) => (k < 12 && k % 4 !== 3 ? v * 0.99 : v));
+    }
+    const d = diffTraces(trace(found), b);
+    expect(d.targets[0].pose.maxRotationDeg).toBeLessThan(1e-6);
+    expect(d.targets[0].jitter.b.rotationDeg).toBeLessThan(1e-6);
+  });
+
   it('reports found mismatches and moved or missing transitions', () => {
     const d = diffTraces(trace(found), trace([true, true, false, false, false, false, true]));
     expect(d.targets[0].foundMismatches).toEqual([2, 5]);
