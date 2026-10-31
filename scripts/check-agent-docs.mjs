@@ -3,7 +3,8 @@
 //  - every `npm run <script>` they name exists in package.json;
 //  - every repository path they name (in backticks, links or Copilot `applyTo` globs) exists;
 //  - .mcp.json declares the Playwright and Chrome DevTools MCP servers, each package pinned to
-//    an exact version, Chrome DevTools started with --isolated, and every --config file exists.
+//    an exact version, Chrome DevTools started with --isolated and without usage statistics, and
+//    every --config file exists.
 // Run from the repository root: npm run check:agents
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
@@ -116,8 +117,9 @@ if (!existsSync(mcp)) {
     const config = args.indexOf('--config');
     if (config !== -1) checkPath(mcp, args[config + 1] ?? '');
   }
-  if (!(servers['chrome-devtools']?.args ?? []).includes('--isolated')) {
-    problems.push(`${mcp}: "chrome-devtools" must be started with --isolated`);
+  const devtools = servers['chrome-devtools']?.args ?? [];
+  for (const flag of ['--isolated', '--usageStatistics=false']) {
+    if (!devtools.includes(flag)) problems.push(`${mcp}: "chrome-devtools" must be started with ${flag}`);
   }
 }
 

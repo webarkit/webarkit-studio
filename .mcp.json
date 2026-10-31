@@ -6,7 +6,15 @@
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@1.12.0", "--isolated"]
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@1.12.0",
+        "--isolated",
+        "--usageStatistics=false",
+        "--performanceCrux=false",
+        "--chrome-arg=--use-fake-ui-for-media-stream",
+        "--chrome-arg=--use-fake-device-for-media-stream"
+      ]
     }
   }
 }
