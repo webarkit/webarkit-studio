@@ -29,6 +29,13 @@ The project is in its prototype stage and has no releases yet.
   (tracking threshold, similarity threshold, features per frame, template
   size, search window), all live. Their defaults are the tracker's, so existing
   graphs keep their behaviour.
+- Tracking traces (#9): a JSONL trace format (`webarkit-studio/trace` v1), the
+  controller's `trace` output and the **Trace Recorder** node (`debug.trace`),
+  a deterministic Node recorder and replay (`npm run trace:record`) and
+  `npm run trace:diff` (pose deltas, found / lost timing, jitter, non-zero exit
+  above thresholds).
+- Agent tooling: `.mcp.json` with Playwright MCP and Chrome DevTools MCP (pinned,
+  isolated), checked by `npm run check:agents`, and a `tracking-debugger` skill.
 
 ### Changed
 
