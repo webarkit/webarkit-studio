@@ -104,9 +104,9 @@ const defs: NodeDefinition[] = [
     category: 'tracking',
     provider: 'JsartoolkitNFT',
     description:
-      'ARControllerNFT settings that affect NFT tracking. Live: changes reach the running controller ' +
-      '(setContinuousDetection, setDetectionInterval, setLogLevel; near / far via setProjectionNear/FarPlane + ' +
-      'recalculateCameraLens, which also updates the projection).',
+      "Tracker settings that affect NFT tracking, applied live with the tracker's configure(): detection, " +
+      'log level, near / far (which also update the projection), the lost grace period and the AR2 tracking parameters ' +
+      '(search size 0 = the build default).',
     inputs: {},
     outputs: { settings: { type: 'artkSettings', label: 'Settings' } },
     params: {
@@ -121,6 +121,13 @@ const defs: NodeDefinition[] = [
       },
       near: { kind: 'number', label: 'Near plane (mm)', default: 10, min: 0.1, max: 1000, step: 1, live: true },
       far: { kind: 'number', label: 'Far plane (mm)', default: 10000, min: 100, max: 100000, step: 100, live: true },
+      lostTimeout: { kind: 'number', label: 'Lost after ms', default: 200, min: 0, max: 5000, step: 10, live: true },
+      trackingThresh: { kind: 'number', label: 'Track thresh', default: 5, min: 0.1, max: 100, step: 0.1, live: true },
+      simThresh: { kind: 'number', label: 'Sim thresh', default: 0.5, min: 0.01, max: 1, step: 0.01, live: true },
+      searchFeatureNum: { kind: 'number', label: 'Features', default: 16, min: 3, max: 40, step: 1, live: true },
+      templateSize1: { kind: 'number', label: 'Template W', default: 6, min: 1, max: 32, step: 1, live: true },
+      templateSize2: { kind: 'number', label: 'Template H', default: 6, min: 1, max: 32, step: 1, live: true },
+      searchSize: { kind: 'number', label: 'Search size', default: 0, min: 0, max: 64, step: 1, live: true },
     },
   },
   {
@@ -129,7 +136,7 @@ const defs: NodeDefinition[] = [
     category: 'tracking',
     provider: 'JsartoolkitNFT',
     description:
-      'JsartoolkitNFT ARControllerNFT in a Web Worker, tracking one or more NFT datasets (loadNFTMarkers). ' +
+      'JsartoolkitNFT tracker (createNFTTracker) in a Web Worker, tracking one or more NFT datasets. ' +
       'Markers → Select Marker to get one marker\'s pose. onFound / onLost fire for any marker. Optional slots: settings, pose filter (one filter per marker).',
     inputs: {
       video: { type: 'video', label: 'Video' },
@@ -145,6 +152,7 @@ const defs: NodeDefinition[] = [
       projection: { type: 'projection', label: 'Projection' },
       cameraMatrix: { type: 'matrix4', label: 'Camera matrix (raw)' },
       stats: { type: 'trackingStats', label: 'Stats' },
+      trace: { type: 'trackingTrace', label: 'Trace' },
     },
     params: {
       build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default' } },
@@ -174,7 +182,7 @@ const defs: NodeDefinition[] = [
     label: 'Native Filter',
     category: 'filter',
     provider: 'JsartoolkitNFT',
-    description: "ARToolKit's built-in pose filter (ARControllerNFT.setFiltering). JsartoolkitNFT controllers only.",
+    description: "ARToolKit's built-in pose filter (the tracker's 'native' filter). JsartoolkitNFT controllers only.",
     inputs: {},
     outputs: { filter: { type: 'poseFilter', label: 'Filter' } },
     params: {},
@@ -323,6 +331,23 @@ const defs: NodeDefinition[] = [
     inputs: { value: { type: 'any', label: 'Value' } },
     outputs: {},
     params: {},
+  },
+  {
+    type: 'debug.trace',
+    label: 'Trace Recorder',
+    category: 'debug',
+    provider: 'core',
+    description:
+      "Records the tracker's frame-by-frame results (poses, found / lost, timing) while Recording is on, and downloads them as a " +
+      'JSONL trace when it is turned off, when Max frames is reached (turn Recording off and on to record again) or when the preview ' +
+      'stops or restarts (a restart starts a new trace). Studio only: does nothing in exported apps. Compare two traces with npm run trace:diff.',
+    inputs: { trace: { type: 'trackingTrace', label: 'Trace' } },
+    outputs: {},
+    params: {
+      recording: { kind: 'boolean', label: 'Recording', default: false, live: true },
+      maxFrames: { kind: 'number', label: 'Max frames', default: 1800, min: 1, max: 100000, step: 1 },
+      filename: { kind: 'string', label: 'File name', default: 'tracking-trace' },
+    },
   },
 ];
 

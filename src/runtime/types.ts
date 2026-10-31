@@ -1,6 +1,8 @@
 import type { ParamValue } from '../core/graph';
 import type { RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
 import type { PoseFilterConfig } from './filters/pose-filter';
+import type { NftSettings } from './trackers/nft-session';
+import type { TraceHeader, TraceRecord } from './trackers/trace';
 
 /** Values flowing through each socket type at runtime. */
 export interface VideoValue {
@@ -18,15 +20,8 @@ export interface ArtkNftDatasetValue {
   /** Marker name used by Select Marker (defaults to the URL's last segment). */
   name: string;
 }
-/** artkSettings: what ARControllerNFT exposes that actually affects NFT tracking. */
-export interface ArtkSettingsValue {
-  continuousDetection: boolean;
-  detectionInterval: number;
-  logLevel: number;
-  /** Projection planes in mm (setProjectionNearPlane / FarPlane + recalculateCameraLens). */
-  near: number;
-  far: number;
-}
+/** artkSettings: the Controller Settings, applied with the tracker's configure() (live). */
+export type ArtkSettingsValue = NftSettings;
 /** poseFilter: a serialisable description, instantiated where the poses are produced (the tracker worker). */
 export type PoseFilterValue = PoseFilterConfig;
 /** Column-major 4x4 matrix (WebGL convention), or null when not tracked. */
@@ -77,6 +72,15 @@ export interface TrackingStatsValue {
   latencyMs: number;
   frames: number;
 }
+/**
+ * trackingTrace: the tracker's trace records (src/runtime/trackers/trace.ts)
+ * that arrived since the previous graph frame. A new object only when records
+ * arrived, so consumers detect new records by reference.
+ */
+export interface TrackingTraceValue {
+  header: TraceHeader;
+  records: TraceRecord[];
+}
 
 /** camera: renderer-agnostic description; the scene's engine camera applies it. */
 export interface CameraValue {
@@ -104,6 +108,8 @@ export interface RuntimeContext {
   log: (message: string) => void;
   /** Feedback shown inside the node in the studio (no-op in the player). */
   report: (text: string) => void;
+  /** True in the studio's preview, false in the player (exported apps): debug tools that act on their own (downloads) stay off there. */
+  studio: boolean;
 }
 
 /**

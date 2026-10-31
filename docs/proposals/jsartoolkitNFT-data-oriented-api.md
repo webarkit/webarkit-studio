@@ -397,7 +397,7 @@ Either way, this changes a shared contract and needs agreement with @ThorstenBux
 **Phase 6: Downstream migration**
 - [ ] ARnft: replace its worker and protocol with `createNFTTrackerWorker` (fixes the multi-marker per worker case and lost-every-frame)
 - [ ] aframe-nft: replace `MarkerRegistry` / `markerLoader` with the facade (aframe-nft#7, #13)
-- [ ] WebAR-Studio: `ArtkSession` on the facade
+- [x] WebAR-Studio: `ArtkSession` on the facade (webarkit-studio#5: `NftSession` on `createNFTTracker`)
 
 **Phase 7: Shared contract**
 - [ ] Agree on the shared `FrameResult` core with `@webarkit/nft-tracker`

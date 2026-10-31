@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { loadDemo, nodeStatus, run } from './helpers';
 
 test.describe('studio', () => {
@@ -62,7 +63,7 @@ test.describe('studio', () => {
     expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
   });
 
-  test('near / far rebuild the camera lens live (recalculateCameraLens)', async ({ page }) => {
+  test('near / far rebuild the camera lens live (configure)', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await run(page);
     await expect(nodeStatus(page, 'Inspector')).toContainText('● tracked', { timeout: 20_000 });
@@ -92,6 +93,42 @@ test.describe('studio', () => {
     await url.fill('data/DataNFT/missing');
     await url.dispatchEvent('change');
     await page.click('#btn-run');
-    await expect(page.locator('.studio-node .status.error')).toContainText('cannot load NFT datasets', { timeout: 30_000 });
+    await expect(page.locator('.studio-node .status.error')).toContainText(/cannot load NFT dataset \S*data\/DataNFT\/missing/, { timeout: 30_000 });
+  });
+});
+
+test.describe('tracking traces', () => {
+  test('Trace Recorder downloads a JSONL trace of the running tracker', async ({ page }) => {
+    // pinball-three plus a Trace Recorder on the controller's trace output, recording from the start.
+    const doc = JSON.parse(await readFile('public/graphs/pinball-three.json', 'utf8')) as {
+      nodes: Array<Record<string, unknown>>;
+      edges: Array<Record<string, unknown>>;
+    };
+    doc.nodes.push({ id: 'recorder', type: 'debug.trace', params: { recording: true, maxFrames: 60, filename: 'e2e-trace' }, position: { x: 640, y: 1300 } });
+    doc.edges.push({ id: 'etrace', from: { node: 'controller', port: 'trace' }, to: { node: 'recorder', port: 'trace' } });
+    await page.goto('/index.html');
+    await page.evaluate((graph) => localStorage.setItem('webarkit-studio:autosave', graph), JSON.stringify(doc));
+    await page.reload();
+    await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
+
+    const download = page.waitForEvent('download', { timeout: 60_000 });
+    await run(page);
+    const file = await download;
+    expect(file.suggestedFilename()).toBe('e2e-trace.jsonl');
+    const lines = (await readFile(await file.path(), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+    expect(lines[0]).toMatchObject({
+      type: 'header',
+      format: 'webarkit-studio/trace',
+      version: 1,
+      tracker: { name: 'jsartoolkit-nft' },
+      frame: { width: 320, height: 240 },
+      filter: { kind: 'oneEuro' },
+      source: { kind: 'camera' },
+    });
+    const frames = lines.slice(1).filter((r) => r.type === 'frame');
+    expect(frames).toHaveLength(60);
+    // The fake camera hides the marker at most 2 s at a time: 60 frames span longer, so some are tracked.
+    expect(frames.some((f) => f.targets[0].found && f.targets[0].pose.length === 16)).toBe(true);
+    await expect(page.locator('#log')).toContainText('trace of 60 frames downloaded (max frames)');
   });
 });

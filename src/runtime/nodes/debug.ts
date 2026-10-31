@@ -1,8 +1,13 @@
 /**
- * debug.inspector — formats whatever flows into it and reports it to the
- * studio, which shows it inside the node. In the player, reports go nowhere.
+ * Debug nodes:
+ *  - debug.inspector formats whatever flows into it and reports it to the
+ *    studio, which shows it inside the node. In the player, reports go nowhere;
+ *  - debug.stats shows frame rates and tracker timings (optionally on the AR view);
+ *  - debug.trace records a tracker's trace and downloads it (studio only).
  */
-import type { NodeFactory, TrackingStatsValue } from '../types';
+import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
+import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
+import type { NftSettings } from '../trackers/nft-session';
 
 const REPORT_INTERVAL_MS = 200;
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
@@ -133,6 +138,135 @@ export const statsNode: NodeFactory = (params, ctx) => {
     },
     dispose() {
       overlay?.remove();
+    },
+  };
+};
+
+/**
+ * The recording side of debug.trace, without the DOM: sees every trackingTrace
+ * value, keeps the records while recording, up to `maxFrames` frames.
+ */
+export class TraceRecorder {
+  private seen: TrackingTraceValue | null = null;
+  /** Settings in force now: the header's, then the last live change. */
+  private settings: NftSettings | null = null;
+  private header: TraceHeader | null = null;
+  private records: TraceRecord[] = [];
+  private frameCount = 0;
+
+  constructor(private readonly maxFrames: number) {}
+
+  get recording() {
+    return this.header !== null;
+  }
+
+  get frames() {
+    return this.frameCount;
+  }
+
+  /** Feeds the input value of a graph frame; returns true when Max frames has just been reached. */
+  observe(value: TrackingTraceValue | null | undefined): boolean {
+    if (!value || value === this.seen) return false;
+    if (value.header !== this.seen?.header) this.settings = value.header.settings;
+    this.seen = value;
+    for (const r of value.records) {
+      if (r.type === 'settings') this.settings = r.settings;
+      if (!this.header) continue;
+      if (r.type === 'frame' && this.frameCount >= this.maxFrames) continue;
+      this.records.push(r);
+      if (r.type === 'frame') this.frameCount++;
+    }
+    return this.recording && this.frameCount >= this.maxFrames;
+  }
+
+  /** Starts recording from the next records; false while no tracker has sent a header yet. */
+  start(): boolean {
+    if (!this.seen) return false;
+    this.header = { ...this.seen.header, settings: this.settings };
+    this.records = [];
+    this.frameCount = 0;
+    return true;
+  }
+
+  /** Stops recording; returns the JSONL trace, or null if no frame was recorded. */
+  stop(): string | null {
+    const header = this.header;
+    const records = this.records;
+    this.header = null;
+    this.records = [];
+    const frames = this.frameCount;
+    this.frameCount = 0;
+    return header && frames ? serializeTrace({ header, records }) : null;
+  }
+}
+
+function download(text: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.jsonl') ? filename : `${filename}.jsonl`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * debug.trace — records a tracker's trace while Recording is on and downloads it as JSONL.
+ * Studio only: an exported app must not download files on its own, so in the player it does nothing.
+ */
+export const traceNode: NodeFactory = (params, ctx) => {
+  if (!ctx.studio) return {};
+  const recorder = new TraceRecorder(Math.max(1, Math.round(Number(params.maxFrames) || 1)));
+  const filename = String(params.filename || '').trim() || 'tracking-trace';
+  let lastReport = -Infinity;
+  // Cleared when Max frames ends a recording: the next one needs Recording turned off and on.
+  let armed = true;
+
+  const finish = (why: string) => {
+    const frames = recorder.frames;
+    const text = recorder.stop();
+    if (!text) {
+      ctx.report(`stopped (${why}): no frame recorded`);
+      return;
+    }
+    download(text, filename);
+    ctx.log(`${ctx.nodeId}: trace of ${frames} frames downloaded (${why})`);
+    ctx.report(`downloaded ${frames} frames (${why})${why === 'max frames' ? '; turn Recording off and on to record again' : ''}`);
+  };
+  const tryStart = () => {
+    if (params.recording && armed && !recorder.recording && recorder.start()) ctx.report('recording…');
+  };
+
+  return {
+    init(inputs) {
+      recorder.observe(inputs.trace as TrackingTraceValue | null | undefined);
+      tryStart();
+      if (!recorder.recording) ctx.report(params.recording ? 'waiting for the tracker' : 'idle');
+    },
+    update(inputs, frame) {
+      // Recording may be on before the tracker's first value: start as soon as it arrives.
+      if (params.recording && armed && !recorder.recording) {
+        recorder.observe(inputs.trace as TrackingTraceValue | null | undefined);
+        tryStart();
+        return;
+      }
+      if (recorder.observe(inputs.trace as TrackingTraceValue | null | undefined)) {
+        armed = false;
+        finish('max frames');
+        return;
+      }
+      if (recorder.recording && frame.time - lastReport >= REPORT_INTERVAL_MS) {
+        lastReport = frame.time;
+        ctx.report(`recording… ${recorder.frames} frames`);
+      }
+    },
+    onParamChange(key) {
+      if (key !== 'recording') return;
+      armed = true;
+      if (params.recording) tryStart();
+      else if (recorder.recording) finish('recording off');
+    },
+    dispose() {
+      if (recorder.recording) finish('preview stopped');
     },
   };
 };

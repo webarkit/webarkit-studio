@@ -1,35 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { createPoseFilter } from '../../src/runtime/filters/pose-filter';
+import { filterConfig, settingsPatch } from '../../src/runtime/trackers/nft-session';
 import { selectMarker } from '../../src/runtime/nodes/tracking';
 import { formatValue } from '../../src/runtime/nodes/debug';
-import { artkSettings } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { artkSettings, letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
 import type { RuntimeContext } from '../../src/runtime/types';
 import type { TrackedMarkerValue } from '../../src/runtime/types';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-const translated = (x: number) => IDENTITY.map((v, i) => (i === 12 ? x : v));
 
-describe('pose filters', () => {
-  it('native filter has no JS implementation (the tracker handles it)', () => {
-    expect(createPoseFilter({ kind: 'native', library: 'jsartoolkitNFT' })).toBeNull();
+describe('tracker facade mapping', () => {
+  it('maps the filter slot: none without a filter node, native, One Euro with its params', () => {
+    expect(filterConfig(null)).toBe('none');
+    expect(filterConfig({ kind: 'native', library: 'jsartoolkitNFT' })).toBe('native');
+    expect(filterConfig({ kind: 'oneEuro', minCutOff: 0.0001, beta: 0.01, warmUp: 5 })).toEqual({
+      type: 'oneEuro', minCutOff: 0.0001, beta: 0.01, warmUp: 5,
+    });
   });
 
-  it('One Euro passes the warm-up frames through, then smooths jumps', () => {
-    const f = createPoseFilter({ kind: 'oneEuro', minCutOff: 0.0001, beta: 0.01, warmUp: 2 })!;
-    expect(f.filter(0, translated(0))[12]).toBe(0);
-    expect(f.filter(16, translated(100))[12]).toBe(100); // still warm-up
-    f.filter(32, translated(100));
-    const smoothed = f.filter(48, translated(200))[12];
-    expect(smoothed).toBeGreaterThan(100);
-    expect(smoothed).toBeLessThan(200);
+  it('maps Controller Settings onto a configure() patch', () => {
+    const base = { continuousDetection: true, detectionInterval: 300, logLevel: 2, near: 10, far: 10000 };
+    expect(settingsPatch(base)).toEqual(base);
+    expect(settingsPatch({ ...base, lostTimeout: 500, ar2: {} })).toEqual({ ...base, lostTimeout: 500 });
+    expect(settingsPatch({ ...base, ar2: { trackingThresh: 3 } })).toEqual({ ...base, ar2: { trackingThresh: 3 } });
+  });
+});
+
+describe('letterbox', () => {
+  it('fits a 4:3 video exactly into 320 × 240', () => {
+    expect(letterbox(640, 480)).toEqual({
+      frameWidth: 320, frameHeight: 240, videoWidth: 640, videoHeight: 480, x: 0, y: 0, width: 320, height: 240, rotated: false,
+    });
   });
 
-  it('One Euro reset() restarts the warm-up', () => {
-    const f = createPoseFilter({ kind: 'oneEuro', minCutOff: 0.0001, beta: 0.01, warmUp: 1 })!;
-    f.filter(0, translated(0));
-    f.filter(16, translated(0));
-    f.reset();
-    expect(f.filter(32, translated(500))[12]).toBe(500);
+  it('letterboxes other aspects into 4:3, with integer sizes and offsets for odd videos', () => {
+    for (const [vw, vh] of [[1280, 720], [641, 359], [1366, 768], [480, 640], [1001, 333]]) {
+      const g = letterbox(vw, vh);
+      for (const v of [g.frameWidth, g.frameHeight, g.width, g.height, g.x, g.y]) expect(Number.isInteger(v)).toBe(true);
+      expect(g.rotated).toBe(false);
+      expect(g.x + g.width).toBeLessThanOrEqual(g.frameWidth);
+      expect(g.y + g.height).toBeLessThanOrEqual(g.frameHeight);
+      expect(Math.max(g.frameWidth, (g.frameHeight / 3) * 4)).toBeLessThanOrEqual(321);
+      // Centred: the offset is half the margin, rounded down.
+      expect(g.x).toBe(Math.floor((g.frameWidth - g.width) / 2));
+      expect(g.y).toBe(Math.floor((g.frameHeight - g.height) / 2));
+    }
+  });
+
+  it('rounds an odd margin down to a whole-pixel offset', () => {
+    // 1366 × 768: 320 × 179 in a 320 × 240 frame, a margin of 61 rows.
+    expect(letterbox(1366, 768)).toMatchObject({ frameWidth: 320, frameHeight: 240, width: 320, height: 179, x: 0, y: 30 });
   });
 });
 
@@ -83,7 +102,7 @@ describe('jsartoolkitNFT.settings', () => {
     const params = { continuousDetection: true, detectionInterval: 300, logLevel: '2', near: 10, far: 10000 };
     const node = artkSettings(params, {} as RuntimeContext);
     const first = (node.init!({}) as { settings: unknown }).settings;
-    expect(first).toEqual({ continuousDetection: true, detectionInterval: 300, logLevel: 2, near: 10, far: 10000 });
+    expect(first).toEqual({ continuousDetection: true, detectionInterval: 300, logLevel: 2, near: 10, far: 10000, ar2: {} });
     params.near = 50;
     const second = (node.onParamChange!('near', 50) as { settings: unknown }).settings;
     expect(second).not.toBe(first);

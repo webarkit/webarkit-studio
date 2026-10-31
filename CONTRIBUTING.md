@@ -11,7 +11,7 @@ Thank you for your interest in contributing! These guidelines keep the project e
    ```
 2. **Create a branch** with a descriptive name, one per task or issue:
    ```bash
-   git checkout -b feat/gltf-node
+   git checkout -b feat/12-gltf-node   # <type>/<issue number>-<slug>
    ```
 3. **Develop and test** (see [Testing](#testing)).
 4. **Open the pull request against `dev`.** `master` is reserved for releases.
@@ -65,6 +65,10 @@ Examples:
 
 Mark breaking changes with `!` after the type/scope, or with a `BREAKING CHANGE:` footer.
 
+## Milestones and releases
+
+Each release has a GitHub milestone, and every planned issue is assigned to one. PRs target `dev` and reference their issue with `Closes #<n>`. Because the default branch is `master`, the issue stays open after the merge into `dev` and closes when the release reaches `master`. Before a release, every issue of the milestone is checked against [`docs/agents/checklists/milestone-audit.md`](docs/agents/checklists/milestone-audit.md). The milestone is closed only after the release is published.
+
 ## Changelog
 
 A pull request that changes what a user sees adds its own line under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md), in the same pull request. That covers a new node or param, a format change, or a fix someone could notice. Documentation, test and tooling changes add no line.
@@ -80,6 +84,10 @@ Search the [existing issues](https://github.com/webarkit/webarkit-studio/issues)
 
 - **Bugs:** include the steps to reproduce, the browser and device, the graph JSON if possible (Export → Graph JSON), and the log panel output.
 - **Feature requests:** explain what the feature is for and how it fits the node model.
+
+## AI coding agents
+
+[`AGENTS.md`](AGENTS.md) is the single source of instructions for AI coding tools. The other agent files only point to it: `CLAUDE.md`, `.github/copilot-instructions.md` and `.github/instructions/` (Copilot), `.gemini/settings.json` (Gemini CLI), `.claude/agents/` and `.claude/skills/` (Claude Code). The review checklists in `docs/agents/checklists/` are shared by all tools. When a rule, a command or a path changes, update `AGENTS.md` first, then the files that inline it (Copilot only). `npm run check:agents`, run in CI, fails when a pointer file stops linking to `AGENTS.md`, or when an agent file names a script or a path that does not exist.
 
 ## Code of Conduct
 

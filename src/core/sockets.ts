@@ -15,6 +15,7 @@ export const SOCKET_TYPES = {
   poseFilter: { label: 'Pose filter', color: '#4db6ac' },
   trackingResult: { label: 'Tracking result (markers)', color: '#66bb6a' },
   trackingStats: { label: 'Tracking stats', color: '#26c6da' },
+  trackingTrace: { label: 'Tracking trace', color: '#80deea' },
   pose: { label: 'Pose (4x4)', color: '#81c784' },
   markerInfo: { label: 'Marker info', color: '#aed581' },
   matrix4: { label: 'Matrix (4x4)', color: '#dce775' },
