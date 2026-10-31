@@ -32,10 +32,12 @@ To compare two builds (a jsartoolkit-nft bump, a branch), record the same comman
 
 Browser: in the studio, wire the controller's `trace` output to a **Trace Recorder** (`debug.trace`), turn *Recording* on, and turn it off (or let *Max frames* stop it) to download the JSONL. With the MCP servers of `.mcp.json`:
 
-- **Playwright MCP** opens the studio with the e2e fake camera (`.claude/mcp/playwright.json`). Generate the video first by running the e2e setup once (`npm run test:e2e`, or only its global setup), serve the build (`npm run build`, then `npx vite preview --port 4173`; check nothing else is on 4173), and drive the studio: load a demo, add the Trace Recorder, run, collect the download.
+- **Playwright MCP** opens the studio with the e2e fake camera (`.claude/mcp/playwright.json`). It ships its own Playwright, which needs its own Chromium revision: the e2e tests' Chromium is not enough. Install it once per `@playwright/mcp` version. For 0.0.83 (Playwright `1.64.0-alpha-1790635538000`, Chromium revision 1247), run `npx -y playwright@1.64.0-alpha-1790635538000 install chromium`, or call the server's `browser_install` tool. When the pin in `.mcp.json` changes, take the new version from `npm view @playwright/mcp@<version> dependencies`. Generate the video first by running the e2e setup once (`npm run test:e2e`, or only its global setup), serve the build (`npm run build`, then `npx vite preview --port 4173`; check nothing else is on 4173), and drive the studio: load a demo, add the Trace Recorder, run, collect the download.
 - **Chrome DevTools MCP** (`--isolated`) shows the console, including the worker's, the network (a 404 on `.zft` probes is expected; an HTML 200 is the hosting bug), and performance traces of the tracking loop.
 
 On native Windows, Claude Code may need the servers wrapped as `cmd /c npx …`: say so to the user rather than editing `.mcp.json`.
+
+If the project's `playwright` server fails (no browser, not approved), do not fall back to another Playwright server, such as a plugin's: it has no fake camera and no `--isolated`, so it tests the user's webcam, not this setup. Fix the project server instead, and save screenshots and downloads under `.traces/` or the scratchpad, never the repository root.
 
 ## 3. Diff
 
