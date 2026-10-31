@@ -56,7 +56,7 @@ CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, bu
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
   - The camera looks down −Z.
-- **Tracking logic lives in `ArtkSession`** (`src/runtime/trackers/`). It depends only on the controller's public API, so the worker and the Node tests share it. Keep the worker a thin relay.
+- **Tracking is the jsartoolkitNFT tracker facade** (`createNFTTracker`, #5). `NftSession` (`src/runtime/trackers/`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the worker and the Node tests share it. Keep the worker a thin relay, and do not reimplement in this repository what the facade does (found / lost, filters, lens, projection).
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 
 ## Adding a node

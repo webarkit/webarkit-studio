@@ -29,8 +29,8 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.30.0",
-    "@webarkit/jsartoolkit-nft": "^1.14.0",
-    "@webarkit/oneeurofilter-ts": "^0.2.0",
+    "@webarkit/camera-view": "^0.1.0",
+    "@webarkit/jsartoolkit-nft": "^1.15.0",
     "fflate": "^0.8.3",
     "lit": "^3.3.3",
     "rete": "^2.0.6",
@@ -47,8 +47,8 @@
     "tinybench": "^6.2.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vite": "^8.3.5",
+    "vitest": "5.0.5"
   },
   "type": "module"
 }

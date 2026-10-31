@@ -16,54 +16,76 @@ wins on conflict.
 
 ## 1. Where the logic lives
 
-- Tracking logic lives in `ArtkSession` (`src/runtime/trackers/artk-session.ts`).
-- `ArtkSession` depends only on `ArtkControllerLike`, the public API of the controller,
-  so the browser worker and the Node tests share it. No DOM, worker globals or
-  build-specific imports in `src/runtime/trackers/`.
+- The jsartoolkitNFT tracker facade (`createNFTTracker`, #5) does the tracking: poses,
+  found / lost, filters, the lens and its projection.
+- `NftSession` (`src/runtime/trackers/nft-session.ts`) only maps the graph onto the facade:
+  Controller Settings → `configure()`, the filter slot → `filter`, target ids → dataset
+  indices. It depends only on the facade's public API (type imports and an injected
+  `createNFTTracker`), so the browser worker and the Node tests share it. No DOM, worker
+  globals or build-specific imports in `src/runtime/trackers/`.
+- Reimplementing in this repository what the facade does (a lost timer, a pose filter, a
+  lens rebuild, a projection rescale) is **Blocking**: use the facade's setting or method.
 - The worker (`src/runtime/workers/jsartoolkit-nft.worker.ts`) only picks the build and
   relays messages (`src/runtime/workers/nft-protocol.ts`). Any state, filtering, event
-  logic or matrix maths added to the worker is **Blocking**: move it into `ArtkSession`.
+  logic or matrix maths added to the worker is **Blocking**: move it into `NftSession`.
 
 ## 2. Found / lost semantics
 
-These semantics match the facade proposed in webarkit/jsartoolkitNFT#720 (see #5):
+The facade's semantics, kept identical to the former ARControllerNFT ones (the golden run
+in `tests/integration/golden/` checks them):
 
-- found is the rising edge: the first tracked frame after the marker was not visible;
-- lost fires once, after the library's grace period (`lostNFTMarker`), not on the first missed frame;
-- the pose filter of a marker is reset when that marker is lost;
-- filters and found / lost state are per marker; markers never share a filter.
+- found is the facade's `found` transition: the first tracked frame, at the start or after a lost;
+- lost fires once, after `lostTimeout` (200 ms by default, Controller Settings), not on the
+  first missed frame;
+- `markers[].found` and `pose` are the raw per-frame tracking (`targets[]`), so within the
+  grace window a marker has `found: false` and no pose, but no lost yet;
+- `process()` gets an increasing clock (ms): it drives `lostTimeout` and the filters;
+- a One Euro filter is reset when its marker is lost; filters and found / lost state are per
+  marker, inside the facade.
 
 ## 3. Lens and projection
 
-- The lens is rebuilt with `recalculateCameraLens()` after load and whenever near / far change,
-  so `getCameraMatrix()` matches `getProjectionNearPlane()` / `getProjectionFarPlane()`.
+- The facade builds the lens at creation and rebuilds it on every `configure()` that
+  touches near / far; `NftSession` only reads `cameraMatrix` and reports a change.
 - Near / far are in marker units (mm).
-- The controller node letterboxes the video into the ~320 px 4:3 processing frame. The
-  projection is rescaled accordingly. A change to the processing size must change both.
+- The controller node letterboxes the video into the ~320 px 4:3 processing frame with
+  `letterbox()`, which calls `@webarkit/camera-view` (`getProcessGeometry` with `floor`,
+  then `toFrameGeometry`). Do not reimplement the rule in this repository.
+- Every size is an integer: the canvas, its `ImageData` and the tracker's `width` ×
+  `height` must be the same, or `process()` throws a `RangeError`.
+- The projection is `projectionFor()` with that `FrameGeometry`. A change to the processing
+  frame goes through `letterbox()`, never through a hand-written rescale.
 
 ## 4. Units and spaces
 
 - Marker space is in millimetres, with the marker on the XY plane and +Z up.
-- Matrices are column-major (16 numbers); poses come from `matrixGL_RH`.
+- Matrices are column-major (16 numbers); poses are the facade's `pose` (the same matrix as
+  `matrixGL_RH`).
 - The camera looks down −Z.
 
 ## 5. Live settings
 
-- Controller Settings are live: `ArtkSession.configure()` applies them without restarting the
-  controller, and returns the rebuilt camera matrix only when near / far changed.
+- Controller Settings are live: `NftSession.configure()` applies them with the facade's
+  `configure()` without restarting the tracker, and resolves to true only when the lens
+  changed (near / far).
+- New settings the facade offers are added as optional params with defaults equal to the
+  facade's, so graphs without them keep their behaviour.
 
-## 6. Readiness for the facade (#5)
+## 6. The facade's API
 
-- New tracking code keeps the shape of the proposed facade: settings applied through one
-  `configure(settings)`, one `process(frame)` returning a per-frame result (poses, found / lost
-  events, timing). Replacing `ArtkSession` with `createNFTTrackerWorker` should stay a swap.
-- Tests assert on that per-frame result, not on controller internals, so they can run
-  unchanged against the facade.
-- Do not state the facade's API from memory: check webarkit/jsartoolkitNFT#720 (`gh`).
+- Do not state the facade's API from memory: read the installed package
+  (`node_modules/@webarkit/jsartoolkit-nft/types/src/tracker/`, README "Tracker facade"),
+  and webarkit/jsartoolkitNFT#720 (`gh`) for what is still open.
+- Tests assert on the per-frame result (poses, found / lost events, timing), not on
+  facade internals.
 
 ## 7. Tests
 
 - Integration tests on the Node build (`tests/integration/`) cover the change.
+- The golden run (`tests/integration/golden.test.ts`) still passes: found flags and
+  transitions exactly; poses within the recorded range plus a margin, near the recorded
+  mean and near each recorded frame. Do not re-record it to make a change pass; explain
+  any drift instead.
 - They read assets with paths relative to the repository root: run them from the root,
   after `npm run assets`.
 - An e2e check (`tests/e2e/`) covers changes visible in the preview: pose, found / lost, logs.
