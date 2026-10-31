@@ -18,6 +18,7 @@ import type {
   TargetLoad,
 } from '@webarkit/jsartoolkit-nft';
 import type { PoseFilterConfig } from '../filters/pose-filter';
+import { traceFrame, traceHeader, type TraceFrame, type TraceHeader, type TraceSource } from './trace';
 
 /** createNFTTracker of one build (browser, SIMD or Node). */
 export type NftTrackerFactory = (config: NFTTrackerConfig) => Promise<NFTTracker>;
@@ -65,6 +66,8 @@ export interface NftFrameResult {
   events: Array<{ name: 'found' | 'lost'; index: number }>;
   /** Duration of process(), milliseconds. */
   processMs: number;
+  /** The facade's FrameResult as a trace record (src/runtime/trackers/trace.ts). */
+  frame: TraceFrame;
 }
 
 /** The filter slot as the facade's `filter`: no filter node means no filtering. */
@@ -99,6 +102,8 @@ export class NftSession {
     /** Facade target id → dataset index. */
     private readonly indexOf: Map<number, number>,
     readonly markers: NftMarkerData[],
+    /** What the session was created with; `settings` follows configure(). */
+    private readonly options: NftSessionOptions,
   ) {}
 
   /** Rejects if any dataset fails to load, with one line per failed dataset. */
@@ -125,7 +130,7 @@ export class NftSession {
         indexOf.set(id, index);
         return { id, width: widthPx, height: heightPx, dpi, widthMM: widthMm, heightMM: heightMm };
       });
-      return new NftSession(tracker, options.geometry, indexOf, markers);
+      return new NftSession(tracker, options.geometry, indexOf, markers, { ...options });
     } catch (err) {
       tracker.dispose();
       throw err;
@@ -147,6 +152,7 @@ export class NftSession {
   async configure(settings: NftSettings): Promise<boolean> {
     const before = this.tracker.cameraMatrix;
     await this.tracker.configure(settingsPatch(settings));
+    this.options.settings = settings;
     const after = this.tracker.cameraMatrix;
     return after.some((v, i) => v !== before[i]);
   }
@@ -164,7 +170,19 @@ export class NftSession {
       const index = this.indexOf.get(id);
       if (index !== undefined) events.push({ name: type, index });
     }
-    return { poses, events, processMs: result.processMs };
+    return { poses, events, processMs: result.processMs, frame: traceFrame(result) };
+  }
+
+  /** The header of a trace of this session, with the current settings. */
+  traceHeader(source: TraceSource): TraceHeader {
+    const { geometry, settings, filter, datasetUrls } = this.options;
+    return traceHeader({
+      frame: { width: geometry.frameWidth, height: geometry.frameHeight },
+      settings,
+      filter,
+      targets: this.markers.map((m, i) => ({ id: m.id, url: datasetUrls[i] })),
+      source,
+    });
   }
 
   dispose() {
