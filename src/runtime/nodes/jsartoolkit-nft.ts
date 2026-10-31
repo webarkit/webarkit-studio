@@ -21,8 +21,10 @@ import type {
   TrackedMarkerValue,
   TrackingResultValue,
   TrackingStatsValue,
+  TrackingTraceValue,
   VideoValue,
 } from '../types';
+import type { TraceRecord } from '../trackers/trace';
 import type { WorkerRequest, WorkerResponse } from '../workers/nft-protocol';
 import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
@@ -117,6 +119,9 @@ export const artkController: NodeFactory = (params, ctx) => {
   let stats: TrackingStatsValue = { trackingFps: 0, processMs: 0, latencyMs: 0, frames: 0 };
   let fpsWindowStart = 0;
   let fpsWindowFrames = 0;
+  // Trace records since the last graph frame (see TrackingTraceValue).
+  let trace: TrackingTraceValue | null = null;
+  let pendingRecords: TraceRecord[] = [];
 
   const canvas = document.createElement('canvas');
   const g2d = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -142,6 +147,7 @@ export const artkController: NodeFactory = (params, ctx) => {
       }
     }
     markers = next;
+    pendingRecords.push(msg.frame);
 
     const t = performance.now();
     fpsWindowFrames++;
@@ -162,7 +168,13 @@ export const artkController: NodeFactory = (params, ctx) => {
     projection = msg.projection;
   }
 
-  const frameOutputs = () => ({ markers, onFound, onLost, stats, projection, cameraMatrix });
+  const frameOutputs = () => {
+    if (trace && pendingRecords.length) {
+      trace = { header: trace.header, records: pendingRecords };
+      pendingRecords = [];
+    }
+    return { markers, onFound, onLost, stats, projection, cameraMatrix, trace };
+  };
 
   return {
     async init(inputs) {
@@ -210,6 +222,7 @@ export const artkController: NodeFactory = (params, ctx) => {
 
       const msg = await ready;
       setLens(msg);
+      trace = { header: msg.header, records: [] };
 
       infos = msg.markers.map((m, i) => ({ ...m, name: datasets[i].name }));
       markers = infos.map((info, index) => ({
@@ -233,6 +246,8 @@ export const artkController: NodeFactory = (params, ctx) => {
       if (settings && settings !== appliedSettings) {
         appliedSettings = settings;
         request({ type: 'configure', settings });
+        // Same clock as the frames' `time`: frames sent from now on use the new settings.
+        pendingRecords.push({ type: 'settings', time: performance.now(), settings });
       }
 
       if (!busy) {

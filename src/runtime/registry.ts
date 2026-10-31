@@ -9,7 +9,7 @@ import { jsartoolkitNativeFilter, oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
-import { inspector, statsNode } from './nodes/debug';
+import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
 export const NODE_REGISTRY: Record<string, NodeFactory> = {
@@ -31,4 +31,5 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'output.arView': arView,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
+  'debug.trace': traceNode,
 };

@@ -152,6 +152,7 @@ const defs: NodeDefinition[] = [
       projection: { type: 'projection', label: 'Projection' },
       cameraMatrix: { type: 'matrix4', label: 'Camera matrix (raw)' },
       stats: { type: 'trackingStats', label: 'Stats' },
+      trace: { type: 'trackingTrace', label: 'Trace' },
     },
     params: {
       build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default' } },
@@ -330,6 +331,22 @@ const defs: NodeDefinition[] = [
     inputs: { value: { type: 'any', label: 'Value' } },
     outputs: {},
     params: {},
+  },
+  {
+    type: 'debug.trace',
+    label: 'Trace Recorder',
+    category: 'debug',
+    provider: 'core',
+    description:
+      "Records the tracker's frame-by-frame results (poses, found / lost, timing) while Recording is on, and downloads them as a " +
+      'JSONL trace when it is turned off, when Max frames is reached or when the preview stops. Compare two traces with npm run trace:diff.',
+    inputs: { trace: { type: 'trackingTrace', label: 'Trace' } },
+    outputs: {},
+    params: {
+      recording: { kind: 'boolean', label: 'Recording', default: false, live: true },
+      maxFrames: { kind: 'number', label: 'Max frames', default: 1800, min: 1, max: 100000, step: 1 },
+      filename: { kind: 'string', label: 'File name', default: 'tracking-trace' },
+    },
   },
 ];
 
