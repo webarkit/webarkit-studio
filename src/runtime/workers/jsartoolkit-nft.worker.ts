@@ -27,7 +27,13 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   try {
     if (msg.type === 'load') {
       session = await NftSession.create(await loadFactory(msg.build), msg);
-      reply({ type: 'ready', cameraMatrix: session.cameraMatrix, projection: session.projection, markers: session.markers });
+      reply({
+        type: 'ready',
+        cameraMatrix: session.cameraMatrix,
+        projection: session.projection,
+        markers: session.markers,
+        header: session.traceHeader({ kind: 'camera' }),
+      });
     } else if (msg.type === 'configure' && session) {
       if (await session.configure(msg.settings)) {
         const { near, far } = msg.settings;

@@ -21,8 +21,10 @@ import type {
   TrackedMarkerValue,
   TrackingResultValue,
   TrackingStatsValue,
+  TrackingTraceValue,
   VideoValue,
 } from '../types';
+import type { TraceRecord } from '../trackers/trace';
 import type { WorkerRequest, WorkerResponse } from '../workers/nft-protocol';
 import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
@@ -117,6 +119,11 @@ export const artkController: NodeFactory = (params, ctx) => {
   let stats: TrackingStatsValue = { trackingFps: 0, processMs: 0, latencyMs: 0, frames: 0 };
   let fpsWindowStart = 0;
   let fpsWindowFrames = 0;
+  // Trace records since the last graph frame (see TrackingTraceValue).
+  let trace: TrackingTraceValue | null = null;
+  let pendingRecords: TraceRecord[] = [];
+  // A live settings change made while a frame was in flight: recorded after that frame's result, which used the old settings.
+  let heldSettings: TraceRecord | null = null;
 
   const canvas = document.createElement('canvas');
   const g2d = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -142,6 +149,11 @@ export const artkController: NodeFactory = (params, ctx) => {
       }
     }
     markers = next;
+    pendingRecords.push(msg.frame);
+    if (heldSettings) {
+      pendingRecords.push(heldSettings);
+      heldSettings = null;
+    }
 
     const t = performance.now();
     fpsWindowFrames++;
@@ -162,7 +174,13 @@ export const artkController: NodeFactory = (params, ctx) => {
     projection = msg.projection;
   }
 
-  const frameOutputs = () => ({ markers, onFound, onLost, stats, projection, cameraMatrix });
+  const frameOutputs = () => {
+    if (trace && pendingRecords.length) {
+      trace = { header: trace.header, records: pendingRecords };
+      pendingRecords = [];
+    }
+    return { markers, onFound, onLost, stats, projection, cameraMatrix, trace };
+  };
 
   return {
     async init(inputs) {
@@ -210,6 +228,7 @@ export const artkController: NodeFactory = (params, ctx) => {
 
       const msg = await ready;
       setLens(msg);
+      trace = { header: msg.header, records: [] };
 
       infos = msg.markers.map((m, i) => ({ ...m, name: datasets[i].name }));
       markers = infos.map((info, index) => ({
@@ -233,6 +252,12 @@ export const artkController: NodeFactory = (params, ctx) => {
       if (settings && settings !== appliedSettings) {
         appliedSettings = settings;
         request({ type: 'configure', settings });
+        // Same clock as the frames' `time`. The worker handles messages in order, so the next
+        // frame sent is processed after this configure (unless configure() itself awaits, as a
+        // `{ module }` filter can; the graph's filters do not).
+        const record: TraceRecord = { type: 'settings', time: performance.now(), settings };
+        if (busy) heldSettings = record;
+        else pendingRecords.push(record);
       }
 
       if (!busy) {

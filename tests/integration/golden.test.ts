@@ -11,12 +11,11 @@ import { NftSession } from '../../src/runtime/trackers/nft-session';
 import { letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
 import { CAMERA, KUVA, nodeTrackerFactory, PINBALL } from '../helpers/nft-node';
 import { blank, FIXTURE_PHOTO, loadJpeg, resize, type RgbaFrame } from '../helpers/frames';
-import { readGolden, runGolden, START_MS, type GoldenFrame } from '../helpers/golden';
+import { GOLDEN_SETTINGS, readGolden, runGolden, START_MS, type GoldenFrame } from '../helpers/golden';
 
 const W = 320;
 const H = 240;
 const haveAssets = existsSync(FIXTURE_PHOTO) && existsSync(`${PINBALL}.iset`) && existsSync(`${KUVA}.iset`);
-const settings = { continuousDetection: true, detectionInterval: 0, logLevel: 3, near: 10, far: 10000 };
 
 let clock = START_MS;
 beforeAll(() => {
@@ -31,7 +30,7 @@ describe.skipIf(!haveAssets)('golden tracking run', () => {
     const frames: { photo: RgbaFrame; blank: RgbaFrame } = { photo: resize(loadJpeg(FIXTURE_PHOTO), W, H), blank: blank(W, H) };
     // No filter node: no filtering, as ARControllerNFT with setFiltering(false).
     const s = await NftSession.create(nodeTrackerFactory, {
-      cameraUrl: CAMERA, datasetUrls: [PINBALL, KUVA], filter: null, settings, geometry: letterbox(W, H),
+      cameraUrl: CAMERA, datasetUrls: [PINBALL, KUVA], filter: null, settings: GOLDEN_SETTINGS, geometry: letterbox(W, H),
     });
     const run = await runGolden(
       frames,

@@ -1,7 +1,10 @@
 // Checks that the agent instruction files stay in sync with AGENTS.md and the repository:
 //  - every pointer file links to AGENTS.md (and Gemini's context file is AGENTS.md);
 //  - every `npm run <script>` they name exists in package.json;
-//  - every repository path they name (in backticks, links or Copilot `applyTo` globs) exists.
+//  - every repository path they name (in backticks, links or Copilot `applyTo` globs) exists;
+//  - .mcp.json declares the Playwright and Chrome DevTools MCP servers, each package pinned to
+//    an exact version, Chrome DevTools started with --isolated and without usage statistics, and
+//    every --config file exists.
 // Run from the repository root: npm run check:agents
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
@@ -86,9 +89,43 @@ if (!existsSync(gemini)) {
   if (!names.includes(CANONICAL)) problems.push(`${gemini}: context.fileName does not include ${CANONICAL}`);
 }
 
+/** Package of an npx-launched MCP server: the first argument that is not a flag. */
+const MCP_PACKAGES = { playwright: '@playwright/mcp', 'chrome-devtools': 'chrome-devtools-mcp' };
+const mcp = '.mcp.json';
+if (!existsSync(mcp)) {
+  problems.push(`${mcp}: missing`);
+} else {
+  let servers = {};
+  try {
+    servers = JSON.parse(readFileSync(mcp, 'utf8')).mcpServers ?? {};
+  } catch (err) {
+    problems.push(`${mcp}: not valid JSON (${err.message})`);
+  }
+  for (const [name, pkg] of Object.entries(MCP_PACKAGES)) {
+    const server = servers[name];
+    if (!server) {
+      problems.push(`${mcp}: no "${name}" server`);
+      continue;
+    }
+    const args = Array.isArray(server.args) ? server.args : [];
+    const spec = args.find((a) => !a.startsWith('-'));
+    if (server.command !== 'npx' || !spec?.startsWith(`${pkg}@`)) {
+      problems.push(`${mcp}: "${name}" must run ${pkg} with npx`);
+    } else if (!/^\d+\.\d+\.\d+$/.test(spec.slice(pkg.length + 1))) {
+      problems.push(`${mcp}: "${name}" must pin ${pkg} to an exact version (found "${spec}")`);
+    }
+    const config = args.indexOf('--config');
+    if (config !== -1) checkPath(mcp, args[config + 1] ?? '');
+  }
+  const devtools = servers['chrome-devtools']?.args ?? [];
+  for (const flag of ['--isolated', '--usageStatistics=false']) {
+    if (!devtools.includes(flag)) problems.push(`${mcp}: "chrome-devtools" must be started with ${flag}`);
+  }
+}
+
 if (problems.length) {
   console.error(`Agent docs out of sync (${problems.length}):`);
   for (const p of problems) console.error(`  ✗ ${p}`);
   process.exit(1);
 }
-console.log(`✓ agent docs: ${pointerFiles().length + 2} files in sync with ${CANONICAL}`);
+console.log(`✓ agent docs: ${pointerFiles().length + 2} files in sync with ${CANONICAL}, ${mcp} pinned`);
