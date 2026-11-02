@@ -134,7 +134,9 @@ datasets). Only the chunks the graph uses are included: a Three.js graph
 leaves out Babylon.js, a SIMD controller leaves out the standard build
 (manifest written by `vite.player.config.ts`). Asset URLs inside the studio
 keep their path; others are copied under `data/_ext/` and the graph is
-rewritten. Uploaded assets are copied under `data/assets/<id>/`.
+rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
+models must be `.glb` or self-contained `.gltf` files: the export refuses a
+`.gltf` that loads separate buffers or images.
 
 ## Assets
 
@@ -152,7 +154,9 @@ runs, uploads are served as `blob:` URLs; an uploaded NFT dataset is served to
 the tracker worker under a virtual `https://assets.webarkit.invalid/` prefix,
 which also appears in its tracking traces.
 
-glTF Model (`scene.gltf`) plays no animations. Compressed models (Draco,
+glTF Model (`scene.gltf`) stands models up on the marker with their front
+(glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
+*Rotate Z*. It plays no animations. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 

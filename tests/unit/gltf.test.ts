@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { cubeGlb } from '../helpers/cube-glb';
-import { gltf, isGlb } from '../../src/runtime/nodes/scene';
+import { GLTF_TRANSFORM_PARAMS, gltf, isGlb } from '../../src/runtime/nodes/scene';
+import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { transformMatrix, Y_UP_TO_Z_UP, type ModelSpec, type SceneHandle, type SceneObject } from '../../src/runtime/renderers/adapter';
 import type { RuntimeContext } from '../../src/runtime/types';
 
@@ -98,6 +99,18 @@ describe('scene.gltf', () => {
     p.z = 25;
     node.onParamChange!('z', 25);
     expect(calls.at(-1)).toEqual(['setMatrix', Array.from(transformMatrix({ position: [0, 0, 25], rotation: [0, 0, 0], scale: 100 }))]);
+  });
+
+  it('applies every live catalog param of scene.gltf, and nothing else, as a transform', () => {
+    const live = Object.entries(NODE_CATALOG['scene.gltf'].params).filter(([, s]) => s.live).map(([k]) => k);
+    expect([...GLTF_TRANSFORM_PARAMS].sort()).toEqual(live.sort());
+  });
+
+  it('never builds a singular matrix from a zero or negative scale (hand-edited graphs)', async () => {
+    vi.stubGlobal('fetch', async () => new Response(cubeGlb() as BodyInit));
+    const { scene, calls } = fakeScene();
+    await gltf({ ...params, scale: 0 }, ctx).init!({ scene });
+    expect((calls[1][1] as number[])[0]).toBeGreaterThan(0);
   });
 
   it('fails with the URL and the HTTP status when the model cannot be fetched', async () => {

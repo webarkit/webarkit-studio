@@ -308,7 +308,8 @@ const defs: NodeDefinition[] = [
     category: 'scene',
     provider: 'core',
     description:
-      'A glTF 2.0 model (.glb, or a .gltf with embedded or URL resources; an uploaded .gltf must be self-contained). ' +
+      'A glTF 2.0 model: a .glb, or a .gltf with embedded resources (a .gltf loading other files works from a URL in the studio, ' +
+      'but uploads and exported apps need it self-contained). Its front (glTF +Z) faces the marker bottom edge. ' +
       'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm).',
     inputs: { scene: { type: 'scene', label: 'Scene' } },
     outputs: { object: { type: 'sceneObject', label: 'Model' } },

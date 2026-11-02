@@ -118,6 +118,24 @@ const safeName = (name: string) => {
 };
 
 /**
+ * Only the model file is bundled: a JSON .gltf that loads buffers or images
+ * from other files would arrive without them. GLB files are always accepted.
+ */
+function checkSelfContained(data: Uint8Array, where: string): void {
+  if (data[0] === 0x67 && data[1] === 0x6c && data[2] === 0x54 && data[3] === 0x46) return; // "glTF": GLB
+  let gltf: { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  try {
+    gltf = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return; // not glTF JSON: the loader will say so
+  }
+  const external = [...(gltf.buffers ?? []), ...(gltf.images ?? [])].map((r) => r.uri).filter((uri): uri is string => !!uri && !uri.startsWith('data:'));
+  if (external.length) {
+    throw new ExportError(`${where}: the model loads ${external.join(', ')}; export needs a self-contained .gltf (embedded data) or a .glb`);
+  }
+}
+
+/**
  * Collects the files the graph's asset params need, as bundle path → bytes,
  * and rewrites the params that point elsewhere (uploads, other origins).
  * Uploaded assets go under data/assets/<id>/. `doc` is modified.
@@ -141,6 +159,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
           for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
         } else {
           files[path] = await bytes(asset.files['']);
+          if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
         node.params[key] = path;
         ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
@@ -162,6 +181,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
         }
       } else {
         files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
+        if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
       if (rewritten) node.params[key] = path;
       ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);

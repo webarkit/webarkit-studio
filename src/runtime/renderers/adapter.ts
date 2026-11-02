@@ -61,7 +61,11 @@ export function transformMatrix({ position: [x, y, z], rotation, scale: s }: Tra
   ];
 }
 
-/** glTF is Y-up; marker space is Z-up: a quarter turn about X stands models up on the marker. */
+/**
+ * glTF is Y-up; marker space is Z-up: a quarter turn about X stands models up
+ * on the marker. A model's front (glTF +Z) then faces marker -Y, the marker's
+ * bottom edge.
+ */
 export const Y_UP_TO_Z_UP: readonly number[] = transformMatrix({ position: [0, 0, 0], rotation: [90, 0, 0], scale: 1 });
 
 export interface SceneOptions {

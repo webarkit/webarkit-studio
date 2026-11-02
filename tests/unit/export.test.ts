@@ -154,6 +154,14 @@ describe('collectAssets', () => {
     expect(Object.keys(files)).toEqual(['data/assets/x/_']);
   });
 
+  it('refuses a .gltf whose buffers or images are separate files, which the bundle would leave behind', async () => {
+    const gltf = (uri: string) => JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri, byteLength: 4 }] });
+    const model = (body: string): ExportContext => ({ ...ctx, assets: { get: () => ({ id: 'm', name: 'm.gltf', kind: 'model', files: { '': new Blob([body]) } }), list: () => [] } });
+    const graph = () => doc([['scene.gltf', { url: assetRef('m', 'm.gltf') }]]);
+    await expect(collectAssets(graph(), base, model(gltf('m.bin')))).rejects.toThrow(/n0.url: .*m.bin.*self-contained/);
+    expect(Object.keys(await collectAssets(graph(), base, model(gltf('data:application/octet-stream;base64,AAAAAA=='))))).toEqual(['data/assets/m/m.gltf']);
+  });
+
   it('still fetches URL assets', async () => {
     vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
     const g = graphOf('data/camera_para.dat', assetRef('d1', 'pinball'));
