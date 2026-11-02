@@ -7,6 +7,9 @@ import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, validateGraph, type GraphDocument } from '../core/graph';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
+import { isProjectFile, unpackProject } from '../export/project';
+import { openAssetStore } from '../assets/asset-store';
+import { mountAssetsPanel } from './assets-panel';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -18,6 +21,9 @@ const log = (msg: string) => {
   logEl.textContent += `${msg}\n`;
   logEl.scrollTop = logEl.scrollHeight;
 };
+
+const assetStore = await openAssetStore(log);
+mountAssetsPanel($('assets-panel'), assetStore, log);
 
 const studio = await createStudioEditor($('editor'), {
   onChange() {
@@ -88,7 +94,7 @@ for (const exporter of EXPORTERS) {
     exportMenu.open = false;
     log(`⇩ export: ${exporter.label}`);
     try {
-      const { filename, blob } = await exporter.run(studio.toDocument(), { baseUrl: document.baseURI, log });
+      const { filename, blob } = await exporter.run(studio.toDocument(), { baseUrl: document.baseURI, log, assets: assetStore });
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
@@ -105,8 +111,22 @@ const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {
   const file = fileInput.files?.[0];
-  if (file) await load(JSON.parse(await file.text()));
   fileInput.value = '';
+  if (!file) return;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (isProjectFile(bytes)) {
+      // A project brings its assets: they replace the current ones.
+      const project = await unpackProject(bytes);
+      await assetStore.replaceAll(project.assets);
+      log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+      await load(project.graph);
+    } else {
+      await load(JSON.parse(new TextDecoder().decode(bytes)));
+    }
+  } catch (err) {
+    log(`✗ import failed: ${(err as Error).message}`);
+  }
 };
 $('btn-player').onclick = () => {
   try {
@@ -152,6 +172,7 @@ async function run(reason = 'run') {
       log,
       onReport: (nodeId, text) => studio.setNodeStatus(nodeId, { text }),
       studio: true,
+      assets: (assetId) => assetStore.get(assetId),
     });
     await runtime.start();
     if (id !== runId) return; // superseded while starting

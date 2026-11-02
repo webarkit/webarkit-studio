@@ -119,6 +119,19 @@ export function memoryBackend(): AssetBackend {
   };
 }
 
+/**
+ * The browser's project store (IndexedDB, shared by the studio and the player
+ * it opens). Without IndexedDB (some private modes) assets last until reload.
+ */
+export async function openAssetStore(log: (msg: string) => void = console.warn): Promise<AssetStore> {
+  try {
+    return await AssetStore.open(indexedDbBackend());
+  } catch (err) {
+    log(`⚠ uploaded assets cannot be saved in this browser (${(err as Error).message}): they last until reload`);
+    return AssetStore.open(memoryBackend());
+  }
+}
+
 const STORE = 'assets';
 
 /** IndexedDB backend: Blobs are stored as they are. */
