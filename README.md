@@ -40,6 +40,7 @@ Editing:
 - **Copy / paste / duplicate:** Ctrl+C / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
   or Duplicate in a node's right-click menu. Wires between the copied nodes are kept.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
+- **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 
 ## Multi NFT
 
@@ -420,7 +421,7 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [x] jsartoolkit-nft 1.15.0: the tracker facade (`createNFTTracker`) replaces the hand-written tracking code (#5)
 
 **Phase 2 — Authoring**
-- [ ] Inspector panel for complex params
+- [x] Inspector panel for complex params (`vector3`, `matrix4` param kinds)
 - [x] Undo / redo (`rete-history-plugin`), including param edits
 - [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
 - [ ] Asset manager: upload images and datasets, glTF models

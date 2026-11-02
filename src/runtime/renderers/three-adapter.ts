@@ -130,7 +130,8 @@ function createThreeScene(
     setMatrix(o, m) {
       const n = obj(o);
       n.matrix.fromArray(Array.from(m));
-      // An object that rebuilds its matrix each frame (a mesh) keeps it through its position / rotation / scale.
+      // An object that rebuilds its matrix each frame (a mesh) keeps it through its position / rotation / scale
+      // (a TRS matrix: shear would be lost, so a raw matrix4 for a mesh needs matrixAutoUpdate = false instead).
       if (n.matrixAutoUpdate) n.matrix.decompose(n.position, n.quaternion, n.scale);
     },
     setVisible: (o, v) => void (obj(o).visible = v),

@@ -320,19 +320,53 @@ test.describe('editor', () => {
     await expect(inspector).toContainText('Select a node');
   });
 
-  test('a vector param (Primitive position) edited in the Inspector applies live', async ({ page }) => {
+  for (const demo of ['pinball-three', 'pinball-babylon']) {
+    test(`${demo}: a vector param (Primitive position) edited in the Inspector applies live`, async ({ page }) => {
+      await loadDemo(page, demo);
+      await run(page);
+      await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
+      const z = page.locator('#inspector .param:has-text("Position") input[aria-label="Position z"]');
+      await z.fill('30');
+      await z.dispatchEvent('change');
+      await expect(page.locator('.studio-node:has(.title span:text-is("Primitive")) input[aria-label="Position z"]')).toHaveValue('30');
+      const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave')!));
+      expect(doc.nodes.find((n: { type: string }) => n.type === 'scene.primitive').params.position).toEqual([0, 0, 30]);
+      // Live: no restart asked, the graph was initialised once.
+      await expect(page.locator('#log')).not.toContainText('press Reload');
+      expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
+    });
+  }
+
+  test('a value typed in the Inspector goes to its node when another node is clicked', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
-    await run(page);
+    const primitives = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
+    await primitives.first().locator('.title').click({ button: 'right' });
+    await page.locator('.context-menu .item', { hasText: 'Duplicate' }).click();
+    await expect(primitives).toHaveCount(2);
+    // Clicking a node brings it to the front (reorders the DOM): pin both by their area element.
+    await primitives.evaluateAll((els) => els.forEach((el, i) => (el.parentElement!.dataset.pin = String(i))));
+    const [a, b] = [page.locator('[data-pin="0"] .studio-node'), page.locator('[data-pin="1"] .studio-node')];
+    await a.locator('.title').click();
+    const x = page.locator('#inspector input[aria-label="Position x"]');
+    await x.click();
+    await x.press('Control+a');
+    await page.keyboard.type('50'); // not committed yet: no Enter, no blur
+    // The duplicate sits 40 px below and right of the original: click its uncovered bottom-right corner.
+    const box = (await b.boundingBox())!;
+    await page.mouse.click(box.x + box.width - 8, box.y + box.height - 8);
+    await expect(a.locator('input[aria-label="Position x"]')).toHaveValue('50');
+    await expect(b.locator('input[aria-label="Position x"]')).toHaveValue('0');
+    await expect(x).toHaveValue('0'); // the Inspector now shows b
+  });
+
+  test('after a paste the Inspector shows a pasted node', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    await page.locator('.studio-node:has(.title span:text-is("Scene")) .title').click();
+    await page.keyboard.press('Control+c');
     await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
-    const z = page.locator('#inspector .param:has-text("Position") input[aria-label="Position z"]');
-    await z.fill('30');
-    await z.dispatchEvent('change');
-    await expect(page.locator('.studio-node:has(.title span:text-is("Primitive")) input[aria-label="Position z"]')).toHaveValue('30');
-    const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave')!));
-    expect(doc.nodes.find((n: { type: string }) => n.type === 'scene.primitive').params.position).toEqual([0, 0, 30]);
-    // Live: no restart asked, the graph was initialised once.
-    await expect(page.locator('#log')).not.toContainText('press Reload');
-    expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
+    await expect(page.locator('#inspector h2')).toHaveText('Primitive');
+    await page.keyboard.press('Control+v');
+    await expect(page.locator('#inspector h2')).toHaveText('Scene');
   });
 
   test('the palette filter hides nodes that do not match', async ({ page }) => {

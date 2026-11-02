@@ -4,7 +4,7 @@
  * the wires between them, positioned relative to the selection's top-left
  * corner. Pasting gives every node and wire a new id.
  */
-import type { GraphEdge, GraphNode, GraphDocument } from '../core/graph';
+import { ARRAY_PARAM_LENGTH, type GraphEdge, type GraphNode, type GraphDocument } from '../core/graph';
 
 export const CLIPBOARD_FORMAT = 'webarkit-studio/clipboard';
 export const CLIPBOARD_VERSION = 1;
@@ -65,7 +65,7 @@ const isParamValue = (v: unknown) =>
   typeof v === 'string' ||
   typeof v === 'boolean' ||
   (typeof v === 'number' && Number.isFinite(v)) ||
-  (Array.isArray(v) && v.length <= 16 && v.every(Number.isFinite)); // vector3 / matrix4
+  (Array.isArray(v) && Object.values(ARRAY_PARAM_LENGTH).includes(v.length as 3 | 16) && v.every(Number.isFinite)); // vector3 / matrix4
 const isPosition = (v: unknown) => v === undefined || (isObject(v) && Number.isFinite(v.x) && Number.isFinite(v.y));
 const isNode = (v: unknown) =>
   isObject(v) &&

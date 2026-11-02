@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeParamEdit, ParamEditAction } from '../../src/editor/history';
+import { mergeParamEdit, ParamEditAction, sameParamValue } from '../../src/editor/history';
 import type { ParamValue } from '../../src/core/graph';
 
 /** A param store standing in for the editor: records every value applied to it. */
@@ -45,5 +45,16 @@ describe('param edit history', () => {
     expect(mergeParamEdit(first, new ParamEditAction('box', 'size', 90, 100, 1500, s.apply), 200)).toBe(false);
     expect(mergeParamEdit(undefined, first, 200)).toBe(false);
     expect(first.after).toBe(90);
+  });
+});
+
+describe('sameParamValue', () => {
+  it('compares plain values and arrays (vector3, matrix4) element by element', () => {
+    expect(sameParamValue(80, 80)).toBe(true);
+    expect(sameParamValue('a', 'b')).toBe(false);
+    expect(sameParamValue([0, 0, 1], [0, 0, 1])).toBe(true);
+    expect(sameParamValue([0, 0, 1], [0, 0, 2])).toBe(false);
+    expect(sameParamValue([0, 0], [0, 0, 0])).toBe(false);
+    expect(sameParamValue([1], 1)).toBe(false);
   });
 });

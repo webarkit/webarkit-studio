@@ -26,11 +26,13 @@ export function parseNumber(text: string, previous: number): number {
 /** Where the control is drawn: in a node (compact) or in the Inspector (full size). */
 export type ControlPlace = 'node' | 'inspector';
 
-const numberField = (value: number, set: (v: number) => void, attrs: { step?: number | string; label: string }) =>
-  html`<input type="number" .value=${String(value)} step=${attrs.step ?? 'any'} aria-label=${attrs.label}
+const numberField = (value: number, set: (v: number) => void, attrs: { step?: number | string; min?: number; max?: number; label?: string }) =>
+  html`<input type="number" .value=${String(value)} step=${attrs.step ?? 'any'} min=${attrs.min ?? nothing} max=${attrs.max ?? nothing}
+    aria-label=${attrs.label ?? nothing}
     @change=${(e: Event) => {
       const input = e.target as HTMLInputElement;
-      const next = parseNumber(input.value, value);
+      // Empty or invalid text keeps the value; out of range is clamped.
+      const next = Math.min(attrs.max ?? Infinity, Math.max(attrs.min ?? -Infinity, parseNumber(input.value, value)));
       input.value = String(next);
       if (next !== value) set(next);
     }} />`;
@@ -40,8 +42,7 @@ export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamV
     case 'boolean':
       return html`<input type="checkbox" .checked=${Boolean(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />`;
     case 'number':
-      return html`<input type="number" .value=${String(value)} min=${spec.min ?? ''} max=${spec.max ?? ''} step=${spec.step ?? 'any'}
-        @change=${(e: Event) => set(Number((e.target as HTMLInputElement).value))} />`;
+      return numberField(Number(value), set, { step: spec.step, min: spec.min, max: spec.max });
     case 'select':
       // .selected (property): the attribute is ignored once the user picked an option.
       return html`<select @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
@@ -50,7 +51,7 @@ export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamV
     case 'color':
       return html`<input type="color" .value=${String(value)} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
     case 'vector3': {
-      const v = Array.isArray(value) ? value : spec.default;
+      const v = Array.isArray(value) && value.length === 3 ? value : spec.default;
       return html`<span class="vector" title=${spec.unit ? `x, y, z (${spec.unit})` : 'x, y, z'}>
         ${['x', 'y', 'z'].map((axis, i) => numberField(v[i], (n) => set(withComponent(v, i, n)), { step: spec.step, label: `${spec.label} ${axis}` }))}
       </span>`;
@@ -73,9 +74,20 @@ export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamV
   }
 }
 
-/** A labelled param row: the label (⚡ for live params) and its control. */
+let rowIds = 0;
+
+/**
+ * A labelled param row: the name (⚡ for live params) and its control. Rows
+ * with several fields (vector3, matrix4) are a group named by the label, not
+ * a <label>, which would only label the first field.
+ */
 export function paramRow(spec: ParamSpec, value: ParamValue, set: (v: ParamValue) => void, place: ControlPlace = 'node'): TemplateResult {
-  return html`<label class="param param-${spec.kind}"><span title=${spec.live ? 'Live: applied while running' : 'Applied on the next Run'}
-    >${spec.label}${spec.kind === 'vector3' && spec.unit ? ` (${spec.unit})` : ''}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span
-    >${paramControl(spec, value, set, place)}</label>`;
+  const name = html`${spec.label}${spec.kind === 'vector3' && spec.unit ? ` (${spec.unit})` : ''}${spec.live ? html`<i class="live">⚡</i>` : nothing}`;
+  const title = spec.live ? 'Live: applied while running' : 'Applied on the next Run';
+  const control = paramControl(spec, value, set, place);
+  if (spec.kind !== 'vector3' && spec.kind !== 'matrix4') {
+    return html`<label class="param param-${spec.kind}"><span title=${title}>${name}</span>${control}</label>`;
+  }
+  const id = `param-row-${++rowIds}`;
+  return html`<div class="param param-${spec.kind}" role="group" aria-labelledby=${id}><span id=${id} title=${title}>${name}</span>${control}</div>`;
 }

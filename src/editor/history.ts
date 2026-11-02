@@ -40,3 +40,11 @@ export function mergeParamEdit(prev: ParamEditAction | undefined, next: ParamEdi
   prev.time = next.time;
   return true;
 }
+
+/** Equal param values; arrays (vector3, matrix4) compare element by element. */
+export function sameParamValue(a: ParamValue, b: ParamValue): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+  return a === b;
+}

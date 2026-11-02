@@ -68,20 +68,21 @@ export const primitive: NodeFactory = (params) => {
   let mesh: SceneObjectValue | null = null;
   /** Spin angle so far (degrees), about the mesh's own Z axis. */
   let spun = 0;
+  const size = Number(params.size); // not live: a change restarts the graph
   // Rests on the marker (lifted by half its size), then moved and rotated by its
   // params; spinning last in Rx · Ry · Rz turns it about its own Z axis.
   const applyTransform = () => {
     if (!scene || !mesh) return;
     const [x, y, z] = vec3(params.position);
     const [rx, ry, rz] = vec3(params.rotation);
-    scene.setMatrix(mesh, transformMatrix({ position: [x, y, z + Number(params.size) / 2], rotation: [rx, ry, rz + spun], scale: 1 }));
+    scene.setMatrix(mesh, transformMatrix({ position: [x, y, z + size / 2], rotation: [rx, ry, rz + spun], scale: 1 }));
   };
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
       mesh = scene.createPrimitive({
         shape: String(params.shape) as PrimitiveSpec['shape'],
-        size: Number(params.size),
+        size,
         color: String(params.color),
       });
       applyTransform();

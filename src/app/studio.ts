@@ -2,7 +2,7 @@
  * Studio shell: palette + Rete editor + live preview (GraphRuntime).
  */
 import { createStudioEditor } from '../editor/editor';
-import { renderInspector } from '../editor/inspector';
+import { commitPendingEdit, renderInspector } from '../editor/inspector';
 import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
@@ -30,7 +30,10 @@ const assetStore = await openAssetStore(log);
 
 const inspectorEl = $('inspector');
 let inspected: StudioNode | null = null;
-const showInspector = () => renderInspector(inspectorEl, inspected, (key, value) => inspected && studio.setParam(inspected.id, key, value));
+const showInspector = () => {
+  const node = inspected; // bound here: the setter must not follow a later selection
+  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value));
+};
 
 const studio = await createStudioEditor($('editor'), {
   onChange() {
@@ -46,6 +49,7 @@ const studio = await createStudioEditor($('editor'), {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
   onInspect(node) {
+    commitPendingEdit(inspectorEl); // to the node it was typed for
     inspected = node;
     showInspector();
   },

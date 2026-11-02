@@ -13,7 +13,7 @@ import { NODE_CATALOG } from '../nodes/catalog';
 import { layeredLayout } from './arrange';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
-import { mergeParamEdit, ParamEditAction } from './history';
+import { mergeParamEdit, ParamEditAction, sameParamValue } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
 import { searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
@@ -68,8 +68,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   let lastParamEdit: ParamEditAction | undefined;
   function recordParamEdit(node: StudioNode, key: string, value: ParamValue) {
-    const before = node.params[key] ?? node.def.params[key]?.default;
-    if (before === undefined || before === value) return;
+    const stored = node.params[key] ?? node.def.params[key]?.default;
+    const before = Array.isArray(stored) ? [...stored] : stored; // never the catalog's own default array
+    if (before === undefined || sameParamValue(before, value)) return;
     const action = new ParamEditAction(node.id, key, before, value, Date.now(), applyParam);
     // Merge only into the latest record: another action in between starts a new step.
     const latest = history.getHistorySnapshot().at(-1)?.action;
@@ -263,6 +264,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
     for (const n of nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+    followSelection();
   }
 
   async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
@@ -330,8 +332,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   };
   area.addPipe((context) => {
     if (context.type === 'nodepicked') inspect(context.data.id);
-    // A click on the canvas unselects: once nothing is selected, the Inspector empties.
-    if (context.type === 'pointerup') queueMicrotask(() => inspected && !editor.getNode(inspected)?.selected && inspect(null));
+    // A click on the canvas (or Ctrl+click) unselects: the Inspector follows what stays selected.
+    if (context.type === 'pointerup') queueMicrotask(followSelection);
     return context;
   });
   editor.addPipe((context) => {
@@ -339,9 +341,17 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return context;
   });
 
+  /** Keeps the inspected node if it is still selected, else another selected one, else none. */
+  function followSelection() {
+    if (inspected && editor.getNode(inspected)?.selected) return;
+    inspect(selectedIds().at(-1) ?? null);
+  }
+
   function editParam(nodeId: string, key: string, value: ParamValue) {
     const node = editor.getNode(nodeId);
     if (!node) return;
+    const current = node.params[key] ?? node.def.params[key]?.default;
+    if (current !== undefined && sameParamValue(current, value)) return; // e.g. Identity on an identity matrix
     recordParamEdit(node, key, value);
     applyParam(nodeId, key, value);
     notifyHistory();
@@ -390,6 +400,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     );
     // Moving the picked node of a selection drags the other selected nodes along.
     await selector.unselectAll();
+    followSelection();
     await oneStep(async () => {
       for (const n of nodes) {
         const p = layout.get(n.id)!;
