@@ -155,12 +155,29 @@ test.describe('editor', () => {
     await expect(size).toHaveValue('80');
     await page.click('#btn-redo');
     await expect(size).toHaveValue('120');
-    // Ctrl+Z in a text field stays the browser's own undo; on the canvas it is the graph's.
-    await page.mouse.click((await page.locator('#editor').boundingBox())!.x + 5, 100);
+    // On the canvas, Ctrl+Z is the graph's undo.
+    const at = await emptyCanvas(page);
+    await page.mouse.click(at.x, at.y);
     await page.keyboard.press('Control+z');
     await expect(size).toHaveValue('80');
     await page.keyboard.press('Control+Shift+z');
     await expect(size).toHaveValue('120');
+  });
+
+  test('undo / redo of a select keeps the shown option in sync, also while it has focus', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const shape = page.locator('.studio-node:has(.title span:text-is("Primitive")) .param:has-text("Shape") select');
+    const redo = page.locator('#btn-redo');
+    await expect(redo).toBeDisabled();
+    const initial = await shape.inputValue();
+    const other = initial === 'box' ? 'sphere' : 'box';
+    await shape.selectOption(other);
+    await page.keyboard.press('Control+z'); // focus is still on the select
+    await expect(shape).toHaveValue(initial);
+    await expect(redo).toBeEnabled();
+    await redo.click();
+    await expect(shape).toHaveValue(other);
+    await expect(redo).toBeDisabled();
   });
 
   test('undo brings back a removed node with its wires; loading a graph clears the history', async ({ page }) => {

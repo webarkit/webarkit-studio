@@ -24,8 +24,8 @@ export interface StudioEditorEvents {
   onChange: () => void;
   /** A param was edited by the user. */
   onParamChange?: (nodeId: string, key: string, value: ParamValue) => void;
-  /** Undo became available or unavailable. */
-  onHistoryChange?: (canUndo: boolean) => void;
+  /** Undo or redo became available or unavailable. */
+  onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
 }
 
 export interface StudioEditor {
@@ -69,8 +69,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     // Merge only into the latest record: another action in between starts a new step.
     const latest = history.getHistorySnapshot().at(-1)?.action;
     if (latest === lastParamEdit && mergeParamEdit(lastParamEdit, action, history.timing)) return;
-    history.separate(); // a param edit is its own step, not part of a quick add / wire before it
+    // A param edit is its own step, apart from a quick add / wire before or after it.
+    history.separate();
     history.add(action);
+    history.separate();
     lastParamEdit = action;
   }
 
@@ -90,6 +92,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   });
 
   async function removeNode(id: string) {
+    if (!editor.getNode(id)) return; // already gone (e.g. undone while its menu was open)
     for (const c of editor.getConnections().filter((c) => c.source === id || c.target === id)) {
       await editor.removeConnection(c.id);
     }
@@ -144,7 +147,19 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   area.use(history);
   area.use(new MinimapPlugin<Schemes>({ boundViewport: true }));
 
-  const notifyHistory = () => queueMicrotask(() => events.onHistoryChange?.(history.getHistorySnapshot().length > 0));
+  // The plugin has no public accessor for its redo stack; read it, and assume redo is possible if that changes.
+  const redoStack = () => (history as unknown as { history?: { reserved?: unknown[] } }).history?.reserved;
+  let notifyPending = false;
+  /** Reports undo / redo availability once per microtask (drags and colour pickers fire many events). */
+  const notifyHistory = () => {
+    if (notifyPending) return;
+    notifyPending = true;
+    queueMicrotask(() => {
+      notifyPending = false;
+      const reserved = redoStack();
+      events.onHistoryChange?.({ canUndo: history.getHistorySnapshot().length > 0, canRedo: reserved ? reserved.length > 0 : true });
+    });
+  };
 
   // Ctrl/Cmd+Z undo, Ctrl+Shift+Z / Ctrl+Y redo; text fields keep the browser's own undo.
   const onKeyDown = (e: KeyboardEvent) => {
@@ -157,14 +172,14 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   };
   document.addEventListener('keydown', onKeyDown);
 
-  async function undo() {
-    await history.undo();
-    notifyHistory();
-  }
-  async function redo() {
-    await history.redo();
-    notifyHistory();
-  }
+  // Undo / redo run one at a time: an overlapping call would be recorded as a new action.
+  let replay: Promise<void> = Promise.resolve();
+  const serial = (step: () => Promise<void>) => {
+    replay = replay.then(step, step).then(notifyHistory);
+    return replay;
+  };
+  const undo = () => serial(() => history.undo());
+  const redo = () => serial(() => history.redo());
 
   AreaExtensions.selectableNodes(area, AreaExtensions.selector(), { accumulating: AreaExtensions.accumulateOnCtrl() });
   AreaExtensions.simpleNodesOrder(area);
@@ -204,6 +219,20 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return node;
   }
 
+  async function loadGraph(doc: GraphDocument) {
+    await editor.clear();
+    graphName = doc.name ?? 'Untitled';
+    for (const n of doc.nodes) await addNode(n.type, n.position, n.id, n.params);
+    for (const e of doc.edges) {
+      const source = editor.getNode(e.from.node);
+      const target = editor.getNode(e.to.node);
+      if (!source || !target) continue;
+      const conn = new StudioConnection(source, e.from.port, target, e.to.port);
+      conn.id = e.id;
+      await editor.addConnection(conn);
+    }
+  }
+
   return {
     addNode: (type, position) => {
       if (position) return addNode(type, position);
@@ -233,22 +262,16 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     },
 
     async load(doc) {
-      await editor.clear();
-      graphName = doc.name ?? 'Untitled';
-      for (const n of doc.nodes) await addNode(n.type, n.position, n.id, n.params);
-      for (const e of doc.edges) {
-        const source = editor.getNode(e.from.node);
-        const target = editor.getNode(e.to.node);
-        if (!source || !target) continue;
-        const conn = new StudioConnection(source, e.from.port, target, e.to.port);
-        conn.id = e.id;
-        await editor.addConnection(conn);
+      try {
+        await loadGraph(doc);
+      } finally {
+        // A loaded graph starts a new history: undo must not bring back the previous one.
+        history.clear();
+        lastParamEdit = undefined;
+        notifyHistory();
       }
-      // A loaded graph starts a new history: undo must not bring back the previous one.
-      history.clear();
-      lastParamEdit = undefined;
-      notifyHistory();
     },
+
 
     toDocument() {
       const doc = emptyGraph(graphName);
@@ -305,9 +328,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   };
 }
 
-/** Text fields, selects and editable content keep their own keyboard shortcuts. */
+/** Text fields and editable content keep their own keyboard shortcuts. */
 function isEditable(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  // A select has no undo of its own: Ctrl+Z right after changing it is the graph's.
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
   return target instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'color', 'range'].includes(target.type);
 }

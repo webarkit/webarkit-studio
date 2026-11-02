@@ -160,7 +160,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
         break;
       case 'select':
         control = html`<select @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
-          ${Object.entries(spec.options).map(([label, v]) => html`<option value=${v} ?selected=${v === value}>${label}</option>`)}
+          ${Object.entries(spec.options).map(([label, v]) => html`<option value=${v} .selected=${v === value}>${label}</option>`)}
         </select>`;
         break;
       case 'color':

@@ -38,8 +38,9 @@ const studio = await createStudioEditor($('editor'), {
   onParamChange(nodeId, key, value) {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
-  onHistoryChange(canUndo) {
+  onHistoryChange({ canUndo, canRedo }) {
     $<HTMLButtonElement>('btn-undo').disabled = !canUndo;
+    $<HTMLButtonElement>('btn-redo').disabled = !canRedo;
   },
 });
 $('btn-undo').onclick = () => void studio.undo();
