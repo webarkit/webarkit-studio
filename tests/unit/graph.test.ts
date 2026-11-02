@@ -63,7 +63,7 @@ describe('validateGraph', () => {
     expect(problems(doc)).toContain('graph contains a cycle');
   });
 
-  it.each(['pinball-three', 'pinball-babylon', 'multi-three'])('demo graph %s is valid against the real catalog', (name) => {
+  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image'])('demo graph %s is valid against the real catalog', (name) => {
     const doc = JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
     expect(doc.version).toBe(GRAPH_VERSION);
     expect(() => validateGraph(doc)).not.toThrow();
@@ -113,5 +113,14 @@ describe('catalog', () => {
         if (spec.kind === 'select') expect(Object.values(spec.options), `${def.type}.${key}`).toContain(spec.default);
       }
     }
+  });
+
+  it('camera-free sources plug in where the camera does, and their files are exported', () => {
+    for (const type of ['source.image', 'source.videoFile']) {
+      const def = NODE_CATALOG[type];
+      expect(def.outputs, type).toEqual(NODE_CATALOG['source.camera'].outputs);
+      expect(def.params.url, type).toMatchObject({ kind: 'string', asset: 'file' });
+    }
+    expect(NODE_CATALOG['source.videoFile'].params.loop).toMatchObject({ kind: 'boolean', default: true, live: true });
   });
 });

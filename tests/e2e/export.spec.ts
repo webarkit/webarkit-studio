@@ -24,6 +24,7 @@ for (const [demo, engine, absent] of [
   ['pinball-three', 'three-adapter', 'babylon-adapter'],
   ['multi-three', 'three-adapter', 'babylon-adapter'],
   ['pinball-babylon', 'babylon-adapter', 'three-adapter'],
+  ['pinball-image', 'three-adapter', 'babylon-adapter'],
 ] as const) {
   test(`export ${demo}: standalone app runs from a plain static server`, async ({ page, browser }) => {
     await loadDemo(page, demo);
@@ -34,6 +35,7 @@ for (const [demo, engine, absent] of [
     expect(files.some((f) => f.includes(absent))).toBe(false); // unused engine left out
     expect(files.some((f) => f.endsWith('DataNFT/pinball.fset3'))).toBe(true);
     if (demo === 'multi-three') expect(files.some((f) => f.endsWith('DataNFT/kuva.fset3'))).toBe(true);
+    if (demo === 'pinball-image') expect(files.some((f) => f.endsWith('/data/pinball-demo.jpg'))).toBe(true);
 
     const server = await serveDir(dir);
     try {

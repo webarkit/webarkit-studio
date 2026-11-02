@@ -3,7 +3,7 @@
  * Adding a node = one entry in src/nodes/catalog.ts + one factory here.
  */
 import type { NodeFactory } from './types';
-import { cameraSource } from './nodes/sources';
+import { cameraSource, imageSource, videoFileSource } from './nodes/sources';
 import { artkCameraParams, artkController, artkNftDataset, artkSettings } from './nodes/jsartoolkit-nft';
 import { jsartoolkitNativeFilter, oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
@@ -14,6 +14,8 @@ import { selectMarkerNode } from './nodes/tracking';
 
 export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'source.camera': cameraSource,
+  'source.image': imageSource,
+  'source.videoFile': videoFileSource,
   'jsartoolkitNFT.cameraParams': artkCameraParams,
   'jsartoolkitNFT.dataset': artkNftDataset,
   'jsartoolkitNFT.settings': artkSettings,

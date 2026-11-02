@@ -6,6 +6,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Added
+
+- Image and Video File sources (`source.image`, `source.videoFile`): a still
+  image or a recorded video instead of the camera, and the
+  "pinball · image, no camera" demo (#2).
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

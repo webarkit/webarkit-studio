@@ -1,6 +1,7 @@
 // Downloads the demo assets from the jsartoolkitNFT repository:
-//  - public/data: camera calibration + pinball and kuva NFT datasets (demos)
-//  - tests/fixtures: a photo of the printed pinball marker (tests, fake camera)
+//  - public/data: camera calibration + pinball and kuva NFT datasets (demos),
+//    and a photo of the printed pinball marker (the no-camera demo)
+//  - tests/fixtures: the same photo (tests, fake camera)
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -11,6 +12,7 @@ const FILES = [
   ...['pinball', 'kuva'].flatMap((m) =>
     ['iset', 'fset', 'fset3'].map((ext) => [`DataNFT/${m}.${ext}`, `public/data/DataNFT/${m}.${ext}`]),
   ),
+  ['node/pinball-demo.jpg', 'public/data/pinball-demo.jpg'],
   ['node/pinball-demo.jpg', 'tests/fixtures/pinball-demo.jpg'],
 ];
 

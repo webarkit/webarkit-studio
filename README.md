@@ -27,7 +27,10 @@ npm run dev         # studio at http://localhost:5173/, player at /player.html
 ```
 
 Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
-**▶ Run** and point the camera at the printed markers. **⟳ Reload** restarts the preview (Stop + Run),
+**▶ Run** and point the camera at the printed markers. No camera? The
+"pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
+`source.videoFile` plays a recorded video the same way; if you fetched the
+assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 ## Multi NFT
@@ -53,7 +56,7 @@ npm run test:all     # typecheck + unit + integration + e2e
 |---|---|---|
 | Unit | graph validation and topological order, socket types, catalog consistency, runtime scheduler (order, live params, init failures, stop during init) with fake nodes, the mapping onto the tracker facade (filter, settings), the letterbox geometry, Select Marker, Inspector formatting, the trace format, trace diff and Trace Recorder buffering, export file selection and asset paths | `tests/unit` |
 | Integration | the tracker session (`NftSession` on `createNFTTracker`, the code the worker runs) against the **Node build** of JsartoolkitNFT on a photo holding both markers: marker sizes, two independent poses, found / lost once per marker, `lostTimeout` and AR2 settings, per-marker filtering, lens and projection, odd video sizes, per-dataset load errors; a **golden run** recorded with the former ARControllerNFT code (found and transitions exact; poses within the recorded range plus a margin, near the recorded mean, and near the recorded frame); **traces**: two recordings identical, a filter change reported, replay, live settings changes, the golden run's found / lost timing kept by the facade | `tests/integration` |
-| End-to-end | the studio in Chromium with a fake camera: three demos tracking, onFound after loss, multi NFT, live settings, Reload, init error on the failing node, incompatible wires rejected, a trace downloaded by the Trace Recorder; **exported apps** unzipped and run from a plain static server | `tests/e2e` |
+| End-to-end | the studio in Chromium with a fake camera: three demos tracking, onFound after loss, tracking a still image and a video file with no camera, multi NFT, live settings, Reload, init error on the failing node, incompatible wires rejected, a trace downloaded by the Trace Recorder; **exported apps** unzipped and run from a plain static server | `tests/e2e` |
 
 The fake camera is a Y4M video generated in pure JS from the test photo
 (`tests/e2e/fake-camera.ts`): the markers are visible 4 s, then hidden 2 s, in
@@ -272,6 +275,8 @@ Planned split once the format stabilises (npm workspaces):
 | Type | Status | Inputs → Outputs |
 |---|---|---|
 | `source.camera` | ✅ | → video |
+| `source.image` | ✅ | → video (a still image: testing without a camera) |
+| `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
 | `jsartoolkitNFT.cameraParams` | ✅ | → artkCameraParams |
 | `jsartoolkitNFT.dataset` | ✅ | → artkNftDataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → artkSettings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
@@ -290,7 +295,6 @@ Planned split once the format stabilises (npm workspaces):
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
-| `source.videoFile` / `source.image` | planned | → video (testing without a camera) |
 | `jsartoolkitNFT.datasetZft` | planned | → artkNftDataset (`.zft`) |
 | `jsartoolkitNFT.controller` threaded build (`/td`) | planned | needs COOP/COEP headers |
 | `webarkit.cvBackend` | planned | → cvBackend (jsfeatNext / PureCV, @webarkit/cv-backend-spec) |

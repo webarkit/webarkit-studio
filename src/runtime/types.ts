@@ -6,7 +6,8 @@ import type { TraceHeader, TraceRecord } from './trackers/trace';
 
 /** Values flowing through each socket type at runtime. */
 export interface VideoValue {
-  element: HTMLVideoElement;
+  /** Drawn into the tracker's frame and shown behind the scene: a camera or a video file, or a still image. */
+  element: HTMLVideoElement | HTMLImageElement;
   width: number;
   height: number;
 }
