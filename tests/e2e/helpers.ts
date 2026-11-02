@@ -1,6 +1,9 @@
 import { createServer, type Server } from 'node:http';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, normalize } from 'node:path';
+import { unzipSync } from 'fflate';
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
@@ -52,4 +55,19 @@ export async function serveDir(root: string): Promise<{ url: string; close: () =
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}/`, close: () => new Promise((r) => server.close(() => r())) };
+}
+
+/** Exports the current graph as a standalone app and unzips it. Returns the app folder. */
+export async function exportApp(page: Page): Promise<{ dir: string; files: string[] }> {
+  await page.click('#export-menu summary');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-exporter=app-bundle]')]);
+  const entries = unzipSync(new Uint8Array(readFileSync(await download.path())));
+  const out = mkdtempSync(join(tmpdir(), 'webar-export-'));
+  for (const [name, data] of Object.entries(entries)) {
+    if (name.endsWith('/')) continue;
+    mkdirSync(dirname(join(out, name)), { recursive: true });
+    writeFileSync(join(out, name), data);
+  }
+  const files = Object.keys(entries);
+  return { dir: join(out, files[0].split('/')[0]), files };
 }

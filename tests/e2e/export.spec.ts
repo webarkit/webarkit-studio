@@ -1,24 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { unzipSync } from 'fflate';
-import { loadDemo, serveDir } from './helpers';
-
-/** Exports the current graph as a standalone app and unzips it. Returns the app folder. */
-async function exportApp(page: import('@playwright/test').Page): Promise<{ dir: string; files: string[] }> {
-  await page.click('#export-menu summary');
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-exporter=app-bundle]')]);
-  const entries = unzipSync(new Uint8Array(readFileSync(await download.path())));
-  const out = mkdtempSync(join(tmpdir(), 'webar-export-'));
-  for (const [name, data] of Object.entries(entries)) {
-    if (name.endsWith('/')) continue;
-    mkdirSync(dirname(join(out, name)), { recursive: true });
-    writeFileSync(join(out, name), data);
-  }
-  const files = Object.keys(entries);
-  return { dir: join(out, files[0].split('/')[0]), files };
-}
+import { exportApp, loadDemo, serveDir } from './helpers';
 
 for (const [demo, engine, absent] of [
   ['pinball-three', 'three-adapter', 'babylon-adapter'],

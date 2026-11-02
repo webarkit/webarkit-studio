@@ -107,6 +107,8 @@ test.describe('tracking traces', () => {
     doc.nodes.push({ id: 'recorder', type: 'debug.trace', params: { recording: true, maxFrames: 60, filename: 'e2e-trace' }, position: { x: 640, y: 1300 } });
     doc.edges.push({ id: 'etrace', from: { node: 'controller', port: 'trace' }, to: { node: 'recorder', port: 'trace' } });
     await page.goto('/index.html');
+    // Wait for the startup graph: its autosave would otherwise overwrite this one.
+    await expect(page.locator('.studio-node').first()).toBeVisible();
     await page.evaluate((graph) => localStorage.setItem('webarkit-studio:autosave', graph), JSON.stringify(doc));
     await page.reload();
     await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
