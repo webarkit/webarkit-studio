@@ -20,6 +20,7 @@ import type { ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
 import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
 import { renderMinimap, type MinimapData } from './minimap-view';
+import { paramRow } from './param-editors';
 
 type Position = { x: number; y: number };
 type Side = 'input' | 'output';
@@ -147,32 +148,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
   }
 
   private paramEditor(node: StudioNode, key: string, spec: ParamSpec): TemplateResult {
-    const value = node.params[key] ?? spec.default;
-    const set = (v: ParamValue) => this.opts.onParamChange(node, key, v);
-    let control: TemplateResult;
-    switch (spec.kind) {
-      case 'boolean':
-        control = html`<input type="checkbox" .checked=${Boolean(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />`;
-        break;
-      case 'number':
-        control = html`<input type="number" .value=${String(value)} min=${spec.min ?? ''} max=${spec.max ?? ''} step=${spec.step ?? 'any'}
-          @change=${(e: Event) => set(Number((e.target as HTMLInputElement).value))} />`;
-        break;
-      case 'select':
-        control = html`<select @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
-          ${Object.entries(spec.options).map(([label, v]) => html`<option value=${v} .selected=${v === value}>${label}</option>`)}
-        </select>`;
-        break;
-      case 'color':
-        control = html`<input type="color" .value=${String(value)} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
-        break;
-      default:
-        // Asset params suggest the project's uploads of their kind (datalists kept by the assets panel).
-        control = html`<input type="text" .value=${String(value)} list=${spec.kind === 'string' && spec.asset ? `assets-${spec.asset}` : nothing}
-          @change=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
-    }
-    return html`<label class="param"><span title=${spec.live ? 'Live: applied while running' : 'Applied on the next Run'}
-      >${spec.label}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span>${control}</label>`;
+    return paramRow(spec, node.params[key] ?? spec.default, (v: ParamValue) => this.opts.onParamChange(node, key, v));
   }
 
   // ---------------------------------------------------------- connections

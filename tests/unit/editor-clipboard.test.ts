@@ -84,6 +84,9 @@ describe('clipboard', () => {
     expect(parseClipboard(withNode({ position: { x: 1e400, y: 0 } }))).toBeNull();
     expect(parseClipboard(withNode({ params: { size: { nested: true } } }))).toBeNull();
     expect(parseClipboard(withNode({ position: undefined }))).not.toBeNull();
+    // vector3 / matrix4 values: arrays of finite numbers.
+    expect(parseClipboard(withNode({ params: { position: [0, 10, 40] } }))).not.toBeNull();
+    expect(parseClipboard(withNode({ params: { position: [0, 'a', 40] } }))).toBeNull();
   });
 
   it('rejects clipboards larger than MAX_CLIPBOARD_NODES', () => {

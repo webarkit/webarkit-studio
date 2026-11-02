@@ -2,6 +2,8 @@
  * Studio shell: palette + Rete editor + live preview (GraphRuntime).
  */
 import { createStudioEditor } from '../editor/editor';
+import { renderInspector } from '../editor/inspector';
+import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
@@ -26,8 +28,13 @@ const log = (msg: string) => {
 
 const assetStore = await openAssetStore(log);
 
+const inspectorEl = $('inspector');
+let inspected: StudioNode | null = null;
+const showInspector = () => renderInspector(inspectorEl, inspected, (key, value) => inspected && studio.setParam(inspected.id, key, value));
+
 const studio = await createStudioEditor($('editor'), {
   onChange() {
+    showInspector(); // params may have changed (in the node, by undo)
     try {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(studio.toDocument()));
     } catch {
@@ -38,11 +45,16 @@ const studio = await createStudioEditor($('editor'), {
   onParamChange(nodeId, key, value) {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
+  onInspect(node) {
+    inspected = node;
+    showInspector();
+  },
   onHistoryChange({ canUndo, canRedo }) {
     $<HTMLButtonElement>('btn-undo').disabled = !canUndo;
     $<HTMLButtonElement>('btn-redo').disabled = !canRedo;
   },
 });
+showInspector();
 $('btn-undo').onclick = () => void studio.undo();
 $('btn-redo').onclick = () => void studio.redo();
 $('btn-arrange').onclick = () => void studio.arrange();

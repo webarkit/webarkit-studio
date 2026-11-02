@@ -25,6 +25,8 @@ export interface StudioEditorEvents {
   onChange: () => void;
   /** A param was edited by the user. */
   onParamChange?: (nodeId: string, key: string, value: ParamValue) => void;
+  /** The node shown in the Inspector changed: the last one picked, null once none is selected. */
+  onInspect?: (node: StudioNode | null) => void;
   /** Undo or redo became available or unavailable. */
   onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
 }
@@ -41,6 +43,8 @@ export interface StudioEditor {
   redo(): Promise<void>;
   /** Lays the graph out left to right (one undo step). */
   arrange(): Promise<void>;
+  /** Sets a param as a user edit (undo, live runtime, autosave). */
+  setParam(nodeId: string, key: string, value: ParamValue): void;
   destroy(): void;
 }
 
@@ -78,11 +82,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   }
 
   const renderer = new LitRenderPlugin({
-    onParamChange: (node, key, value: ParamValue) => {
-      recordParamEdit(node, key, value);
-      applyParam(node.id, key, value);
-      notifyHistory();
-    },
+    onParamChange: (node, key, value: ParamValue) => editParam(node.id, key, value),
     onRemoveNode: (node) => removeNode(node.id),
     onRemoveConnection: (c) => void editor.removeConnection(c.id),
     searchMenu: (query, items) => {
@@ -321,6 +321,32 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return context;
   });
 
+  // ------------------------------------------------------------- Inspector
+  let inspected: string | null = null;
+  const inspect = (id: string | null) => {
+    if (id === inspected) return;
+    inspected = id;
+    events.onInspect?.(id ? (editor.getNode(id) ?? null) : null);
+  };
+  area.addPipe((context) => {
+    if (context.type === 'nodepicked') inspect(context.data.id);
+    // A click on the canvas unselects: once nothing is selected, the Inspector empties.
+    if (context.type === 'pointerup') queueMicrotask(() => inspected && !editor.getNode(inspected)?.selected && inspect(null));
+    return context;
+  });
+  editor.addPipe((context) => {
+    if ((context.type === 'noderemoved' && context.data.id === inspected) || context.type === 'cleared') inspect(null);
+    return context;
+  });
+
+  function editParam(nodeId: string, key: string, value: ParamValue) {
+    const node = editor.getNode(nodeId);
+    if (!node) return;
+    recordParamEdit(node, key, value);
+    applyParam(nodeId, key, value);
+    notifyHistory();
+  }
+
   async function addNode(type: string, position = { x: 0, y: 0 }, id?: string, params?: Record<string, ParamValue>) {
     const node = new StudioNode(type, params);
     if (id) node.id = id;
@@ -440,6 +466,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     redo,
 
     arrange: () => serial(arrange),
+    setParam: editParam,
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);

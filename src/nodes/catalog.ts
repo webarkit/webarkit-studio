@@ -43,6 +43,10 @@ export type ParamSpec = ParamBase &
     | { kind: 'boolean'; default: boolean }
     | { kind: 'select'; default: string; options: Record<string, string> }
     | { kind: 'color'; default: string }
+    /** x, y, z; `unit` is shown in the editor (e.g. "mm", "°"). */
+    | { kind: 'vector3'; default: [number, number, number]; step?: number; unit?: string }
+    /** A 4x4 matrix, column-major (like every matrix in the studio). */
+    | { kind: 'matrix4'; default: number[] }
   );
 
 export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'debug';

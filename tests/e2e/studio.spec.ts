@@ -301,6 +301,25 @@ test.describe('editor', () => {
     await expect(primitives).toHaveCount(3);
   });
 
+  test('the Inspector edits the selected node, in sync with the node and undo', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const inspector = page.locator('#inspector');
+    await expect(inspector).toContainText('Select a node');
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
+    await expect(inspector.locator('h2')).toHaveText('Primitive');
+    const size = inspector.locator('.param:has-text("Size") input');
+    const inNode = page.locator('.studio-node:has(.title span:text-is("Primitive")) .param:has-text("Size") input');
+    await size.fill('150');
+    await size.dispatchEvent('change');
+    await expect(inNode).toHaveValue('150');
+    await page.click('#btn-undo');
+    await expect(inNode).toHaveValue('80');
+    await expect(size).toHaveValue('80');
+    // Removing the node empties the Inspector.
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .remove').click();
+    await expect(inspector).toContainText('Select a node');
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');

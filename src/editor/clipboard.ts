@@ -61,7 +61,11 @@ export function pasteClipboard(data: ClipboardData, newId: () => string, at: Poi
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isPortRef = (v: unknown) => isObject(v) && typeof v.node === 'string' && typeof v.port === 'string';
-const isParamValue = (v: unknown) => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
+const isParamValue = (v: unknown) =>
+  typeof v === 'string' ||
+  typeof v === 'boolean' ||
+  (typeof v === 'number' && Number.isFinite(v)) ||
+  (Array.isArray(v) && v.length <= 16 && v.every(Number.isFinite)); // vector3 / matrix4
 const isPosition = (v: unknown) => v === undefined || (isObject(v) && Number.isFinite(v.x) && Number.isFinite(v.y));
 const isNode = (v: unknown) =>
   isObject(v) &&
