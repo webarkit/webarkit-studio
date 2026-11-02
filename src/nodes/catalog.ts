@@ -30,9 +30,11 @@ interface ParamBase {
 /**
  * Marks a string param as a URL of files the graph needs at runtime, so the
  * app exporter can bundle them: `file` = the URL itself, `nftDataset` = an
- * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft).
+ * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft), `model` = a
+ * glTF / GLB file. The value may also reference an uploaded asset of that
+ * kind (`asset://<id>/<name>`, see src/core/assets.ts).
  */
-export type AssetKind = 'file' | 'nftDataset';
+export type AssetKind = 'file' | 'nftDataset' | 'model';
 
 export type ParamSpec = ParamBase &
   (
@@ -298,6 +300,28 @@ const defs: NodeDefinition[] = [
       size: { kind: 'number', label: 'Size (mm)', default: 80, min: 1, max: 1000, step: 1 },
       color: { kind: 'color', label: 'Color', default: '#ff0055', live: true },
       spin: { kind: 'boolean', label: 'Spin', default: true, live: true },
+    },
+  },
+  {
+    type: 'scene.gltf',
+    label: 'glTF Model',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A glTF 2.0 model: a .glb, or a .gltf with embedded resources (a .gltf loading other files works from a URL in the studio, ' +
+      'but uploads and exported apps need it self-contained). Its front (glTF +Z) faces the marker bottom edge. ' +
+      'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Model' } },
+    params: {
+      url: { kind: 'string', label: 'Model URL', default: 'models/cube.glb', asset: 'model' },
+      scale: { kind: 'number', label: 'Scale (mm / unit)', default: 80, min: 0.001, max: 100000, step: 1, live: true },
+      x: { kind: 'number', label: 'X (mm)', default: 0, step: 1, live: true },
+      y: { kind: 'number', label: 'Y (mm)', default: 0, step: 1, live: true },
+      z: { kind: 'number', label: 'Z (mm)', default: 0, step: 1, live: true },
+      rotX: { kind: 'number', label: 'Rotate X (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+      rotY: { kind: 'number', label: 'Rotate Y (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+      rotZ: { kind: 'number', label: 'Rotate Z (°)', default: 0, min: -360, max: 360, step: 1, live: true },
     },
   },
   {

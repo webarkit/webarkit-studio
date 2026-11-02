@@ -2,7 +2,7 @@
  * Renderer-agnostic scene nodes. Objects are created in the SceneHandle that
  * arrives on the `scene` input; the renderer is only reached through it.
  */
-import type { LightSpec, PrimitiveSpec } from '../renderers/adapter';
+import { transformMatrix, type LightSpec, type PrimitiveSpec } from '../renderers/adapter';
 import type {
   CameraValue,
   MarkerInfoValue,
@@ -123,6 +123,51 @@ export const anchor: NodeFactory = (params) => {
     },
     onParamChange(key) {
       if (key === 'center') applyCenter();
+    },
+  };
+};
+
+/** True for a GLB container ("glTF" magic), false for glTF JSON. */
+export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView(data).getUint32(0, true) === 0x46546c67;
+
+/** The live params of scene.gltf, all applied as its transform (checked against the catalog in tests). */
+export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'x', 'y', 'z', 'rotX', 'rotY', 'rotZ'];
+
+/** scene.gltf — a glTF / GLB model, placed in marker space (millimetres, Z-up). */
+export const gltf: NodeFactory = (params, ctx) => {
+  let scene: SceneValue | null = null;
+  let model: SceneObjectValue | null = null;
+  const applyTransform = () => {
+    if (!scene || !model) return;
+    scene.setMatrix(
+      model,
+      transformMatrix({
+        position: [Number(params.x), Number(params.y), Number(params.z)],
+        rotation: [Number(params.rotX), Number(params.rotY), Number(params.rotZ)],
+        scale: Math.max(Number(params.scale), 1e-6), // a zero scale makes a singular matrix
+      }),
+    );
+  };
+  return {
+    async init(inputs) {
+      scene = inputs.scene as SceneValue;
+      const url = new URL(String(params.url), ctx.baseUrl).href;
+      let res: Response;
+      try {
+        res = await fetch(url);
+      } catch (err) {
+        throw new Error(`cannot load model ${url}: ${(err as Error).message}`);
+      }
+      if (!res.ok) throw new Error(`cannot load model ${url}: HTTP ${res.status}`);
+      const data = await res.arrayBuffer();
+      const binary = isGlb(data);
+      model = await scene.loadModel({ data, url, binary });
+      ctx.log(`glTF model loaded (${binary ? 'GLB' : 'glTF JSON'}, ${Math.round(data.byteLength / 1024)} KB)`);
+      applyTransform();
+      return { object: model };
+    },
+    onParamChange(key) {
+      if (GLTF_TRANSFORM_PARAMS.includes(key)) applyTransform();
     },
   };
 };

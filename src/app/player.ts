@@ -10,6 +10,15 @@
  */
 import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
+import type { AssetLookup } from '../assets/asset';
+
+/** Graphs handed over by the studio may use its uploaded assets (same origin, same IndexedDB). */
+async function studioAssets(): Promise<AssetLookup | undefined> {
+  if (new URLSearchParams(location.search).get('source') !== 'studio') return undefined;
+  const { openAssetStore } = await import('../assets/asset-store');
+  const store = await openAssetStore();
+  return (id) => store.get(id);
+}
 
 async function loadGraph(): Promise<unknown> {
   const params = new URLSearchParams(location.search);
@@ -39,7 +48,7 @@ startButton.addEventListener('click', async () => {
     const graph = await loadGraph();
     const name = (graph as { name?: unknown }).name;
     if (typeof name === 'string' && name) document.title = name;
-    const runtime = new GraphRuntime(graph, { stage });
+    const runtime = new GraphRuntime(graph, { stage, assets: await studioAssets() });
     await runtime.start();
     startButton.remove();
   } catch (err) {

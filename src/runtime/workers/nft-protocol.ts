@@ -3,7 +3,8 @@ import type { TraceFrame, TraceHeader } from '../trackers/trace';
 
 /** Messages between the jsartoolkitNFT.controller node and jsartoolkit-nft.worker.ts. */
 export type WorkerRequest =
-  | ({ type: 'load'; build: 'simd' | 'default' } & NftSessionOptions)
+  /** `files`: uploaded NFT dataset files, virtual URL → blob: URL (see virtual-fetch.ts). */
+  | ({ type: 'load'; build: 'simd' | 'default'; files: Record<string, string> } & NftSessionOptions)
   /** Live change of the settings slot while running. */
   | { type: 'configure'; settings: NftSettings }
   /** `time`: an increasing clock (ms) for lostTimeout and the filters. */

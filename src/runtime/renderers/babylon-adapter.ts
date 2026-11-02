@@ -22,7 +22,17 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { CreateTorusKnot } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
-import { assertOwned, type LightSpec, type PrimitiveSpec, type RendererAdapter, type SceneHandle, type SceneObject } from './adapter';
+import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
+import {
+  assertOwned,
+  Y_UP_TO_Z_UP,
+  type LightSpec,
+  type ModelSpec,
+  type PrimitiveSpec,
+  type RendererAdapter,
+  type SceneHandle,
+  type SceneObject,
+} from './adapter';
 
 /**
  * Light intensities are authored on the Three.js scale (the graph is
@@ -83,6 +93,26 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       material.specularColor = new Color3(0.2, 0.2, 0.2);
       mesh.material = material;
       return wrap(mesh);
+    },
+    async loadModel(spec: ModelSpec) {
+      // Registers the glTF 2.0 loader; loaded on demand, so graphs without glTF models do not download it.
+      await import('@babylonjs/loaders/glTF/2.0/index.js');
+      // Bytes always go to the GLB parser: a JSON .gltf is passed as a data: string instead.
+      const source = spec.binary ? new Uint8Array(spec.data) : `data:${new TextDecoder().decode(spec.data)}`;
+      const container = await LoadAssetContainerAsync(source, scene, {
+        pluginExtension: spec.binary ? '.glb' : '.gltf',
+        rootUrl: spec.url.slice(0, spec.url.lastIndexOf('/') + 1),
+        // Animations are not played (as on Three.js, which has no mixer here).
+        pluginOptions: { gltf: { animationStartMode: 0 /* GLTFLoaderAnimationStartMode.NONE */ } },
+      });
+      container.addAllToScene();
+      // The scene is right-handed, so the loader adds no handedness conversion: only glTF's Y-up remains.
+      const upright = new TransformNode('gltf-upright', scene);
+      Matrix.FromArray(Array.from(Y_UP_TO_Z_UP)).decompose(upright.scaling, (upright.rotationQuaternion = new Quaternion()), upright.position);
+      for (const root of container.rootNodes) root.parent = upright;
+      const model = new TransformNode('gltf', scene);
+      upright.parent = model;
+      return wrap(model);
     },
     createGroup: () => wrap(new TransformNode('group', scene)),
     createLight(spec: LightSpec) {

@@ -7,11 +7,13 @@
  *   <app>/graph.json     the graph (re-importable in the studio)
  *   <app>/assets/…       player, engine and tracker chunks (only those the graph uses)
  *   <app>/data/…         camera parameters, NFT datasets, …
+ *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
 import { validateGraph, type GraphDocument } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
 
@@ -29,6 +31,9 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
+  // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
+  { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
+  { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   {
     module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js',
     needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === 'simd'),
@@ -42,8 +47,6 @@ const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => 
 const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/workers/jsartoolkit-nft.worker.ts', needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
 ];
-
-const NFT_DATASET_EXTENSIONS = ['iset', 'fset', 'fset3'];
 
 class ExportError extends Error {}
 
@@ -108,6 +111,85 @@ export function bundlePath(url: URL, base: URL): { path: string; rewritten: bool
   return { path: `data/_ext/${name}`, rewritten: true };
 }
 
+/** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
+const safeName = (name: string) => {
+  const safe = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  return /^\.*$/.test(safe) ? '_' : safe; // never "", "." or ".."
+};
+
+/**
+ * Only the model file is bundled: a JSON .gltf that loads buffers or images
+ * from other files would arrive without them. GLB files are always accepted.
+ */
+function checkSelfContained(data: Uint8Array, where: string): void {
+  if (data[0] === 0x67 && data[1] === 0x6c && data[2] === 0x54 && data[3] === 0x46) return; // "glTF": GLB
+  let gltf: { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  try {
+    gltf = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return; // not glTF JSON: the loader will say so
+  }
+  const external = [...(gltf.buffers ?? []), ...(gltf.images ?? [])].map((r) => r.uri).filter((uri): uri is string => !!uri && !uri.startsWith('data:'));
+  if (external.length) {
+    throw new ExportError(`${where}: the model loads ${external.join(', ')}; export needs a self-contained .gltf (embedded data) or a .glb`);
+  }
+}
+
+/**
+ * Collects the files the graph's asset params need, as bundle path → bytes,
+ * and rewrites the params that point elsewhere (uploads, other origins).
+ * Uploaded assets go under data/assets/<id>/. `doc` is modified.
+ */
+/** Exported for tests. */
+export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
+  for (const node of doc.nodes) {
+    const def = NODE_CATALOG[node.type];
+    for (const [key, spec] of Object.entries(def.params)) {
+      if (spec.kind !== 'string' || !spec.asset) continue;
+      const value = String(node.params[key] ?? spec.default);
+      const ref = parseAssetRef(value);
+      if (ref) {
+        const asset = ctx.assets?.get(ref.id);
+        if (!asset) throw new ExportError(`${node.id}.${key}: asset "${ref.name || ref.id}" is not in this project`);
+        if (asset.kind !== spec.asset) throw new ExportError(`${node.id}.${key}: asset "${asset.name}" is a ${asset.kind}, not a ${spec.asset}`);
+        const path = `data/assets/${asset.id}/${safeName(asset.name)}`;
+        if (spec.asset === 'nftDataset') {
+          for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
+        } else {
+          files[path] = await bytes(asset.files['']);
+          if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
+        }
+        node.params[key] = path;
+        ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
+        continue;
+      }
+      const url = new URL(value, base);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
+      const { path, rewritten } = bundlePath(url, base);
+
+      if (spec.asset === 'nftDataset') {
+        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
+        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
+        if (parts.every(Boolean)) {
+          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
+        } else {
+          const zft = await tryFetch(`${url.href}.zft`);
+          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
+          files[`${path}.zft`] = zft;
+        }
+      } else {
+        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
+        if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
+      }
+      if (rewritten) node.params[key] = path;
+      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
+    }
+  }
+  return files;
+}
+
 export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
   const doc = validateGraph(structuredClone(input));
   const base = new URL(ctx.baseUrl);
@@ -130,32 +212,7 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
   }
 
   // ---------------------------------------------------------------- assets
-  for (const node of doc.nodes) {
-    const def = NODE_CATALOG[node.type];
-    for (const [key, spec] of Object.entries(def.params)) {
-      if (spec.kind !== 'string' || !spec.asset) continue;
-      const value = String(node.params[key] ?? spec.default);
-      const url = new URL(value, base);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
-      const { path, rewritten } = bundlePath(url, base);
-
-      if (spec.asset === 'file') {
-        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
-      } else {
-        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
-        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
-        if (parts.every(Boolean)) {
-          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
-        } else {
-          const zft = await tryFetch(`${url.href}.zft`);
-          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
-          files[`${path}.zft`] = zft;
-        }
-      }
-      if (rewritten) node.params[key] = path;
-      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
-    }
-  }
+  Object.assign(files, await collectAssets(doc, base, ctx));
 
   // ------------------------------------------------------- page and graph
   const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');

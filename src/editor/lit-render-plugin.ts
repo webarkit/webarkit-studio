@@ -152,7 +152,9 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
         control = html`<input type="color" .value=${String(value)} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
         break;
       default:
-        control = html`<input type="text" .value=${String(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
+        // Asset params suggest the project's uploads of their kind (datalists kept by the assets panel).
+        control = html`<input type="text" .value=${String(value)} list=${spec.kind === 'string' && spec.asset ? `assets-${spec.asset}` : nothing}
+          @change=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
     }
     return html`<label class="param"><span title=${spec.live ? 'Live: applied while running' : 'Applied on the next Run'}
       >${spec.label}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span>${control}</label>`;

@@ -7,6 +7,9 @@
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { resolveParams, topologicalOrder, validateGraph, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
+import { parseAssetRef } from '../core/assets';
+import type { AssetLookup } from '../assets/asset';
+import { RuntimeAssets } from './assets';
 import { NODE_REGISTRY } from './registry';
 import type { NodeFactory, PortValues, RuntimeContext, RuntimeNode } from './types';
 
@@ -40,6 +43,8 @@ export interface RuntimeOptions {
   registry?: Record<string, NodeFactory>;
   /** false = no requestAnimationFrame loop: the caller drives frames with tick(). */
   frameLoop?: boolean;
+  /** The project's uploaded assets, for `asset://` params (src/core/assets.ts). Without it, such params fail. */
+  assets?: AssetLookup;
 }
 
 /** An error raised by a specific node, so the studio can point at it. */
@@ -66,6 +71,7 @@ export class GraphRuntime {
   private readonly registry: Record<string, NodeFactory>;
   private lastTime = 0;
   private frame = 0;
+  private assets: RuntimeAssets | null = null;
 
   constructor(doc: unknown, opts: RuntimeOptions) {
     this.catalog = opts.catalog ?? NODE_CATALOG;
@@ -78,6 +84,7 @@ export class GraphRuntime {
     if (this.running) return;
     this.running = true;
     const log = this.opts.log ?? ((m: string) => console.info(`[webarkit-studio] ${m}`));
+    const assets = (this.assets = new RuntimeAssets(this.opts.assets ?? (() => undefined)));
 
     for (const node of topologicalOrder(this.doc)) {
       const factory = this.registry[node.type];
@@ -89,8 +96,15 @@ export class GraphRuntime {
         log,
         report: (text) => this.opts.onReport?.(node.id, text),
         studio: this.opts.studio ?? false,
+        virtualFiles: assets.virtualFiles,
       };
-      const params = resolveParams(this.catalog[node.type], node.params);
+      let params: Record<string, ParamValue>;
+      try {
+        params = this.resolveAssets(node, resolveParams(this.catalog[node.type], node.params), assets);
+      } catch (err) {
+        this.stop();
+        throw new NodeRuntimeError(node.id, `Node ${node.id} (${node.type}): ${(err as Error).message}`);
+      }
       const instance: Instance = { node, inputs: [], impl: factory(params, ctx), params, outputs: {} };
       this.instances.set(node.id, instance);
       instance.inputs = this.planInputs(node);
@@ -135,7 +149,8 @@ export class GraphRuntime {
     const inst = this.instances.get(nodeId);
     if (!this.running || !inst) return 'not-running';
     const spec = this.catalog[inst.node.type]?.params[key];
-    if (!spec?.live) return 'restart';
+    // Asset params are resolved at start (resolveAssets), so they never apply live.
+    if (!spec?.live || (spec.kind === 'string' && spec.asset)) return 'restart';
     inst.params[key] = value;
     const changed = inst.impl.onParamChange?.(key, value);
     if (changed) Object.assign(inst.outputs, changed);
@@ -153,6 +168,18 @@ export class GraphRuntime {
       }
     }
     this.instances.clear();
+    this.assets?.dispose();
+    this.assets = null;
+  }
+
+  /** Replaces `asset://` references in params marked `asset` with URLs the node can load. */
+  private resolveAssets(node: GraphNode, params: Record<string, ParamValue>, assets: RuntimeAssets): Record<string, ParamValue> {
+    for (const [key, spec] of Object.entries(this.catalog[node.type].params)) {
+      if (spec.kind !== 'string' || !spec.asset) continue;
+      const ref = parseAssetRef(String(params[key]));
+      if (ref) params[key] = assets.resolve(ref, spec.asset);
+    }
+    return params;
   }
 
   /**

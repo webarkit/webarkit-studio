@@ -6,8 +6,12 @@
  */
 import { NftSession, type NftTrackerFactory } from '../trackers/nft-session';
 import type { WorkerRequest, WorkerResponse } from './nft-protocol';
+import { virtualFetch } from './virtual-fetch';
 
 declare const self: DedicatedWorkerGlobalScope;
+/** Uploaded NFT dataset files, virtual URL → blob: URL, as each load sends them (src/runtime/assets.ts). */
+const virtualFiles: Record<string, string> = {};
+self.fetch = virtualFetch(virtualFiles, self.fetch.bind(self));
 
 let session: NftSession | null = null;
 
@@ -26,6 +30,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const msg = ev.data;
   try {
     if (msg.type === 'load') {
+      Object.assign(virtualFiles, msg.files);
       session = await NftSession.create(await loadFactory(msg.build), msg);
       reply({
         type: 'ready',
