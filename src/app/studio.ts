@@ -38,7 +38,12 @@ const studio = await createStudioEditor($('editor'), {
   onParamChange(nodeId, key, value) {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
+  onHistoryChange(canUndo) {
+    $<HTMLButtonElement>('btn-undo').disabled = !canUndo;
+  },
 });
+$('btn-undo').onclick = () => void studio.undo();
+$('btn-redo').onclick = () => void studio.redo();
 
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
   studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),

@@ -6,9 +6,11 @@ import { NodeEditor } from 'rete';
 import { AreaExtensions, AreaPlugin, type Area2D } from 'rete-area-plugin';
 import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
 import { ContextMenuPlugin } from 'rete-context-menu-plugin';
+import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'rete-history-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import type { MenuItem } from './context-menu';
+import { mergeParamEdit, ParamEditAction } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
 import { searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
@@ -20,6 +22,8 @@ export interface StudioEditorEvents {
   onChange: () => void;
   /** A param was edited by the user. */
   onParamChange?: (nodeId: string, key: string, value: ParamValue) => void;
+  /** Undo became available or unavailable. */
+  onHistoryChange?: (canUndo: boolean) => void;
 }
 
 export interface StudioEditor {
@@ -30,6 +34,8 @@ export interface StudioEditor {
   load(doc: GraphDocument): Promise<void>;
   toDocument(): GraphDocument;
   zoomToFit(): Promise<void>;
+  undo(): Promise<void>;
+  redo(): Promise<void>;
   destroy(): void;
 }
 
@@ -38,14 +44,37 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const editor = new NodeEditor<Schemes>();
   const area = new AreaPlugin<Schemes, AreaExtra>(container);
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
+  const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction>();
   let graphName = 'Untitled';
+
+  /** Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it. */
+  function applyParam(nodeId: string, key: string, value: ParamValue) {
+    const node = editor.getNode(nodeId);
+    if (!node) return;
+    node.params[key] = value;
+    void area.update('node', nodeId);
+    events.onParamChange?.(nodeId, key, value);
+    onChange();
+  }
+
+  let lastParamEdit: ParamEditAction | undefined;
+  function recordParamEdit(node: StudioNode, key: string, value: ParamValue) {
+    const before = node.params[key] ?? node.def.params[key]?.default;
+    if (before === undefined || before === value) return;
+    const action = new ParamEditAction(node.id, key, before, value, Date.now(), applyParam);
+    // Merge only into the latest record: another action in between starts a new step.
+    const latest = history.getHistorySnapshot().at(-1)?.action;
+    if (latest === lastParamEdit && mergeParamEdit(lastParamEdit, action, history.timing)) return;
+    history.separate(); // a param edit is its own step, not part of a quick add / wire before it
+    history.add(action);
+    lastParamEdit = action;
+  }
 
   const renderer = new LitRenderPlugin({
     onParamChange: (node, key, value: ParamValue) => {
-      node.params[key] = value;
-      void area.update('node', node.id);
-      events.onParamChange?.(node.id, key, value);
-      onChange();
+      recordParamEdit(node, key, value);
+      applyParam(node.id, key, value);
+      notifyHistory();
     },
     onRemoveNode: (node) => removeNode(node.id),
     onRemoveConnection: (c) => void editor.removeConnection(c.id),
@@ -107,6 +136,30 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   area.use(connection);
   area.use(renderer);
   area.use(contextMenu);
+  history.addPreset(HistoryPresets.classic.setup());
+  area.use(history);
+
+  const notifyHistory = () => queueMicrotask(() => events.onHistoryChange?.(history.getHistorySnapshot().length > 0));
+
+  // Ctrl/Cmd+Z undo, Ctrl+Shift+Z / Ctrl+Y redo; text fields keep the browser's own undo.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || isEditable(e.target)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) void undo();
+    else if ((key === 'z' && e.shiftKey) || key === 'y') void redo();
+    else return;
+    e.preventDefault();
+  };
+  document.addEventListener('keydown', onKeyDown);
+
+  async function undo() {
+    await history.undo();
+    notifyHistory();
+  }
+  async function redo() {
+    await history.redo();
+    notifyHistory();
+  }
 
   AreaExtensions.selectableNodes(area, AreaExtensions.selector(), { accumulating: AreaExtensions.accumulateOnCtrl() });
   AreaExtensions.simpleNodesOrder(area);
@@ -124,11 +177,17 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         if (taken) return;
       }
     }
-    if (['nodecreated', 'noderemoved', 'connectioncreated', 'connectionremoved'].includes(context.type)) onChange();
+    if (['nodecreated', 'noderemoved', 'connectioncreated', 'connectionremoved'].includes(context.type)) {
+      onChange();
+      notifyHistory();
+    }
     return context;
   });
   area.addPipe((context) => {
-    if (context.type === 'nodetranslated') onChange();
+    if (context.type === 'nodetranslated') {
+      onChange();
+      notifyHistory();
+    }
     return context;
   });
 
@@ -180,6 +239,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         conn.id = e.id;
         await editor.addConnection(conn);
       }
+      // A loaded graph starts a new history: undo must not bring back the previous one.
+      history.clear();
+      lastParamEdit = undefined;
+      notifyHistory();
     },
 
     toDocument() {
@@ -207,8 +270,19 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       await AreaExtensions.zoomAt(area, editor.getNodes());
     },
 
+    undo,
+    redo,
+
     destroy() {
+      document.removeEventListener('keydown', onKeyDown);
       area.destroy();
     },
   };
+}
+
+/** Text fields, selects and editable content keep their own keyboard shortcuts. */
+function isEditable(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  return target instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'color', 'range'].includes(target.type);
 }

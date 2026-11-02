@@ -121,6 +121,65 @@ test.describe('editor', () => {
     await expect(page.locator('.studio-node .title span:text-is("Primitive")')).toHaveCount(2);
   });
 
+  test('the context menu closes on Escape and on a click outside the canvas', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const at = await emptyCanvas(page);
+    const menu = page.locator('.context-menu');
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await expect(menu.locator('input[type=search]')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await expect(menu).toBeVisible();
+    await page.click('#palette-search');
+    await expect(menu).toBeHidden();
+  });
+
+  test("a node's context menu deletes it", async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const nodes = page.locator('.studio-node');
+    const before = await nodes.count();
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click({ button: 'right' });
+    await page.locator('.context-menu .item', { hasText: 'Delete' }).click();
+    await expect(nodes).toHaveCount(before - 1);
+    await expect(page.locator('.studio-node .title span:text-is("Primitive")')).toHaveCount(0);
+  });
+
+  test('undo / redo a param edit, from the toolbar and the keyboard', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const size = page.locator('.studio-node:has(.title span:text-is("Primitive")) .param:has-text("Size") input');
+    await expect(size).toHaveValue('80');
+    await size.fill('120');
+    await size.dispatchEvent('change');
+    await page.click('#btn-undo');
+    await expect(size).toHaveValue('80');
+    await page.click('#btn-redo');
+    await expect(size).toHaveValue('120');
+    // Ctrl+Z in a text field stays the browser's own undo; on the canvas it is the graph's.
+    await page.mouse.click((await page.locator('#editor').boundingBox())!.x + 5, 100);
+    await page.keyboard.press('Control+z');
+    await expect(size).toHaveValue('80');
+    await page.keyboard.press('Control+Shift+z');
+    await expect(size).toHaveValue('120');
+  });
+
+  test('undo brings back a removed node with its wires; loading a graph clears the history', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const nodes = page.locator('.studio-node');
+    const wires = page.locator('svg.connection path');
+    const [nodeCount, wireCount] = [await nodes.count(), await wires.count()];
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .remove').click();
+    await expect(nodes).toHaveCount(nodeCount - 1);
+    await expect(wires).toHaveCount(wireCount - 2); // scene in, object out
+    await page.click('#btn-undo');
+    await expect(nodes).toHaveCount(nodeCount);
+    await expect(wires).toHaveCount(wireCount);
+
+    await page.click('#btn-new');
+    await expect(nodes).toHaveCount(0);
+    await expect(page.locator('#btn-undo')).toBeDisabled();
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');
