@@ -303,6 +303,27 @@ const defs: NodeDefinition[] = [
     },
   },
   {
+    type: 'scene.gltf',
+    label: 'glTF Model',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A glTF 2.0 model (.glb, or a .gltf with embedded or URL resources; an uploaded .gltf must be self-contained). ' +
+      'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Model' } },
+    params: {
+      url: { kind: 'string', label: 'Model URL', default: 'models/cube.glb', asset: 'model' },
+      scale: { kind: 'number', label: 'Scale (mm / unit)', default: 80, min: 0.001, max: 100000, step: 1, live: true },
+      x: { kind: 'number', label: 'X (mm)', default: 0, step: 1, live: true },
+      y: { kind: 'number', label: 'Y (mm)', default: 0, step: 1, live: true },
+      z: { kind: 'number', label: 'Z (mm)', default: 0, step: 1, live: true },
+      rotX: { kind: 'number', label: 'Rotate X (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+      rotY: { kind: 'number', label: 'Rotate Y (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+      rotZ: { kind: 'number', label: 'Rotate Z (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+    },
+  },
+  {
     type: 'scene.anchor',
     label: 'Marker Anchor',
     category: 'scene',

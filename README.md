@@ -123,6 +123,7 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | Format | Content |
 |---|---|
 | Graph (.json) | the node graph only; re-import it in the studio |
+| Project (.zip) | the graph and its uploaded assets; open it with **Import…** |
 | Standalone app (.zip) | player + graph + assets, runs on any static web server |
 | jsartoolkitNFT source code (.zip) | planned: readable code generated from the graph |
 
@@ -133,7 +134,23 @@ datasets). Only the chunks the graph uses are included: a Three.js graph
 leaves out Babylon.js, a SIMD controller leaves out the standard build
 (manifest written by `vite.player.config.ts`). Asset URLs inside the studio
 keep their path; others are copied under `data/_ext/` and the graph is
-rewritten.
+rewritten. Uploaded assets are copied under `data/assets/<id>/`.
+
+## Assets
+
+**Upload…** in the *assets* panel (under the palette) adds files to the
+project: images and videos, NFT datasets (select the `.iset`, `.fset` and
+`.fset3` files together) and glTF models (`.glb`, or a self-contained
+`.gltf`). They are saved in the browser (IndexedDB) next to the autosaved
+graph, and **Export → Project (.zip)** carries them to another browser.
+
+A param marked `asset` takes a URL or an upload of its kind: its field
+suggests the matching uploads, as `asset://<id>/<name>` references. The graph
+format is unchanged, but a graph with such references needs the project's
+assets (and a studio or player from this version on) to run. While the graph
+runs, uploads are served as `blob:` URLs; an uploaded NFT dataset is served to
+the tracker worker under a virtual `https://assets.webarkit.invalid/` prefix,
+which also appears in its tracking traces.
 
 ```
 pinball-nft-three-js/
@@ -290,6 +307,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ | scene → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ | scene → sceneObject |
+| `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
@@ -301,7 +319,7 @@ Planned split once the format stabilises (npm workspaces):
 | `webarkit.target` | planned | → wnftTarget (`.wnft`) |
 | `webarkit.nftTracker` | planned | video, cvBackend, target, filter? → pose, found, … |
 | `filter.ema`, `filter.kalman` | planned | → poseFilter |
-| `scene.gltf`, `scene.text`, `scene.video` | planned | scene → sceneObject |
+| `scene.text`, `scene.video` | planned | scene → sceneObject |
 | AR Camera near / far override | idea | renderer-side override, for trackers that do not own their planes |
 | `playcanvas.renderer`, `aframe.renderer` | idea | → renderer |
 | `logic.and` / `not` / `timer` / `toggle` | planned | boolean / event |

@@ -31,6 +31,9 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
+  // glTF loaders, imported by the adapters' loadModel() only.
+  { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
+  { module: '@babylonjs/loaders/glTF/2.0/index.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   {
     module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js',
     needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === 'simd'),

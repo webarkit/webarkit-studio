@@ -31,6 +31,39 @@ export interface LightSpec {
   intensity: number;
 }
 
+/** A glTF 2.0 model, as scene.gltf fetched it. */
+export interface ModelSpec {
+  /** The .glb or .gltf file. */
+  data: ArrayBuffer;
+  /** Where it came from: relative resources of a .gltf (buffers, textures) resolve against it. */
+  url: string;
+  /** GLB container (true) or glTF JSON. */
+  binary: boolean;
+}
+
+/** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and uniform scale. */
+export interface Transform {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: number;
+}
+
+/** Column-major T · Rx · Ry · Rz · S. */
+export function transformMatrix({ position: [x, y, z], rotation, scale: s }: Transform): number[] {
+  const [a, b, c] = rotation.map((deg) => (deg * Math.PI) / 180);
+  const [cx, sx, cy, sy, cz, sz] = [Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b), Math.cos(c), Math.sin(c)];
+  // prettier-ignore
+  return [
+    s * cy * cz,                  s * (cx * sz + sx * sy * cz), s * (sx * sz - cx * sy * cz), 0,
+    -s * cy * sz,                 s * (cx * cz - sx * sy * sz), s * (sx * cz + cx * sy * sz), 0,
+    s * sy,                       -s * sx * cy,                 s * cx * cy,                  0,
+    x,                            y,                            z,                            1,
+  ];
+}
+
+/** glTF is Y-up; marker space is Z-up: a quarter turn about X stands models up on the marker. */
+export const Y_UP_TO_Z_UP: readonly number[] = transformMatrix({ position: [0, 0, 0], rotation: [90, 0, 0], scale: 1 });
+
 export interface SceneOptions {
   defaultLights: boolean;
 }
@@ -48,6 +81,12 @@ export interface SceneHandle {
   readonly renderer: RendererAdapter;
 
   createPrimitive(spec: PrimitiveSpec): SceneObject;
+  /**
+   * A glTF model, already stood up from glTF's Y-up to marker space (Z-up).
+   * The returned object's own matrix is free for the node's transform. glTF
+   * units are kept: the node scales them to millimetres.
+   */
+  loadModel(spec: ModelSpec): Promise<SceneObject>;
   createGroup(): SceneObject;
   createLight(spec: LightSpec): SceneObject;
   addChild(parent: SceneObject, child: SceneObject): void;

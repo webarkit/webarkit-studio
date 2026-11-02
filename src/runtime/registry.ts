@@ -7,7 +7,7 @@ import { cameraSource, imageSource, videoFileSource } from './nodes/sources';
 import { artkCameraParams, artkController, artkNftDataset, artkSettings } from './nodes/jsartoolkit-nft';
 import { jsartoolkitNativeFilter, oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
-import { anchor, arCamera, light, primitive, sceneNode } from './nodes/scene';
+import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
@@ -29,6 +29,7 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'scene.arCamera': arCamera,
   'scene.light': light,
   'scene.primitive': primitive,
+  'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,
   'debug.inspector': inspector,

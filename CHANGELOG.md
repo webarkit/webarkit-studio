@@ -11,6 +11,13 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - Image and Video File sources (`source.image`, `source.videoFile`): a still
   image or a recorded video instead of the camera, and the
   "pinball · image, no camera" demo (#2).
+- Assets: upload images, videos, NFT datasets and glTF models into the project
+  (saved in IndexedDB) and use them from asset params as `asset://<id>/<name>`
+  references. A graph using them needs its project's assets to run.
+- **Export → Project (.zip)**: the graph with its uploaded assets; **Import…**
+  opens it. The standalone app export bundles uploads under `data/assets/`.
+- `scene.gltf` (glTF Model) on Three.js and Babylon.js, with live scale,
+  rotation and position; `models/cube.glb` as its default model.
 
 ## [0.1.0] - 2026-10-31
 

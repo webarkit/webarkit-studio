@@ -1,5 +1,14 @@
 import * as THREE from 'three';
-import { assertOwned, type LightSpec, type PrimitiveSpec, type RendererAdapter, type SceneHandle, type SceneObject } from './adapter';
+import {
+  assertOwned,
+  Y_UP_TO_Z_UP,
+  type LightSpec,
+  type ModelSpec,
+  type PrimitiveSpec,
+  type RendererAdapter,
+  type SceneHandle,
+  type SceneObject,
+} from './adapter';
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
@@ -54,6 +63,28 @@ function createThreeScene(
       const material = new THREE.MeshStandardMaterial({ color: spec.color });
       disposables.add(geometry).add(material);
       return wrap(new THREE.Mesh(geometry, material));
+    },
+    async loadModel(spec: ModelSpec) {
+      // Loaded on demand: graphs without glTF models do not download the loader.
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+      const gltf = await new GLTFLoader().parseAsync(spec.data, spec.url.slice(0, spec.url.lastIndexOf('/') + 1));
+      gltf.scene.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        disposables.add(mesh.geometry);
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          disposables.add(material);
+          for (const value of Object.values(material)) if (value instanceof THREE.Texture) disposables.add(value);
+        }
+      });
+      const upright = new THREE.Group();
+      upright.matrixAutoUpdate = false;
+      upright.matrix.fromArray(Y_UP_TO_Z_UP);
+      upright.add(gltf.scene);
+      const model = new THREE.Group();
+      model.matrixAutoUpdate = false;
+      model.add(upright);
+      return wrap(model);
     },
     createGroup() {
       const g = new THREE.Group();
