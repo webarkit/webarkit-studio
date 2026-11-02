@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { loadDemo, nodeStatus, run } from './helpers';
 
@@ -94,6 +94,38 @@ test.describe('studio', () => {
     await url.dispatchEvent('change');
     await page.click('#btn-run');
     await expect(page.locator('.studio-node .status.error')).toContainText(/cannot load NFT dataset \S*data\/DataNFT\/missing/, { timeout: 30_000 });
+  });
+});
+
+test.describe('editor', () => {
+  /** A point on the empty canvas, right of the demo graph. */
+  const emptyCanvas = async (page: Page) => {
+    const box = (await page.locator('#editor').boundingBox())!;
+    return { x: box.x + box.width - 40, y: box.y + 40 };
+  };
+
+  test('the context menu searches the catalog and adds the chosen node', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const nodes = page.locator('.studio-node');
+    const before = await nodes.count();
+    const at = await emptyCanvas(page);
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    const menu = page.locator('.context-menu');
+    await expect(menu.locator('input[type=search]')).toBeFocused();
+    await page.keyboard.type('primit');
+    await expect(menu.locator('.item')).toHaveCount(1);
+    await expect(menu.locator('.item')).toContainText('Primitive');
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeHidden();
+    await expect(nodes).toHaveCount(before + 1);
+    await expect(page.locator('.studio-node .title span:text-is("Primitive")')).toHaveCount(2);
+  });
+
+  test('the palette filter hides nodes that do not match', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    await page.fill('#palette-search', 'babylon');
+    await expect(page.locator('#palette button:visible')).toHaveCount(1);
+    await expect(page.locator('#palette button:visible')).toContainText('Babylon.js Renderer');
   });
 });
 

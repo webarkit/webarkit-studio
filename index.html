@@ -31,7 +31,10 @@
       <input id="file-import" type="file" accept=".json,application/json,.zip,application/zip" hidden />
     </header>
     <main class="layout">
-      <aside class="palette"><div id="palette"></div><section id="assets-panel"></section></aside>
+      <aside class="palette">
+        <input id="palette-search" type="search" placeholder="Search nodes… (or right-click the canvas)" aria-label="Search nodes" />
+        <div id="palette"></div><section id="assets-panel"></section>
+      </aside>
       <section id="editor" class="editor"></section>
       <aside class="preview">
         <div id="stage" class="stage"><p class="hint">Press ▶ Run to preview the graph.</p></div>

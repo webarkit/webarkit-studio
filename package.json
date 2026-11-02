@@ -40,6 +40,7 @@
     "rete": "^2.0.6",
     "rete-area-plugin": "^2.3.2",
     "rete-connection-plugin": "^2.0.5",
+    "rete-context-menu-plugin": "^2.0.6",
     "rete-render-utils": "^2.0.3",
     "three": "^0.186.1"
   },

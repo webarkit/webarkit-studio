@@ -2,7 +2,8 @@
  * Studio shell: palette + Rete editor + live preview (GraphRuntime).
  */
 import { createStudioEditor } from '../editor/editor';
-import { NODE_CATALOG, type NodeCategory } from '../nodes/catalog';
+import { NODE_CATALOG } from '../nodes/catalog';
+import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, validateGraph, type GraphDocument } from '../core/graph';
 import { HANDOFF_KEY } from './handoff';
@@ -44,8 +45,8 @@ mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
 );
 
 // ---------------------------------------------------------------- palette
-const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'output', 'debug'];
 const palette = $('palette');
+const paletteButtons = new Map<string, HTMLButtonElement>();
 for (const category of CATEGORY_ORDER) {
   const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category);
   if (!defs.length) continue;
@@ -59,9 +60,19 @@ for (const category of CATEGORY_ORDER) {
     btn.className = `cat-${category}`;
     btn.onclick = () => void studio.addNode(def.type);
     group.appendChild(btn);
+    paletteButtons.set(def.type, btn);
   }
   palette.appendChild(group);
 }
+// Filter: same ranking as the context menu search; empty groups are hidden.
+const paletteSearch = $<HTMLInputElement>('palette-search');
+paletteSearch.oninput = () => {
+  const shown = new Set(searchNodes(paletteSearch.value, Object.values(NODE_CATALOG)).map((d) => d.type));
+  for (const [type, btn] of paletteButtons) btn.hidden = !shown.has(type);
+  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group')) {
+    group.hidden = !group.querySelector('button:not([hidden])');
+  }
+};
 
 // ----------------------------------------------------------- graph I/O
 async function load(doc: unknown): Promise<boolean> {

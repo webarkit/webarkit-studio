@@ -18,6 +18,7 @@ import type { StudioConnection, StudioNode } from './studio-node';
 import { SOCKET_TYPES } from '../core/sockets';
 import type { ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
+import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
 
 type Position = { x: number; y: number };
 type Side = 'input' | 'output';
@@ -37,12 +38,15 @@ export type RenderSignal =
   | AreaRenderSignal<'node', { payload: StudioNode }>
   | AreaRenderSignal<'connection', { payload: StudioConnection; start?: Position; end?: Position }>
   | AreaRenderSignal<'socket', { payload: unknown; nodeId: string; side: Side; key: string }>
+  | AreaRenderSignal<'contextmenu', { items: MenuItem[]; onHide(): void; searchBar?: boolean }>
   | { type: 'unmount'; data: { element: HTMLElement } };
 
 export interface LitRenderOptions {
   onParamChange: (node: StudioNode, key: string, value: ParamValue) => void;
   onRemoveNode: (node: StudioNode) => void;
   onRemoveConnection: (connection: StudioConnection) => void;
+  /** Filters context menu items for the search bar. */
+  searchMenu: MenuSearch;
 }
 
 interface ConnectionState {
@@ -65,6 +69,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
       else if (context.type === 'render' && !context.data.filled) {
         if (context.data.type === 'node') this.renderNode(context.data as NodeRender);
         else if (context.data.type === 'connection') this.renderConnection(context.data as ConnectionRender);
+        else if (context.data.type === 'contextmenu') renderContextMenu(context.data as ContextMenuData, this.opts.searchMenu);
         // Socket elements are drawn as part of their node; acknowledging them with
         // `rendered` lets DOMSocketPosition measure them (connections need this).
         else if (context.data.type === 'socket') void this.parentScope().emit({ type: 'rendered', data: context.data } as RenderSignal);

@@ -5,8 +5,12 @@
 import { NodeEditor } from 'rete';
 import { AreaExtensions, AreaPlugin, type Area2D } from 'rete-area-plugin';
 import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
+import { ContextMenuPlugin } from 'rete-context-menu-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, type GraphDocument, type ParamValue } from '../core/graph';
+import { NODE_CATALOG } from '../nodes/catalog';
+import type { MenuItem } from './context-menu';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
+import { searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
 
 type AreaExtra = Area2D<Schemes> | RenderSignal;
@@ -43,13 +47,43 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       events.onParamChange?.(node.id, key, value);
       onChange();
     },
-    onRemoveNode: async (node) => {
-      for (const c of editor.getConnections().filter((c) => c.source === node.id || c.target === node.id)) {
-        await editor.removeConnection(c.id);
-      }
-      await editor.removeNode(node.id);
-    },
+    onRemoveNode: (node) => removeNode(node.id),
     onRemoveConnection: (c) => void editor.removeConnection(c.id),
+    searchMenu: (query, items) => {
+      const byType = new Map(items.map((item) => [item.key, item]));
+      const defs = searchNodes(query, Object.values(NODE_CATALOG).filter((d) => byType.has(d.type)));
+      return defs.map((d) => byType.get(d.type)!);
+    },
+  });
+
+  async function removeNode(id: string) {
+    for (const c of editor.getConnections().filter((c) => c.source === id || c.target === id)) {
+      await editor.removeConnection(c.id);
+    }
+    await editor.removeNode(id);
+  }
+
+  // Right-click: the canvas lists every node type (with search), a node or a wire offers Delete.
+  const contextMenu = new ContextMenuPlugin<Schemes>({
+    items(context) {
+      if (context === 'root') {
+        // Where the menu opened: the node goes there, not where the pointer is when an item is picked.
+        const at = { ...area.area.pointer };
+        const list: MenuItem[] = searchNodes('', Object.values(NODE_CATALOG)).map((def) => ({
+          label: def.label,
+          key: def.type,
+          detail: def.provider !== 'core' ? `${def.category} · ${def.provider}` : def.category,
+          title: def.description,
+          handler: () => void addNode(def.type, at),
+        }));
+        return { searchBar: true, list };
+      }
+      const target = context as Schemes['Node'] | Schemes['Connection'];
+      if ('source' in target && 'target' in target) {
+        return { list: [{ label: 'Delete wire', key: 'delete', handler: () => void editor.removeConnection(target.id) }] };
+      }
+      return { list: [{ label: 'Delete', key: 'delete', handler: () => removeNode(target.id) }] };
+    },
   });
 
   // Only same-type sockets can be joined. Checking here (not just in the editor
@@ -72,6 +106,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   editor.use(area);
   area.use(connection);
   area.use(renderer);
+  area.use(contextMenu);
 
   AreaExtensions.selectableNodes(area, AreaExtensions.selector(), { accumulating: AreaExtensions.accumulateOnCtrl() });
   AreaExtensions.simpleNodesOrder(area);
