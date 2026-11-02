@@ -10,7 +10,7 @@
  */
 import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
-import type { AssetLookup } from '../core/assets';
+import type { AssetLookup } from '../assets/asset';
 
 /** Graphs handed over by the studio may use its uploaded assets (same origin, same IndexedDB). */
 async function studioAssets(): Promise<AssetLookup | undefined> {

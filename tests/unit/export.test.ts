@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { bundlePath, collectAssets, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
 import { slugify, type ExportContext } from '../../src/export/exporters';
-import { assetRef, type StoredAsset } from '../../src/core/assets';
+import { assetRef } from '../../src/core/assets';
+import type { StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
 
 /** A manifest shaped like the real one (see vite.player.config.ts). */

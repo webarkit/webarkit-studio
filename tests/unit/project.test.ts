@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { unzipSync } from 'fflate';
 import { isProjectFile, packProject, unpackProject } from '../../src/export/project';
-import { assetRef, type StoredAsset } from '../../src/core/assets';
+import { assetRef } from '../../src/core/assets';
+import type { StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
 
 const graph: GraphDocument = {
@@ -37,6 +38,20 @@ describe('project file', () => {
       ['d1', 'pinball', 'nftDataset', ['fset', 'fset3', 'iset']],
     ]);
     expect(await back.assets[1].files.fset3.text()).toBe('F3');
+  });
+
+  it('rejects a malformed asset manifest before anything is replaced', async () => {
+    const { zipSync, strToU8 } = await import('fflate');
+    const zip = (manifest: unknown, extra: Record<string, Uint8Array> = {}) =>
+      zipSync({ 'graph.json': strToU8('{}'), 'assets.json': strToU8(JSON.stringify(manifest)), ...extra });
+    const file = { 'assets/d/p.iset': new Uint8Array(1), 'assets/d/p.fset': new Uint8Array(1) };
+    await expect(
+      unpackProject(zip([{ id: 'd', name: 'p', kind: 'nftDataset', files: { iset: 'assets/d/p.iset', fset: 'assets/d/p.fset' } }], file)),
+    ).rejects.toThrow(/project file: asset "p".*fset3/);
+    await expect(unpackProject(zip([{ id: 1, name: 'x', kind: 'file', files: {} }]))).rejects.toThrow(/project file: .*id/);
+    await expect(unpackProject(zip([{ id: 'x', name: 'x', kind: 'video', files: { '': 'a' } }], { a: new Uint8Array(1) }))).rejects.toThrow(
+      /project file: .*kind/,
+    );
   });
 
   it('recognises a project zip and rejects a zip without a graph', async () => {

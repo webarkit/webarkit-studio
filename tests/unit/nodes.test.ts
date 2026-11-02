@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { filterConfig, settingsPatch } from '../../src/runtime/trackers/nft-session';
 import { selectMarker } from '../../src/runtime/nodes/tracking';
 import { formatValue } from '../../src/runtime/nodes/debug';
-import { artkSettings, letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { artkNftDataset, artkSettings, letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
 import type { RuntimeContext } from '../../src/runtime/types';
 import type { TrackedMarkerValue } from '../../src/runtime/types';
 
@@ -22,6 +22,16 @@ describe('tracker facade mapping', () => {
     expect(settingsPatch(base)).toEqual(base);
     expect(settingsPatch({ ...base, lostTimeout: 500, ar2: {} })).toEqual({ ...base, lostTimeout: 500 });
     expect(settingsPatch({ ...base, ar2: { trackingThresh: 3 } })).toEqual({ ...base, ar2: { trackingThresh: 3 } });
+  });
+});
+
+describe('jsartoolkitNFT.dataset', () => {
+  it('names a dataset after the decoded last URL segment (uploads have encoded names)', async () => {
+    const ctx = { baseUrl: 'http://localhost/' } as RuntimeContext;
+    const out = (await artkNftDataset({ url: 'https://assets.webarkit.invalid/a1/my%20marker', name: '' }, ctx).init!({})) as {
+      dataset: { name: string };
+    };
+    expect(out.dataset.name).toBe('my marker');
   });
 });
 

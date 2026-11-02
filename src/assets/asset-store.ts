@@ -6,22 +6,29 @@
  * they survive a reload next to the autosaved graph, and a memory backend in
  * tests. The studio, the player (studio handoff) and the exporter read it.
  */
-import { NFT_DATASET_EXTENSIONS, assetKindOf, extensionOf, type StoredAsset } from '../core/assets';
+import { NFT_DATASET_EXTENSIONS } from '../core/assets';
+import { assetKindOf, extensionOf, type StoredAsset } from './asset';
 import type { AssetKind } from '../nodes/catalog';
 
 export type { StoredAsset };
 
+/** One change, saved all or nothing: clear everything, then remove some ids, then put some assets. */
+export interface AssetChange {
+  clear?: boolean;
+  remove?: string[];
+  put?: StoredAsset[];
+}
+
 export interface AssetBackend {
   loadAll(): Promise<StoredAsset[]>;
-  put(asset: StoredAsset): Promise<void>;
-  delete(id: string): Promise<void>;
-  clear(): Promise<void>;
+  write(change: AssetChange): Promise<void>;
 }
 
 /** Total size of an asset's files, in bytes. */
 export const assetSize = (asset: StoredAsset) => Object.values(asset.files).reduce((n, b) => n + b.size, 0);
 
-const newId = () => globalThis.crypto.randomUUID().slice(0, 8);
+/** 8 hex digits; randomUUID needs a secure context, getRandomValues does not. */
+const newId = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 export class AssetStore {
   private readonly assets = new Map<string, StoredAsset>();
@@ -70,29 +77,17 @@ export class AssetStore {
       ...[...datasets].map(([name, files]): StoredAsset => ({ id: newId(), name, kind: 'nftDataset', files })),
       ...singles,
     ];
-    for (const asset of added) {
-      await this.backend.put(asset);
-      this.assets.set(asset.id, asset);
-    }
-    this.changed();
+    await this.apply({ put: added });
     return added;
   }
 
   async remove(id: string): Promise<void> {
-    await this.backend.delete(id);
-    this.assets.delete(id);
-    this.changed();
+    await this.apply({ remove: [id] });
   }
 
   /** Replaces every asset (opening a project file). */
   async replaceAll(assets: StoredAsset[]): Promise<void> {
-    await this.backend.clear();
-    this.assets.clear();
-    for (const asset of assets) {
-      await this.backend.put(asset);
-      this.assets.set(asset.id, asset);
-    }
-    this.changed();
+    await this.apply({ clear: true, put: assets });
   }
 
   async clear(): Promise<void> {
@@ -104,7 +99,12 @@ export class AssetStore {
     return () => this.listeners.delete(listener);
   }
 
-  private changed() {
+  /** Saves first: if the backend refuses (quota…), the store is left as it was. */
+  private async apply(change: AssetChange) {
+    await this.backend.write(change);
+    if (change.clear) this.assets.clear();
+    for (const id of change.remove ?? []) this.assets.delete(id);
+    for (const asset of change.put ?? []) this.assets.set(asset.id, asset);
     this.listeners.forEach((l) => l());
   }
 }
@@ -113,9 +113,11 @@ export function memoryBackend(): AssetBackend {
   const saved = new Map<string, StoredAsset>();
   return {
     loadAll: async () => [...saved.values()],
-    put: async (a) => void saved.set(a.id, a),
-    delete: async (id) => void saved.delete(id),
-    clear: async () => saved.clear(),
+    async write({ clear, remove = [], put = [] }) {
+      if (clear) saved.clear();
+      remove.forEach((id) => saved.delete(id));
+      put.forEach((a) => saved.set(a.id, a));
+    },
   };
 }
 
@@ -134,7 +136,7 @@ export async function openAssetStore(log: (msg: string) => void = console.warn):
 
 const STORE = 'assets';
 
-/** IndexedDB backend: Blobs are stored as they are. */
+/** IndexedDB backend: Blobs are stored as they are; each change is one transaction. */
 export function indexedDbBackend(dbName = 'webarkit-studio'): AssetBackend {
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(dbName, 1);
@@ -142,18 +144,22 @@ export function indexedDbBackend(dbName = 'webarkit-studio'): AssetBackend {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
-  const run = async <T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
+  const transaction = async <T>(mode: IDBTransactionMode, ops: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> => {
     const tx = (await db).transaction(STORE, mode);
-    const req = op(tx.objectStore(STORE));
-    return new Promise<T>((resolve, reject) => {
-      tx.oncomplete = () => resolve(req.result);
-      tx.onerror = tx.onabort = () => reject(tx.error ?? req.error);
+    const req = ops(tx.objectStore(STORE));
+    return new Promise<T | undefined>((resolve, reject) => {
+      tx.oncomplete = () => resolve(req?.result);
+      tx.onerror = tx.onabort = () => reject(tx.error ?? req?.error);
     });
   };
   return {
-    loadAll: () => run('readonly', (s) => s.getAll() as IDBRequest<StoredAsset[]>),
-    put: async (a) => void (await run('readwrite', (s) => s.put(a))),
-    delete: async (id) => void (await run('readwrite', (s) => s.delete(id))),
-    clear: async () => void (await run('readwrite', (s) => s.clear())),
+    loadAll: async () => (await transaction('readonly', (s) => s.getAll() as IDBRequest<StoredAsset[]>)) ?? [],
+    async write({ clear, remove = [], put = [] }) {
+      await transaction('readwrite', (s) => {
+        if (clear) s.clear();
+        remove.forEach((id) => s.delete(id));
+        put.forEach((a) => s.put(a));
+      });
+    },
   };
 }

@@ -9,7 +9,9 @@ import type { WorkerRequest, WorkerResponse } from './nft-protocol';
 import { virtualFetch } from './virtual-fetch';
 
 declare const self: DedicatedWorkerGlobalScope;
-const networkFetch = self.fetch.bind(self);
+/** Uploaded NFT dataset files, virtual URL → blob: URL, as each load sends them (src/runtime/assets.ts). */
+const virtualFiles: Record<string, string> = {};
+self.fetch = virtualFetch(virtualFiles, self.fetch.bind(self));
 
 let session: NftSession | null = null;
 
@@ -28,8 +30,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const msg = ev.data;
   try {
     if (msg.type === 'load') {
-      // Uploaded NFT datasets: the facade fetches their virtual URLs (src/runtime/assets.ts).
-      self.fetch = virtualFetch(msg.files, networkFetch);
+      Object.assign(virtualFiles, msg.files);
       session = await NftSession.create(await loadFactory(msg.build), msg);
       reply({
         type: 'ready',

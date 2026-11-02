@@ -3,7 +3,7 @@ import { GraphRuntime, NodeRuntimeError } from '../../src/runtime/runtime';
 import { VIRTUAL_ASSET_ORIGIN } from '../../src/runtime/assets';
 import { virtualFetch } from '../../src/runtime/workers/virtual-fetch';
 import { assetRef } from '../../src/core/assets';
-import type { StoredAsset } from '../../src/core/assets';
+import type { StoredAsset } from '../../src/assets/asset';
 import type { NodeDefinition } from '../../src/nodes/catalog';
 import type { NodeFactory, RuntimeContext } from '../../src/runtime/types';
 
@@ -17,7 +17,7 @@ const CATALOG: Record<string, NodeDefinition> = {
     inputs: {},
     outputs: {},
     params: {
-      image: { kind: 'string', label: 'Image', default: 'data/photo.jpg', asset: 'file' },
+      image: { kind: 'string', label: 'Image', default: 'data/photo.jpg', asset: 'file', live: true },
       dataset: { kind: 'string', label: 'Dataset', default: 'data/DataNFT/pinball', asset: 'nftDataset' },
     },
   },
@@ -86,6 +86,11 @@ describe('asset references at runtime', () => {
     const err = await start({ dataset: assetRef('img', 'photo.jpg') }).catch((e) => e);
     expect(err).toBeInstanceOf(NodeRuntimeError);
     expect(err.message).toMatch(/photo\.jpg.*file.*NFT dataset/);
+  });
+
+  it('never applies an asset param live: the change waits for a restart, where it is resolved', async () => {
+    const { rt } = await start({});
+    expect(rt.setParam('n', 'image', assetRef('img', 'photo.jpg'))).toBe('restart');
   });
 
   it('revokes its blob URLs when the graph stops', async () => {

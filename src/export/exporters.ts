@@ -4,7 +4,8 @@
  * appear in the studio's Export menu.
  */
 import type { GraphDocument } from '../core/graph';
-import { parseAssetRef, type AssetLookup, type StoredAsset } from '../core/assets';
+import { parseAssetRef } from '../core/assets';
+import type { AssetLookup, StoredAsset } from '../assets/asset';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {

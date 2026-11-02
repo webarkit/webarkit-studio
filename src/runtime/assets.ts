@@ -9,7 +9,8 @@
  *    under VIRTUAL_ASSET_ORIGIN, and `virtualFiles` maps each file URL under it
  *    to a blob: URL; the tracker worker serves them (workers/virtual-fetch.ts).
  */
-import { NFT_DATASET_EXTENSIONS, type AssetLookup } from '../core/assets';
+import { NFT_DATASET_EXTENSIONS } from '../core/assets';
+import type { AssetLookup } from '../assets/asset';
 import type { AssetKind } from '../nodes/catalog';
 
 /** Origin of virtual NFT dataset prefixes. `.invalid` never resolves, so a fetch that bypasses the worker shim fails at once. */

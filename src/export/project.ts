@@ -7,7 +7,8 @@
  *   assets/<id>/<file name>    the files
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import type { StoredAsset } from '../core/assets';
+import type { StoredAsset } from '../assets/asset';
+import { NFT_DATASET_EXTENSIONS } from '../core/assets';
 import type { AssetKind } from '../nodes/catalog';
 
 interface ManifestEntry {
@@ -49,8 +50,10 @@ export function isProjectFile(bytes: Uint8Array): boolean {
 export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown; assets: StoredAsset[] }> {
   const files = unzipSync(bytes);
   if (!files['graph.json']) throw new Error('not a WebARKit Studio project: graph.json is missing');
-  const manifest = files['assets.json'] ? (JSON.parse(strFromU8(files['assets.json'])) as ManifestEntry[]) : [];
-  const assets = manifest.map((entry): StoredAsset => {
+  const manifest = files['assets.json'] ? (JSON.parse(strFromU8(files['assets.json'])) as unknown) : [];
+  if (!Array.isArray(manifest)) throw new Error('project file: assets.json is not a list');
+  manifest.forEach(checkEntry);
+  const assets = (manifest as ManifestEntry[]).map((entry): StoredAsset => {
     const blobs: Record<string, Blob> = {};
     for (const [key, path] of Object.entries(entry.files)) {
       const data = files[path];
@@ -60,4 +63,20 @@ export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown
     return { id: entry.id, name: entry.name, kind: entry.kind, files: blobs };
   });
   return { graph: JSON.parse(strFromU8(files['graph.json'])), assets };
+}
+
+const KINDS: AssetKind[] = ['file', 'nftDataset', 'model'];
+
+/** Throws on a manifest entry the studio could not use, before anything is imported. */
+function checkEntry(entry: Partial<ManifestEntry>, index: number): void {
+  const fail = (what: string) => {
+    throw new Error(`project file: asset ${typeof entry?.name === 'string' ? `"${entry.name}"` : `#${index}`} ${what}`);
+  };
+  if (typeof entry?.id !== 'string' || !entry.id) fail('has no valid id');
+  if (typeof entry.name !== 'string' || !entry.name) fail('has no valid name');
+  if (!KINDS.includes(entry.kind as AssetKind)) fail(`has an unknown kind "${String(entry.kind)}"`);
+  const keys = Object.keys(entry.files ?? {});
+  const expected: readonly string[] = entry.kind === 'nftDataset' ? NFT_DATASET_EXTENSIONS : [''];
+  const missing = expected.filter((k) => !keys.includes(k));
+  if (missing.length) fail(`is missing its ${missing.map((k) => (k ? `.${k}` : 'file')).join(', ')}`);
 }

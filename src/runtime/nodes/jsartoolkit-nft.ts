@@ -46,11 +46,20 @@ export const artkCameraParams: NodeFactory = (params, ctx) => ({
   init: (): { params: ArtkCameraParamsValue } => ({ params: { url: new URL(String(params.url), ctx.baseUrl).href } }),
 });
 
+/** A URL path segment as text ("my%20marker" → "my marker": uploaded datasets have encoded names). */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 /** jsartoolkitNFT.dataset — resolves the NFT dataset prefix URL and its name. */
 export const artkNftDataset: NodeFactory = (params, ctx) => ({
   init: (): { dataset: ArtkNftDatasetValue } => {
     const url = String(params.url);
-    const name = String(params.name || '').trim() || url.split('/').filter(Boolean).pop() || url;
+    const name = String(params.name || '').trim() || decodeSegment(url.split('/').filter(Boolean).pop() ?? '') || url;
     return { dataset: { url: new URL(url, ctx.baseUrl).href, name } };
   },
 });

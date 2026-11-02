@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assetKindOf, assetRef, parseAssetRef } from '../../src/core/assets';
+import { assetRef, parseAssetRef } from '../../src/core/assets';
+import { assetKindOf } from '../../src/assets/asset';
 import { AssetStore, memoryBackend } from '../../src/assets/asset-store';
 
 const file = (name: string, text = name) => new File([text], name);
@@ -71,6 +72,18 @@ describe('AssetStore', () => {
     const [a] = await (await AssetStore.open(backend)).add([file('photo.jpg', 'pixels')]);
     const reopened = await AssetStore.open(backend);
     expect(await reopened.get(a.id)!.files[''].text()).toBe('pixels');
+  });
+
+  it('keeps its assets when the backend fails to save (quota)', async () => {
+    const backend = memoryBackend();
+    const store = await AssetStore.open(backend);
+    const [a] = await store.add([file('old.jpg')]);
+    backend.write = async () => {
+      throw new Error('QuotaExceededError');
+    };
+    await expect(store.replaceAll([{ id: 'x', name: 'new.jpg', kind: 'file', files: { '': new Blob(['n']) } }])).rejects.toThrow(/Quota/);
+    await expect(store.add([file('more.jpg')])).rejects.toThrow(/Quota/);
+    expect(store.list().map((s) => s.id)).toEqual([a.id]);
   });
 
   it('replaceAll swaps the whole project (project import)', async () => {

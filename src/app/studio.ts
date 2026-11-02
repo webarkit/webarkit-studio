@@ -10,6 +10,7 @@ import { EXPORTERS } from '../export/exporters';
 import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
+import { parseAssetRef } from '../core/assets';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -23,7 +24,9 @@ const log = (msg: string) => {
 };
 
 const assetStore = await openAssetStore(log);
-mountAssetsPanel($('assets-panel'), assetStore, log);
+mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
+  studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),
+);
 
 const studio = await createStudioEditor($('editor'), {
   onChange() {
@@ -118,6 +121,7 @@ fileInput.onchange = async () => {
     if (isProjectFile(bytes)) {
       // A project brings its assets: they replace the current ones.
       const project = await unpackProject(bytes);
+      validateGraph(project.graph); // an unusable project must not replace the current assets
       await assetStore.replaceAll(project.assets);
       log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
       await load(project.graph);

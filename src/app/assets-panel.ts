@@ -14,10 +14,16 @@ const ACCEPT = '.iset,.fset,.fset3,.glb,.gltf,image/*,video/*,.dat';
 const formatSize = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-export function mountAssetsPanel(container: HTMLElement, store: AssetStore, log: (msg: string) => void): void {
+/** `inUse(id)`: whether the current graph references the asset (asked before removing it). */
+export function mountAssetsPanel(
+  container: HTMLElement,
+  store: AssetStore,
+  log: (msg: string) => void,
+  inUse: (id: string) => boolean = () => false,
+): void {
   container.innerHTML = `
     <h3>assets</h3>
-    <button class="asset-upload" title="Images, videos, NFT datasets (.iset + .fset + .fset3) and glTF / GLB models">Upload…</button>
+    <button class="asset-upload" title="Images, videos, glTF / GLB models and NFT datasets (select the .iset, .fset and .fset3 files together)">Upload…</button>
     <input class="asset-input" type="file" multiple hidden accept="${ACCEPT}" />
     <ul class="asset-list"></ul>`;
   const input = container.querySelector<HTMLInputElement>('.asset-input')!;
@@ -51,7 +57,13 @@ export function mountAssetsPanel(container: HTMLElement, store: AssetStore, log:
         li.innerHTML = `<span class="asset-name"></span><small>${KINDS[asset.kind]} · ${formatSize(assetSize(asset))}</small>`;
         li.querySelector('.asset-name')!.textContent = asset.name;
         const remove = Object.assign(document.createElement('button'), { className: 'asset-remove', textContent: '×', title: 'Remove from the project' });
-        remove.onclick = () => void store.remove(asset.id).then(() => log(`- asset ${asset.name}`));
+        remove.onclick = () => {
+          if (inUse(asset.id) && !confirm(`The graph uses "${asset.name}". Remove it from the project anyway?`)) return;
+          store.remove(asset.id).then(
+            () => log(`- asset ${asset.name}`),
+            (err: Error) => log(`✗ cannot remove ${asset.name}: ${err.message}`),
+          );
+        };
         li.appendChild(remove);
         return li;
       }),

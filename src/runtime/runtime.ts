@@ -7,7 +7,8 @@
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { resolveParams, topologicalOrder, validateGraph, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
-import { parseAssetRef, type AssetLookup } from '../core/assets';
+import { parseAssetRef } from '../core/assets';
+import type { AssetLookup } from '../assets/asset';
 import { RuntimeAssets } from './assets';
 import { NODE_REGISTRY } from './registry';
 import type { NodeFactory, PortValues, RuntimeContext, RuntimeNode } from './types';
@@ -148,7 +149,8 @@ export class GraphRuntime {
     const inst = this.instances.get(nodeId);
     if (!this.running || !inst) return 'not-running';
     const spec = this.catalog[inst.node.type]?.params[key];
-    if (!spec?.live) return 'restart';
+    // Asset params are resolved at start (resolveAssets), so they never apply live.
+    if (!spec?.live || (spec.kind === 'string' && spec.asset)) return 'restart';
     inst.params[key] = value;
     const changed = inst.impl.onParamChange?.(key, value);
     if (changed) Object.assign(inst.outputs, changed);
