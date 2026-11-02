@@ -210,16 +210,28 @@ test.describe('editor', () => {
 
   test('Arrange lays the graph out, and one Undo restores it', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
-    const positions = () => page.locator('.studio-node').evaluateAll((els) => els.map((el) => el.parentElement!.style.transform));
+    // Sorted: clicking a node brings it to the front, which reorders the DOM.
+    const positions = () => page.locator('.studio-node').evaluateAll((els) => els.map((el) => el.parentElement!.style.transform).sort());
     const before = await positions();
+    // With a selection: the selected nodes must not be dragged along with the one moved last.
+    await page.locator('.studio-node:has(.title span:text-is("Camera")) .title').click();
+    await page.locator('.studio-node:has(.title span:text-is("AR View")) .title').click({ modifiers: ['Control'] });
+    const selected = await positions();
     await page.click('#btn-arrange');
     await expect.poll(positions).not.toEqual(before);
     // Left to right: every wire goes from a node to one further right.
     const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave')!));
     const x = new Map(doc.nodes.map((n: { id: string; position: { x: number } }) => [n.id, n.position.x]));
     for (const e of doc.edges) expect(x.get(e.to.node)).toBeGreaterThan(x.get(e.from.node) as number);
+    const arranged = await positions();
     await page.click('#btn-undo');
-    await expect.poll(positions).toEqual(before);
+    await expect.poll(positions).toEqual(selected);
+    expect(selected).toEqual(before); // selecting moved nothing
+
+    // Same layout as without a selection.
+    await loadDemo(page, 'pinball-three');
+    await page.click('#btn-arrange');
+    await expect.poll(positions).toEqual(arranged);
   });
 
   test('copy / paste a selection keeps its inner wires, and one Undo removes it', async ({ page }) => {

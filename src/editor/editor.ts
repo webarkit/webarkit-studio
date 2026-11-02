@@ -214,14 +214,36 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   document.addEventListener('paste', onPaste);
 
   /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
+  /**
+   * Runs `actions` as one undo step: separated from what comes before and
+   * after, and with one timestamp, so the plugin's grouping (records less
+   * than `timing` ms apart) cannot split it on a slow device.
+   */
+  async function oneStep(actions: () => Promise<void>) {
+    history.separate();
+    const from = history.getHistorySnapshot().length;
+    try {
+      await actions();
+    } finally {
+      const records = history.getHistorySnapshot().slice(from);
+      const time = records.at(-1)?.time;
+      if (time !== undefined) for (const r of records) r.time = time;
+      history.separate();
+    }
+  }
+
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
     const { nodes, edges } = pasteClipboard(data, getUID, at);
-    history.separate();
-    const added: string[] = [];
+    // The copies replace the selection (before adding: a selected node would drag them along).
+    await selector.unselectAll();
+    await oneStep(() => addFragment(nodes, edges));
+    for (const n of nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+  }
+
+  async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
     for (const n of nodes) {
       if (!NODE_CATALOG[n.type]) continue; // from a newer studio, or hand-edited
       await addNode(n.type, n.position, n.id, n.params);
-      added.push(n.id);
     }
     for (const e of edges) {
       const source = editor.getNode(e.from.node);
@@ -231,9 +253,6 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       conn.id = e.id;
       await editor.addConnection(conn);
     }
-    history.separate();
-    await selector.unselectAll();
-    for (const id of added) await selectable.select(id, true);
   }
 
   async function duplicate(ids: string[]) {
@@ -302,6 +321,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return doc;
   }
 
+  let arranging = false;
+
   async function loadGraph(doc: GraphDocument) {
     await editor.clear();
     graphName = doc.name ?? 'Untitled';
@@ -367,7 +388,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
     async arrange() {
       const nodes = editor.getNodes();
-      if (!nodes.length) return;
+      if (!nodes.length || arranging) return;
       const views = nodes.map((n) => area.nodeViews.get(n.id)?.position ?? { x: 0, y: 0 });
       // Keep the graph where it is: the layout starts at the current top-left corner.
       const origin = { x: Math.min(...views.map((p) => p.x)), y: Math.min(...views.map((p) => p.y)) };
@@ -376,13 +397,23 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         editor.getConnections().map((c) => ({ from: c.source, to: c.target })),
         { x: 80, y: 40 },
       );
-      history.separate(); // the drags below form one undo step, apart from what came before
-      for (const n of nodes) {
-        const p = layout.get(n.id)!;
-        await area.translate(n.id, { x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) });
+      arranging = true;
+      try {
+        // Moving the picked node of a selection drags the other selected nodes along.
+        await selector.unselectAll();
+        await oneStep(async () => {
+          for (const n of nodes) {
+            const p = layout.get(n.id)!;
+            const to = { x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) };
+            const view = area.nodeViews.get(n.id);
+            if (view && view.position.x === to.x && view.position.y === to.y) continue; // nothing to undo
+            await area.translate(n.id, to);
+          }
+        });
+        await AreaExtensions.zoomAt(area, nodes);
+      } finally {
+        arranging = false;
       }
-      history.separate();
-      await AreaExtensions.zoomAt(area, nodes);
     },
 
     destroy() {

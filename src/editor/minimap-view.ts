@@ -25,6 +25,7 @@ const px = (r: Rect) => `left:${r.left * SIZE}px;top:${r.top * SIZE}px;width:${r
 export function renderMinimap(data: MinimapData) {
   const onPointerDown = (e: PointerEvent) => {
     e.stopPropagation(); // not a canvas drag
+    e.preventDefault(); // no text selection while dragging
     const target = e.currentTarget as HTMLElement;
     if ((e.target as HTMLElement).classList.contains('mini-viewport')) {
       // Drag the viewport: the plugin takes deltas as fractions of the minimap width.
@@ -36,9 +37,11 @@ export function renderMinimap(data: MinimapData) {
       const up = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
       return;
     }
     const box = target.getBoundingClientRect();

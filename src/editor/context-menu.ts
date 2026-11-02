@@ -37,6 +37,7 @@ const closers = new WeakMap<HTMLElement, () => void>();
 
 export function renderContextMenu(data: ContextMenuData, search: MenuSearch) {
   const { element } = data;
+  element.style.zIndex = '30'; // the plugin's fixed wrapper: above the minimap
   closers.get(element)?.();
   // Each signal opens the menu afresh (the plugin reuses one element).
   const state: MenuState = { query: '', active: 0 };
