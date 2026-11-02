@@ -35,6 +35,16 @@ describe('node search', () => {
     expect(types('debug stats')).toEqual(['debug.stats']);
   });
 
+  it('splits camelCase labels and types into words', () => {
+    expect(types('controller')[0]).toBe('jsartoolkitNFT.controller');
+    expect(types('params')[0]).toBe('jsartoolkitNFT.cameraParams');
+    expect(types('euro')[0]).toBe('filter.oneEuro');
+  });
+
+  it('splits the query on punctuation like the catalog words', () => {
+    expect(types('one-euro')[0]).toBe('filter.oneEuro');
+  });
+
   it('falls back to the description', () => {
     expect(types('getUserMedia')).toEqual(['source.camera']);
   });

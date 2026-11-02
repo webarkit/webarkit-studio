@@ -98,10 +98,11 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .menu-items button small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
 
 /* ---------- context menu (rete-context-menu-plugin, drawn by LitRenderPlugin) ---------- */
-.context-menu { width: 240px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); z-index: 20; }
+.context-menu { position: relative; width: 240px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); z-index: 20; }
 .context-menu input[type='search'] { width: 100%; margin-bottom: 4px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font: inherit; }
 .context-menu .items { max-height: 320px; overflow: auto; display: flex; flex-direction: column; }
 .context-menu .item { text-align: left; border: none; background: transparent; padding: 5px 8px; }
 .context-menu .item.active { background: var(--node); }
+.context-menu:focus { outline: none; }
 .context-menu .item small { display: block; font-size: 10px; color: var(--muted); }
 .context-menu .empty { margin: 6px 8px; color: var(--muted); }

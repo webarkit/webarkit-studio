@@ -105,12 +105,12 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
           ([key, spec]) => html`<div class="port output"><span class="port-label">${spec.label}</span>${socket('output', key, spec.type)}</div>`,
         )}
         ${Object.keys(node.def.params).length
-          ? html`<div class="params" @pointerdown=${stop} @wheel=${stop}>
+          ? html`<div class="params" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>
               ${Object.entries(node.def.params).map(([key, spec]) => this.paramEditor(node, key, spec))}
             </div>`
           : nothing}
         ${node.status
-          ? html`<pre class="status ${node.status.error ? 'error' : ''}" @pointerdown=${stop} @wheel=${stop}>${node.status.text}</pre>`
+          ? html`<pre class="status ${node.status.error ? 'error' : ''}" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>${node.status.text}</pre>`
           : nothing}
         ${Object.entries(node.def.inputs).map(
           ([key, spec]) =>
