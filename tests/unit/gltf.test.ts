@@ -72,7 +72,7 @@ describe('scene.gltf', () => {
     } as unknown as SceneHandle;
     return { scene, calls, model };
   }
-  const ctx = { baseUrl: 'http://localhost/studio/' } as RuntimeContext;
+  const ctx = { baseUrl: 'http://localhost/studio/', log: () => {} } as unknown as RuntimeContext;
   const params = { url: 'models/cube.glb', scale: 100, x: 0, y: 0, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
 
   afterEach(() => vi.unstubAllGlobals());

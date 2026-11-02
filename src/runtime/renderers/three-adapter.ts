@@ -69,12 +69,13 @@ function createThreeScene(
       const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
       const gltf = await new GLTFLoader().parseAsync(spec.data, spec.url.slice(0, spec.url.lastIndexOf('/') + 1));
       gltf.scene.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        disposables.add(mesh.geometry);
-        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-          disposables.add(material);
-          for (const value of Object.values(material)) if (value instanceof THREE.Texture) disposables.add(value);
+        // Meshes, lines and points: geometry and materials (with their textures); skinned meshes: skeleton.
+        const { geometry, material, skeleton } = o as Partial<THREE.SkinnedMesh>;
+        if (geometry) disposables.add(geometry);
+        if (skeleton) disposables.add(skeleton);
+        for (const m of material ? (Array.isArray(material) ? material : [material]) : []) {
+          disposables.add(m);
+          for (const value of Object.values(m)) if (value instanceof THREE.Texture) disposables.add(value);
         }
       });
       const upright = new THREE.Group();

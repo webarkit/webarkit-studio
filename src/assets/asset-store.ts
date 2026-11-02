@@ -141,7 +141,11 @@ export function indexedDbBackend(dbName = 'webarkit-studio'): AssetBackend {
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // Let another tab (or a test) delete or upgrade the database.
+      req.result.onversionchange = () => req.result.close();
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   const transaction = async <T>(mode: IDBTransactionMode, ops: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> => {

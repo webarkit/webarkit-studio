@@ -74,3 +74,15 @@ export function cubeGlb(): Uint8Array {
   out.set(bin, binAt + 8);
   return out;
 }
+
+/** The same cube as a JSON glTF with its buffer embedded as a data: URI (a self-contained .gltf). */
+export function cubeGltf(): string {
+  const glb = cubeGlb();
+  const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+  const jsonLength = view.getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength)));
+  const binAt = 20 + jsonLength;
+  const bin = glb.subarray(binAt + 8, binAt + 8 + view.getUint32(binAt, true));
+  json.buffers[0].uri = `data:application/octet-stream;base64,${Buffer.from(bin).toString('base64')}`;
+  return JSON.stringify(json);
+}

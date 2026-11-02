@@ -97,9 +97,13 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     async loadModel(spec: ModelSpec) {
       // Registers the glTF 2.0 loader; loaded on demand, so graphs without glTF models do not download it.
       await import('@babylonjs/loaders/glTF/2.0/index.js');
-      const container = await LoadAssetContainerAsync(new Uint8Array(spec.data), scene, {
+      // Bytes always go to the GLB parser: a JSON .gltf is passed as a data: string instead.
+      const source = spec.binary ? new Uint8Array(spec.data) : `data:${new TextDecoder().decode(spec.data)}`;
+      const container = await LoadAssetContainerAsync(source, scene, {
         pluginExtension: spec.binary ? '.glb' : '.gltf',
         rootUrl: spec.url.slice(0, spec.url.lastIndexOf('/') + 1),
+        // Animations are not played (as on Three.js, which has no mixer here).
+        pluginOptions: { gltf: { animationStartMode: 0 /* GLTFLoaderAnimationStartMode.NONE */ } },
       });
       container.addAllToScene();
       // The scene is right-handed, so the loader adds no handedness conversion: only glTF's Y-up remains.

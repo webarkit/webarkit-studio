@@ -152,6 +152,10 @@ runs, uploads are served as `blob:` URLs; an uploaded NFT dataset is served to
 the tracker worker under a virtual `https://assets.webarkit.invalid/` prefix,
 which also appears in its tracking traces.
 
+glTF Model (`scene.gltf`) plays no animations. Compressed models (Draco,
+KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
+decoders it downloads from its CDN, so prefer uncompressed models.
+
 ```
 pinball-nft-three-js/
   index.html  graph.json  README.txt

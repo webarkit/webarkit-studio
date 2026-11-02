@@ -63,6 +63,21 @@ describe('selectPlayerFiles', () => {
     expect(files.has('assets/ARToolkitNFT_simd.js')).toBe(false);
   });
 
+  it('bundles the glTF loaders only for graphs with a glTF Model', () => {
+    const withLoaders: PlayerManifest = structuredClone(manifest);
+    withLoaders.chunks['assets/three-adapter.js'].dynamicImports.push('assets/GLTFLoader.js');
+    withLoaders.chunks['assets/babylon-adapter.js'].dynamicImports.push('assets/2.0.js');
+    withLoaders.chunks['assets/GLTFLoader.js'] = { imports: [], dynamicImports: [], modules: ['node_modules/three/examples/jsm/loaders/GLTFLoader.js'] };
+    withLoaders.chunks['assets/2.0.js'] = { imports: ['assets/ext.js'], dynamicImports: [], modules: ['node_modules/@babylonjs/loaders/glTF/2.0/glTFLoader.js'] };
+    withLoaders.chunks['assets/ext.js'] = { imports: [], dynamicImports: [], modules: [] };
+    const three = selectPlayerFiles(withLoaders, html, doc([['three.renderer']]));
+    expect(three.has('assets/GLTFLoader.js')).toBe(false);
+    expect(selectPlayerFiles(withLoaders, html, doc([['three.renderer'], ['scene.gltf']])).has('assets/GLTFLoader.js')).toBe(true);
+    const babylon = selectPlayerFiles(withLoaders, html, doc([['babylon.renderer']]));
+    expect(babylon.has('assets/2.0.js') || babylon.has('assets/ext.js')).toBe(false);
+    expect(selectPlayerFiles(withLoaders, html, doc([['babylon.renderer'], ['scene.gltf']])).has('assets/ext.js')).toBe(true);
+  });
+
   it('leaves the tracker worker out of a graph without a controller', () => {
     const files = selectPlayerFiles(manifest, html, doc([['three.renderer']]));
     expect(files.has('assets/worker.js')).toBe(false);
@@ -131,6 +146,12 @@ describe('collectAssets', () => {
     expect(text(files['data/assets/d1/pinball.fset3'])).toBe('F3');
     expect(g.nodes[0].params.url).toBe('data/assets/c1/my_camera__1.dat');
     expect(g.nodes[1].params.url).toBe('data/assets/d1/pinball');
+  });
+
+  it('never writes "." or ".." as a bundle file name', async () => {
+    const dots: ExportContext = { ...ctx, assets: { get: () => ({ id: 'x', name: '..', kind: 'file', files: { '': new Blob(['?']) } }), list: () => [] } };
+    const files = await collectAssets(doc([['jsartoolkitNFT.cameraParams', { url: assetRef('x', '..') }]]), base, dots);
+    expect(Object.keys(files)).toEqual(['data/assets/x/_']);
   });
 
   it('still fetches URL assets', async () => {

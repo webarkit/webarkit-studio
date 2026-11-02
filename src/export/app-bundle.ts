@@ -31,9 +31,9 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
-  // glTF loaders, imported by the adapters' loadModel() only.
+  // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
   { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
-  { module: '@babylonjs/loaders/glTF/2.0/index.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
+  { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   {
     module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js',
     needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === 'simd'),
@@ -112,7 +112,10 @@ export function bundlePath(url: URL, base: URL): { path: string; rewritten: bool
 }
 
 /** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
-const safeName = (name: string) => name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+const safeName = (name: string) => {
+  const safe = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  return /^\.*$/.test(safe) ? '_' : safe; // never "", "." or ".."
+};
 
 /**
  * Collects the files the graph's asset params need, as bundle path → bytes,

@@ -24,9 +24,6 @@ const log = (msg: string) => {
 };
 
 const assetStore = await openAssetStore(log);
-mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
-  studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),
-);
 
 const studio = await createStudioEditor($('editor'), {
   onChange() {
@@ -41,6 +38,10 @@ const studio = await createStudioEditor($('editor'), {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
 });
+
+mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
+  studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),
+);
 
 // ---------------------------------------------------------------- palette
 const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'output', 'debug'];

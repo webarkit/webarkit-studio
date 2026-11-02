@@ -159,7 +159,9 @@ export const gltf: NodeFactory = (params, ctx) => {
       }
       if (!res.ok) throw new Error(`cannot load model ${url}: HTTP ${res.status}`);
       const data = await res.arrayBuffer();
-      model = await scene.loadModel({ data, url, binary: isGlb(data) });
+      const binary = isGlb(data);
+      model = await scene.loadModel({ data, url, binary });
+      ctx.log(`glTF model loaded (${binary ? 'GLB' : 'glTF JSON'}, ${Math.round(data.byteLength / 1024)} KB)`);
       applyTransform();
       return { object: model };
     },

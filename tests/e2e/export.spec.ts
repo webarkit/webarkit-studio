@@ -14,6 +14,7 @@ for (const [demo, engine, absent] of [
     expect(files.some((f) => f.endsWith('/graph.json'))).toBe(true);
     expect(files.some((f) => f.includes(engine))).toBe(true);
     expect(files.some((f) => f.includes(absent))).toBe(false); // unused engine left out
+    expect(files.some((f) => f.includes('GLTFLoader'))).toBe(false); // no glTF Model: no loader
     expect(files.some((f) => f.endsWith('DataNFT/pinball.fset3'))).toBe(true);
     if (demo === 'multi-three') expect(files.some((f) => f.endsWith('DataNFT/kuva.fset3'))).toBe(true);
     if (demo === 'pinball-image') expect(files.some((f) => f.endsWith('/data/pinball-demo.jpg'))).toBe(true);

@@ -24,6 +24,9 @@ async function listFiles(dir: string): Promise<string[]> {
 // Shared by the main build and the worker build (workers are bundled separately).
 const chunks = new Map<string, { imports: string[]; dynamicImports: string[]; modules: string[] }>();
 
+/** Package modules the exporter's OPTIONAL_MODULES rules look for (src/export/app-bundle.ts): kept in the manifest. */
+const OPTIONAL_PACKAGE_MODULES = ['jsartoolkit-nft/dist/', 'three/examples/jsm/loaders/GLTFLoader.js', '@babylonjs/loaders/glTF/2.0/glTFLoader.js'];
+
 /** Collects chunk reachability; with `write`, writes manifest.json when the build ends. */
 function playerManifest(write: boolean): Plugin {
   return {
@@ -42,7 +45,7 @@ function playerManifest(write: boolean): Plugin {
       if (!write) return;
       const files = (await listFiles(outDir)).map((f) => relative(outDir, f).replaceAll('\\', '/')).filter((f) => f !== 'manifest.json');
       const graph = Object.fromEntries(
-        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || m.includes('jsartoolkit-nft/dist/')) }]),
+        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || OPTIONAL_PACKAGE_MODULES.some((p) => m.includes(p))) }]),
       );
       await writeFile(join(outDir, 'manifest.json'), JSON.stringify({ entry: 'player.html', files, chunks: graph }, null, 1));
     },
