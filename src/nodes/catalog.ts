@@ -30,9 +30,11 @@ interface ParamBase {
 /**
  * Marks a string param as a URL of files the graph needs at runtime, so the
  * app exporter can bundle them: `file` = the URL itself, `nftDataset` = an
- * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft).
+ * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft), `model` = a
+ * glTF / GLB file. The value may also reference an uploaded asset of that
+ * kind (`asset://<id>/<name>`, see src/core/assets.ts).
  */
-export type AssetKind = 'file' | 'nftDataset';
+export type AssetKind = 'file' | 'nftDataset' | 'model';
 
 export type ParamSpec = ParamBase &
   (

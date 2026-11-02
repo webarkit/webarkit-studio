@@ -224,6 +224,7 @@ export const artkController: NodeFactory = (params, ctx) => {
         filter,
         settings: appliedSettings,
         geometry,
+        files: { ...ctx.virtualFiles },
       });
 
       const msg = await ready;
