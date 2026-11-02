@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { bundlePath, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
-import { slugify } from '../../src/export/exporters';
+import { bundlePath, collectAssets, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
+import { slugify, type ExportContext } from '../../src/export/exporters';
+import { assetRef, type StoredAsset } from '../../src/core/assets';
 import type { GraphDocument } from '../../src/core/graph';
 
 /** A manifest shaped like the real one (see vite.player.config.ts). */
@@ -97,5 +98,51 @@ describe('slugify', () => {
     expect(slugify('Pinball NFT · Three.js')).toBe('pinball-nft-three-js');
     expect(slugify('Café AR!')).toBe('cafe-ar');
     expect(slugify('')).toBe('webar-app');
+  });
+});
+
+describe('collectAssets', () => {
+  const base = new URL('http://localhost:5173/index.html');
+  const uploads: StoredAsset[] = [
+    { id: 'c1', name: 'my camera #1.dat', kind: 'file', files: { '': new Blob(['CAM']) } },
+    { id: 'd1', name: 'pinball', kind: 'nftDataset', files: { iset: new Blob(['I']), fset: new Blob(['F']), fset3: new Blob(['F3']) } },
+  ];
+  const ctx: ExportContext = {
+    baseUrl: base.href,
+    log: () => {},
+    assets: { get: (id) => uploads.find((a) => a.id === id), list: () => uploads },
+  };
+  const text = (bytes: Uint8Array | undefined) => new TextDecoder().decode(bytes);
+  const graphOf = (camera: string, dataset: string): GraphDocument =>
+    doc([['jsartoolkitNFT.cameraParams', { url: camera }], ['jsartoolkitNFT.dataset', { url: dataset }]]);
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('bundles uploaded files under data/assets/<id>/ and rewrites the params', async () => {
+    const g = graphOf(assetRef('c1', 'my camera #1.dat'), assetRef('d1', 'pinball'));
+    const files = await collectAssets(g, base, ctx);
+    expect(Object.keys(files).sort()).toEqual([
+      'data/assets/c1/my_camera__1.dat',
+      'data/assets/d1/pinball.fset',
+      'data/assets/d1/pinball.fset3',
+      'data/assets/d1/pinball.iset',
+    ]);
+    expect(text(files['data/assets/d1/pinball.fset3'])).toBe('F3');
+    expect(g.nodes[0].params.url).toBe('data/assets/c1/my_camera__1.dat');
+    expect(g.nodes[1].params.url).toBe('data/assets/d1/pinball');
+  });
+
+  it('still fetches URL assets', async () => {
+    vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
+    const g = graphOf('data/camera_para.dat', assetRef('d1', 'pinball'));
+    const files = await collectAssets(g, base, ctx);
+    expect(text(files['data/camera_para.dat'])).toBe('body of http://localhost:5173/data/camera_para.dat');
+    expect(g.nodes[0].params.url).toBe('data/camera_para.dat');
+  });
+
+  it('fails clearly when an uploaded asset is missing from the project', async () => {
+    await expect(collectAssets(graphOf(assetRef('gone', 'old.dat'), assetRef('d1', 'pinball')), base, ctx)).rejects.toThrow(
+      /n0\.url: asset "old\.dat" is not in this project/,
+    );
   });
 });

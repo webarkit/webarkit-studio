@@ -7,11 +7,13 @@
  *   <app>/graph.json     the graph (re-importable in the studio)
  *   <app>/assets/…       player, engine and tracker chunks (only those the graph uses)
  *   <app>/data/…         camera parameters, NFT datasets, …
+ *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
 import { validateGraph, type GraphDocument } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
 
@@ -42,8 +44,6 @@ const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => 
 const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/workers/jsartoolkit-nft.worker.ts', needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
 ];
-
-const NFT_DATASET_EXTENSIONS = ['iset', 'fset', 'fset3'];
 
 class ExportError extends Error {}
 
@@ -108,6 +108,62 @@ export function bundlePath(url: URL, base: URL): { path: string; rewritten: bool
   return { path: `data/_ext/${name}`, rewritten: true };
 }
 
+/** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
+const safeName = (name: string) => name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+
+/**
+ * Collects the files the graph's asset params need, as bundle path → bytes,
+ * and rewrites the params that point elsewhere (uploads, other origins).
+ * Uploaded assets go under data/assets/<id>/. `doc` is modified.
+ */
+/** Exported for tests. */
+export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
+  for (const node of doc.nodes) {
+    const def = NODE_CATALOG[node.type];
+    for (const [key, spec] of Object.entries(def.params)) {
+      if (spec.kind !== 'string' || !spec.asset) continue;
+      const value = String(node.params[key] ?? spec.default);
+      const ref = parseAssetRef(value);
+      if (ref) {
+        const asset = ctx.assets?.get(ref.id);
+        if (!asset) throw new ExportError(`${node.id}.${key}: asset "${ref.name || ref.id}" is not in this project`);
+        if (asset.kind !== spec.asset) throw new ExportError(`${node.id}.${key}: asset "${asset.name}" is a ${asset.kind}, not a ${spec.asset}`);
+        const path = `data/assets/${asset.id}/${safeName(asset.name)}`;
+        if (spec.asset === 'nftDataset') {
+          for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
+        } else {
+          files[path] = await bytes(asset.files['']);
+        }
+        node.params[key] = path;
+        ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
+        continue;
+      }
+      const url = new URL(value, base);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
+      const { path, rewritten } = bundlePath(url, base);
+
+      if (spec.asset === 'nftDataset') {
+        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
+        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
+        if (parts.every(Boolean)) {
+          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
+        } else {
+          const zft = await tryFetch(`${url.href}.zft`);
+          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
+          files[`${path}.zft`] = zft;
+        }
+      } else {
+        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
+      }
+      if (rewritten) node.params[key] = path;
+      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
+    }
+  }
+  return files;
+}
+
 export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
   const doc = validateGraph(structuredClone(input));
   const base = new URL(ctx.baseUrl);
@@ -130,32 +186,7 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
   }
 
   // ---------------------------------------------------------------- assets
-  for (const node of doc.nodes) {
-    const def = NODE_CATALOG[node.type];
-    for (const [key, spec] of Object.entries(def.params)) {
-      if (spec.kind !== 'string' || !spec.asset) continue;
-      const value = String(node.params[key] ?? spec.default);
-      const url = new URL(value, base);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
-      const { path, rewritten } = bundlePath(url, base);
-
-      if (spec.asset === 'file') {
-        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
-      } else {
-        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
-        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
-        if (parts.every(Boolean)) {
-          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
-        } else {
-          const zft = await tryFetch(`${url.href}.zft`);
-          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
-          files[`${path}.zft`] = zft;
-        }
-      }
-      if (rewritten) node.params[key] = path;
-      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
-    }
-  }
+  Object.assign(files, await collectAssets(doc, base, ctx));
 
   // ------------------------------------------------------- page and graph
   const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');
