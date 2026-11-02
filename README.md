@@ -33,6 +33,14 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
+Editing:
+
+- **Add a node:** right-click the canvas and type to search (name, category or library), or filter the palette.
+- **Undo / redo:** ↶ / ↷, or Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y). Param edits are undone too.
+- **Copy / paste / duplicate:** Ctrl+C / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
+  or Duplicate in a node's right-click menu. Wires between the copied nodes are kept.
+- **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
+
 ## Multi NFT
 
 ARControllerNFT tracks every NFT Dataset connected to its `Datasets` input
@@ -277,7 +285,8 @@ frame. Intensities use the Three.js scale; Babylon scales them down.
 src/
   core/        graph.ts (format, validation, topo sort), sockets.ts (type system)
   nodes/       catalog.ts — node definitions (metadata only)
-  editor/      Rete setup, StudioNode, lit-html render plugin
+  editor/      Rete setup, StudioNode, lit-html render plugin (nodes, context menu, minimap);
+               node search, undo of param edits, clipboard, layered auto-arrange
   runtime/     GraphRuntime, registry, node implementations
     trackers/  NftSession: the graph mapped onto the jsartoolkitNFT tracker facade, shared by worker and tests; trace.ts (trace format)
     filters/   the pose filter slot's config (applied by the tracker)
@@ -411,8 +420,9 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [x] jsartoolkit-nft 1.15.0: the tracker facade (`createNFTTracker`) replaces the hand-written tracking code (#5)
 
 **Phase 2 — Authoring**
-- [ ] Inspector panel (Tweakpane) for complex params, undo/redo (`rete-history-plugin`)
-- [ ] Context menu / search to add nodes, minimap, auto-arrange
+- [ ] Inspector panel for complex params
+- [x] Undo / redo (`rete-history-plugin`), including param edits
+- [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
 - [ ] Asset manager: upload images and datasets, glTF models
 
 **Phase 3 — Logic & publishing**
