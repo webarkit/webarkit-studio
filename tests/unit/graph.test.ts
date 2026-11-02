@@ -98,7 +98,7 @@ describe('resolveParams', () => {
   it('fills defaults and keeps explicit values', () => {
     const def = NODE_CATALOG['scene.primitive'];
     const params = resolveParams(def, { size: 120 });
-    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true });
+    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true, position: [0, 0, 0], rotation: [0, 0, 0] });
   });
 
   it('copies array values, so a node changing one never changes the default or the document', () => {

@@ -76,5 +76,6 @@ export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamV
 /** A labelled param row: the label (⚡ for live params) and its control. */
 export function paramRow(spec: ParamSpec, value: ParamValue, set: (v: ParamValue) => void, place: ControlPlace = 'node'): TemplateResult {
   return html`<label class="param param-${spec.kind}"><span title=${spec.live ? 'Live: applied while running' : 'Applied on the next Run'}
-    >${spec.label}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span>${paramControl(spec, value, set, place)}</label>`;
+    >${spec.label}${spec.kind === 'vector3' && spec.unit ? ` (${spec.unit})` : ''}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span
+    >${paramControl(spec, value, set, place)}</label>`;
 }

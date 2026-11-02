@@ -296,7 +296,9 @@ const defs: NodeDefinition[] = [
     label: 'Primitive',
     category: 'scene',
     provider: 'core',
-    description: 'A simple mesh created in the connected scene.',
+    description:
+      'A simple mesh created in the connected scene, resting on the marker. Position (mm) and rotation (degrees, X then Y then Z) ' +
+      'move it from there; Spin turns it about its own Z axis.',
     inputs: { scene: { type: 'scene', label: 'Scene' } },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
@@ -304,6 +306,8 @@ const defs: NodeDefinition[] = [
       size: { kind: 'number', label: 'Size (mm)', default: 80, min: 1, max: 1000, step: 1 },
       color: { kind: 'color', label: 'Color', default: '#ff0055', live: true },
       spin: { kind: 'boolean', label: 'Spin', default: true, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
     },
   },
   {
@@ -320,12 +324,8 @@ const defs: NodeDefinition[] = [
     params: {
       url: { kind: 'string', label: 'Model URL', default: 'models/cube.glb', asset: 'model' },
       scale: { kind: 'number', label: 'Scale (mm / unit)', default: 80, min: 0.001, max: 100000, step: 1, live: true },
-      x: { kind: 'number', label: 'X (mm)', default: 0, step: 1, live: true },
-      y: { kind: 'number', label: 'Y (mm)', default: 0, step: 1, live: true },
-      z: { kind: 'number', label: 'Z (mm)', default: 0, step: 1, live: true },
-      rotX: { kind: 'number', label: 'Rotate X (°)', default: 0, min: -360, max: 360, step: 1, live: true },
-      rotY: { kind: 'number', label: 'Rotate Y (°)', default: 0, min: -360, max: 360, step: 1, live: true },
-      rotZ: { kind: 'number', label: 'Rotate Z (°)', default: 0, min: -360, max: 360, step: 1, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
     },
   },
   {

@@ -164,7 +164,7 @@ which also appears in its tracking traces.
 
 glTF Model (`scene.gltf`) stands models up on the marker with their front
 (glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
-*Rotate Z*. It plays no animations. Compressed models (Draco,
+the Z of *Rotation*. It plays no animations. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
@@ -323,7 +323,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ | scene → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ | scene → sceneObject |
+| `scene.primitive` | ✅ ⚡ | scene → sceneObject (box, sphere, torus knot; position, rotation, spin) |
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |

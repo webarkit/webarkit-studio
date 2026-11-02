@@ -66,24 +66,36 @@ export const light: NodeFactory = (params) => {
 export const primitive: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
   let mesh: SceneObjectValue | null = null;
+  /** Spin angle so far (degrees), about the mesh's own Z axis. */
+  let spun = 0;
+  // Rests on the marker (lifted by half its size), then moved and rotated by its
+  // params; spinning last in Rx · Ry · Rz turns it about its own Z axis.
+  const applyTransform = () => {
+    if (!scene || !mesh) return;
+    const [x, y, z] = vec3(params.position);
+    const [rx, ry, rz] = vec3(params.rotation);
+    scene.setMatrix(mesh, transformMatrix({ position: [x, y, z + Number(params.size) / 2], rotation: [rx, ry, rz + spun], scale: 1 }));
+  };
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
-      const size = Number(params.size);
       mesh = scene.createPrimitive({
         shape: String(params.shape) as PrimitiveSpec['shape'],
-        size,
+        size: Number(params.size),
         color: String(params.color),
       });
-      scene.setPosition(mesh, 0, 0, size / 2); // rest on the marker instead of intersecting it
+      applyTransform();
       return { object: mesh };
     },
     update(_inputs, frame) {
       // `params` is updated in place by live changes, so `spin` is read each frame.
-      if (params.spin && scene && mesh) scene.rotateZ(mesh, frame.delta * 0.0005);
+      if (!params.spin) return;
+      spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
+      applyTransform();
     },
     onParamChange(key, value) {
       if (key === 'color' && scene && mesh) scene.setColor(mesh, String(value));
+      if (key === 'position' || key === 'rotation') applyTransform();
     },
   };
 };
@@ -131,7 +143,11 @@ export const anchor: NodeFactory = (params) => {
 export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView(data).getUint32(0, true) === 0x46546c67;
 
 /** The live params of scene.gltf, all applied as its transform (checked against the catalog in tests). */
-export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'x', 'y', 'z', 'rotX', 'rotY', 'rotZ'];
+export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'position', 'rotation'];
+
+/** A vector3 param as numbers (a hand-edited graph may hold something else: zeros then). */
+const vec3 = (value: unknown): [number, number, number] =>
+  Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? [value[0], value[1], value[2]] : [0, 0, 0];
 
 /** scene.gltf — a glTF / GLB model, placed in marker space (millimetres, Z-up). */
 export const gltf: NodeFactory = (params, ctx) => {
@@ -142,8 +158,8 @@ export const gltf: NodeFactory = (params, ctx) => {
     scene.setMatrix(
       model,
       transformMatrix({
-        position: [Number(params.x), Number(params.y), Number(params.z)],
-        rotation: [Number(params.rotX), Number(params.rotY), Number(params.rotZ)],
+        position: vec3(params.position),
+        rotation: vec3(params.rotation),
         scale: Math.max(Number(params.scale), 1e-6), // a zero scale makes a singular matrix
       }),
     );

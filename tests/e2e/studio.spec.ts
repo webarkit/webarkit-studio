@@ -320,6 +320,21 @@ test.describe('editor', () => {
     await expect(inspector).toContainText('Select a node');
   });
 
+  test('a vector param (Primitive position) edited in the Inspector applies live', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    await run(page);
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
+    const z = page.locator('#inspector .param:has-text("Position") input[aria-label="Position z"]');
+    await z.fill('30');
+    await z.dispatchEvent('change');
+    await expect(page.locator('.studio-node:has(.title span:text-is("Primitive")) input[aria-label="Position z"]')).toHaveValue('30');
+    const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave')!));
+    expect(doc.nodes.find((n: { type: string }) => n.type === 'scene.primitive').params.position).toEqual([0, 0, 30]);
+    // Live: no restart asked, the graph was initialised once.
+    await expect(page.locator('#log')).not.toContainText('press Reload');
+    expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');
