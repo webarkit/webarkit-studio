@@ -123,7 +123,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       const ids = (target as StudioNode).selected ? selectedIds() : [target.id];
       return {
         list: [
-          { label: ids.length > 1 ? `Duplicate ${ids.length} nodes` : 'Duplicate', key: 'duplicate', handler: () => duplicate(ids) },
+          { label: ids.length > 1 ? `Duplicate ${ids.length} nodes` : 'Duplicate', key: 'duplicate', handler: () => serial(() => duplicate(ids)) },
           { label: 'Delete', key: 'delete', handler: () => removeNode(target.id) },
         ],
       };
@@ -175,17 +175,23 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) void undo();
     else if ((key === 'z' && e.shiftKey) || key === 'y') void redo();
-    else if (key === 'd' && !e.shiftKey) void duplicate(selectedIds());
-    else return;
+    else if (key === 'd' && !e.shiftKey && selectedIds().length) {
+      // Holding Ctrl+D would queue a duplicate per key repeat.
+      if (!e.repeat) void serial(() => duplicate(selectedIds()));
+    } else return;
     e.preventDefault();
   };
   document.addEventListener('keydown', onKeyDown);
 
-  // Undo / redo run one at a time: an overlapping call would be recorded as a new action.
-  let replay: Promise<void> = Promise.resolve();
+  // Undo / redo, paste, duplicate and Arrange run one at a time: History.add
+  // ignores actions while an undo runs, and overlapping steps would mix their records.
+  let queue: Promise<void> = Promise.resolve();
   const serial = (step: () => Promise<void>) => {
-    replay = replay.then(step, step).then(notifyHistory);
-    return replay;
+    queue = queue
+      .then(step)
+      .catch((err: unknown) => console.error('[editor]', err))
+      .then(notifyHistory);
+    return queue;
   };
   const undo = () => serial(() => history.undo());
   const redo = () => serial(() => history.redo());
@@ -199,7 +205,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   // JSON text, so a selection can be pasted into another studio tab.
   const onCopy = (e: ClipboardEvent) => {
     const ids = selectedIds();
-    if (isEditable(e.target) || !ids.length || !e.clipboardData) return;
+    // Selected text (the log, a node's status) is copied as text, even with nodes selected.
+    const textSelected = !(document.getSelection()?.isCollapsed ?? true);
+    if (isEditable(e.target) || textSelected || !ids.length || !e.clipboardData) return;
     e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
     e.preventDefault();
   };
@@ -208,16 +216,16 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const data = parseClipboard(e.clipboardData?.getData('text/plain') ?? '');
     if (!data) return;
     e.preventDefault();
-    void paste(data, { ...area.area.pointer });
+    void serial(() => paste(data, pastePoint()));
   };
   document.addEventListener('copy', onCopy);
   document.addEventListener('paste', onPaste);
 
-  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   /**
    * Runs `actions` as one undo step: separated from what comes before and
    * after, and with one timestamp, so the plugin's grouping (records less
-   * than `timing` ms apart) cannot split it on a slow device.
+   * than `timing` ms apart) cannot split it on a slow device. Not reentrant:
+   * callers go through `serial`.
    */
   async function oneStep(actions: () => Promise<void>) {
     history.separate();
@@ -232,6 +240,23 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     }
   }
 
+  // The pointer, in client coordinates, while it is over the editor.
+  let pointer: { x: number; y: number } | null = null;
+  const onPointerMove = (e: PointerEvent) => (pointer = { x: e.clientX, y: e.clientY });
+  const onPointerLeave = () => (pointer = null);
+  container.addEventListener('pointermove', onPointerMove);
+  container.addEventListener('pointerleave', onPointerLeave);
+
+  /** Where a paste goes, in area coordinates: under the pointer, or the centre of the view if it is elsewhere. */
+  function pastePoint() {
+    const { x, y, k } = area.area.transform;
+    const box = container.getBoundingClientRect();
+    // From the client position (area.pointer is stale after Arrange or Zoom to fit).
+    const at = pointer ? { x: pointer.x - box.left, y: pointer.y - box.top } : { x: box.width / 2 - 115, y: box.height / 2 - 80 };
+    return { x: (at.x - x) / k, y: (at.y - y) / k };
+  }
+
+  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
     const { nodes, edges } = pasteClipboard(data, getUID, at);
     // The copies replace the selection (before adding: a selected node would drag them along).
@@ -242,7 +267,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
     for (const n of nodes) {
-      if (!NODE_CATALOG[n.type]) continue; // from a newer studio, or hand-edited
+      if (!NODE_CATALOG[n.type]) {
+        console.warn(`[editor] paste: unknown node type "${n.type}" skipped`); // from a newer studio, or hand-edited
+        continue;
+      }
       await addNode(n.type, n.position, n.id, n.params);
     }
     for (const e of edges) {
@@ -259,6 +287,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     if (!ids.length) return;
     const doc = toDocument();
     const copied = doc.nodes.filter((n) => ids.includes(n.id));
+    if (!copied.length) return; // removed (undone) while the menu was open
     // Next to the originals, offset so both stay visible.
     const corner = { x: Math.min(...copied.map((n) => n.position?.x ?? 0)), y: Math.min(...copied.map((n) => n.position?.y ?? 0)) };
     await paste(copySelection(doc, ids), { x: corner.x + 40, y: corner.y + 40 });
@@ -321,7 +350,31 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return doc;
   }
 
-  let arranging = false;
+  /** Lays the graph out left to right, as one undo step. */
+  async function arrange() {
+    const nodes = editor.getNodes();
+    if (!nodes.length) return;
+    const views = nodes.map((n) => area.nodeViews.get(n.id)?.position ?? { x: 0, y: 0 });
+    // Keep the graph where it is: the layout starts at the current top-left corner.
+    const origin = { x: Math.min(...views.map((p) => p.x)), y: Math.min(...views.map((p) => p.y)) };
+    const layout = layeredLayout(
+      nodes,
+      editor.getConnections().map((c) => ({ from: c.source, to: c.target })),
+      { x: 80, y: 40 },
+    );
+    // Moving the picked node of a selection drags the other selected nodes along.
+    await selector.unselectAll();
+    await oneStep(async () => {
+      for (const n of nodes) {
+        const p = layout.get(n.id)!;
+        const to = { x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) };
+        const view = area.nodeViews.get(n.id);
+        if (view && view.position.x === to.x && view.position.y === to.y) continue; // nothing to undo
+        await area.translate(n.id, to);
+      }
+    });
+    await AreaExtensions.zoomAt(area, nodes);
+  }
 
   async function loadGraph(doc: GraphDocument) {
     await editor.clear();
@@ -386,40 +439,14 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     undo,
     redo,
 
-    async arrange() {
-      const nodes = editor.getNodes();
-      if (!nodes.length || arranging) return;
-      const views = nodes.map((n) => area.nodeViews.get(n.id)?.position ?? { x: 0, y: 0 });
-      // Keep the graph where it is: the layout starts at the current top-left corner.
-      const origin = { x: Math.min(...views.map((p) => p.x)), y: Math.min(...views.map((p) => p.y)) };
-      const layout = layeredLayout(
-        nodes,
-        editor.getConnections().map((c) => ({ from: c.source, to: c.target })),
-        { x: 80, y: 40 },
-      );
-      arranging = true;
-      try {
-        // Moving the picked node of a selection drags the other selected nodes along.
-        await selector.unselectAll();
-        await oneStep(async () => {
-          for (const n of nodes) {
-            const p = layout.get(n.id)!;
-            const to = { x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) };
-            const view = area.nodeViews.get(n.id);
-            if (view && view.position.x === to.x && view.position.y === to.y) continue; // nothing to undo
-            await area.translate(n.id, to);
-          }
-        });
-        await AreaExtensions.zoomAt(area, nodes);
-      } finally {
-        arranging = false;
-      }
-    },
+    arrange: () => serial(arrange),
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('paste', onPaste);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerleave', onPointerLeave);
       area.destroy();
     },
   };

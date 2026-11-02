@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLIPBOARD_FORMAT, copySelection, parseClipboard, pasteClipboard } from '../../src/editor/clipboard';
+import { CLIPBOARD_FORMAT, copySelection, MAX_CLIPBOARD_NODES, parseClipboard, pasteClipboard } from '../../src/editor/clipboard';
 import { emptyGraph, type GraphDocument } from '../../src/core/graph';
 
 function graph(): GraphDocument {
@@ -75,6 +75,21 @@ describe('clipboard', () => {
     expect(parseClipboard('{"format":"webarkit-studio/graph","nodes":[],"edges":[]}')).toBeNull();
     expect(parseClipboard(JSON.stringify({ ...data, version: 99 }))).toBeNull();
     expect(parseClipboard(JSON.stringify({ ...data, nodes: [{ id: 1 }] }))).toBeNull();
+  });
+
+  it('rejects positions that are not finite numbers and params that are not plain values', () => {
+    const data = copySelection(graph(), ['box']);
+    const withNode = (node: Record<string, unknown>) => JSON.stringify({ ...data, nodes: [{ ...data.nodes[0], ...node }] });
+    expect(parseClipboard(withNode({ position: { x: 'a', y: 0 } }))).toBeNull();
+    expect(parseClipboard(withNode({ position: { x: 1e400, y: 0 } }))).toBeNull();
+    expect(parseClipboard(withNode({ params: { size: { nested: true } } }))).toBeNull();
+    expect(parseClipboard(withNode({ position: undefined }))).not.toBeNull();
+  });
+
+  it('rejects clipboards larger than MAX_CLIPBOARD_NODES', () => {
+    const data = copySelection(graph(), ['box']);
+    const nodes = Array.from({ length: MAX_CLIPBOARD_NODES + 1 }, (_, i) => ({ ...data.nodes[0], id: `n${i}` }));
+    expect(parseClipboard(JSON.stringify({ ...data, nodes }))).toBeNull();
   });
 
   it('drops wires that point outside the pasted nodes (hand-edited clipboard text)', () => {

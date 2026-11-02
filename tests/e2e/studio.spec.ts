@@ -255,6 +255,38 @@ test.describe('editor', () => {
     await expect(wires).toHaveCount(wireCount);
   });
 
+  test('with nodes selected, copying selected text (the log) stays a native copy', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
+    await expect(page.locator('.studio-node.selected')).toHaveCount(1);
+    await page.evaluate(() => {
+      const log = document.getElementById('log')!;
+      log.textContent = 'an error to report';
+      window.getSelection()!.selectAllChildren(log);
+      (window as unknown as { copied: boolean | null }).copied = null;
+      window.addEventListener('copy', (e) => ((window as unknown as { copied: boolean }).copied = e.defaultPrevented));
+    });
+    await page.keyboard.press('Control+c');
+    await expect.poll(() => page.evaluate(() => (window as unknown as { copied: boolean | null }).copied)).toBe(false);
+  });
+
+  test('paste with the pointer outside the canvas lands in the visible area', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click();
+    await page.keyboard.press('Control+c');
+    await page.mouse.move(60, 400); // over the palette
+    await page.click('#btn-arrange'); // the view changes too
+    await page.keyboard.press('Control+v');
+    const primitives = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
+    await expect(primitives).toHaveCount(2);
+    const editor = (await page.locator('#editor').boundingBox())!;
+    const pasted = (await page.locator('.studio-node.selected').boundingBox())!;
+    expect(pasted.x).toBeGreaterThanOrEqual(editor.x);
+    expect(pasted.y).toBeGreaterThanOrEqual(editor.y);
+    expect(pasted.x + pasted.width / 2).toBeLessThanOrEqual(editor.x + editor.width);
+    expect(pasted.y + pasted.height / 2).toBeLessThanOrEqual(editor.y + editor.height);
+  });
+
   test('Duplicate from a node menu and Ctrl+D copy the node with its params', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     const primitives = page.locator('.studio-node:has(.title span:text-is("Primitive"))');

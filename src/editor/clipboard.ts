@@ -8,6 +8,8 @@ import type { GraphEdge, GraphNode, GraphDocument } from '../core/graph';
 
 export const CLIPBOARD_FORMAT = 'webarkit-studio/clipboard';
 export const CLIPBOARD_VERSION = 1;
+/** Larger clipboards are rejected: clipboard text can come from anywhere. */
+export const MAX_CLIPBOARD_NODES = 500;
 
 export interface ClipboardData {
   format: typeof CLIPBOARD_FORMAT;
@@ -59,7 +61,15 @@ export function pasteClipboard(data: ClipboardData, newId: () => string, at: Poi
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isPortRef = (v: unknown) => isObject(v) && typeof v.node === 'string' && typeof v.port === 'string';
-const isNode = (v: unknown) => isObject(v) && typeof v.id === 'string' && typeof v.type === 'string' && isObject(v.params);
+const isParamValue = (v: unknown) => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
+const isPosition = (v: unknown) => v === undefined || (isObject(v) && Number.isFinite(v.x) && Number.isFinite(v.y));
+const isNode = (v: unknown) =>
+  isObject(v) &&
+  typeof v.id === 'string' &&
+  typeof v.type === 'string' &&
+  isObject(v.params) &&
+  Object.values(v.params).every(isParamValue) &&
+  isPosition(v.position);
 const isEdge = (v: unknown) => isObject(v) && typeof v.id === 'string' && isPortRef(v.from) && isPortRef(v.to);
 
 /** The clipboard data in `text`, or null if it is not a studio clipboard (any other copied text). */
@@ -71,6 +81,7 @@ export function parseClipboard(text: string): ClipboardData | null {
     return null;
   }
   if (!isObject(data) || data.format !== CLIPBOARD_FORMAT || data.version !== CLIPBOARD_VERSION) return null;
-  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges) || !data.nodes.every(isNode) || !data.edges.every(isEdge)) return null;
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges) || data.nodes.length > MAX_CLIPBOARD_NODES) return null;
+  if (!data.nodes.every(isNode) || !data.edges.every(isEdge)) return null;
   return data as unknown as ClipboardData;
 }
