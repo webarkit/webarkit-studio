@@ -95,6 +95,13 @@ describe('Inspector formatValue', () => {
     expect(text).toContain('● tracked');
     expect(text).toContain('○ lost');
   });
+
+  it('labels a video value by its element: camera or video file, or still image', () => {
+    expect(formatValue({ element: { tagName: 'VIDEO' }, width: 640, height: 480 })).toBe('video 640×480');
+    expect(formatValue({ element: { tagName: 'IMG' }, width: 893, height: 1117 })).toBe('image 893×1117');
+    // Anything else shaped like it is shown as data.
+    expect(formatValue({ element: 'div', width: 1, height: 2 })).toBe('element: "div"\nwidth: 1\nheight: 2');
+  });
 });
 
 describe('jsartoolkitNFT.settings', () => {

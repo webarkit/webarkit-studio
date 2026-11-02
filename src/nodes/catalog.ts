@@ -73,6 +73,29 @@ const defs: NodeDefinition[] = [
       height: { kind: 'number', label: 'Height', default: 480, min: 240, max: 1080, step: 1 },
     },
   },
+  {
+    type: 'source.image',
+    label: 'Image',
+    category: 'source',
+    provider: 'core',
+    description: 'A still image as the video, for testing without a camera.',
+    inputs: {},
+    outputs: { video: { type: 'video', label: 'Video' } },
+    params: { url: { kind: 'string', label: 'URL', default: 'data/pinball-demo.jpg', asset: 'file' } },
+  },
+  {
+    type: 'source.videoFile',
+    label: 'Video File',
+    category: 'source',
+    provider: 'core',
+    description: 'A recorded video as the video, for testing without a camera.',
+    inputs: {},
+    outputs: { video: { type: 'video', label: 'Video' } },
+    params: {
+      url: { kind: 'string', label: 'URL', default: '', asset: 'file' },
+      loop: { kind: 'boolean', label: 'Loop', default: true, live: true },
+    },
+  },
 
   // ----------------------------------------------- tracking: JsartoolkitNFT
   {

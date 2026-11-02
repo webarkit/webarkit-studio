@@ -51,7 +51,9 @@ export function formatValue(value: unknown): string {
     }
     if (typeof o.kind === 'string' && 'canvas' in o) return `${o.kind} renderer`;
     if ('scene' in o && 'native' in o) return 'scene object';
-    if ('element' in o && o.element instanceof HTMLVideoElement) return `video ${o.width}×${o.height}`;
+    // Video values: by tag name, not instanceof, so this also runs outside a browser.
+    const tag = (o.element as { tagName?: unknown } | null | undefined)?.tagName;
+    if (tag === 'VIDEO' || tag === 'IMG') return `${tag === 'IMG' ? 'image' : 'video'} ${o.width}×${o.height}`;
     return Object.entries(o)
       .map(([k, v]) => `${k}: ${typeof v === 'number' ? num(v) : isMatrix4(v) ? '4x4 matrix' : JSON.stringify(v)}`)
       .join('\n');

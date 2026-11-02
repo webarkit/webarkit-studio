@@ -40,7 +40,7 @@ CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, bu
 
 - `npm run assets` (`scripts/fetch-assets.mjs`) downloads from the jsartoolkitNFT repository:
   - the camera parameters and the pinball and kuva NFT datasets into `public/data/`;
-  - a photo of the printed pinball marker into `tests/fixtures/pinball-demo.jpg`.
+  - a photo of the printed pinball marker into `tests/fixtures/pinball-demo.jpg`, and into `public/data/` for the no-camera demo (`pinball-image`, `source.image`).
 - The e2e global setup (`tests/e2e/global-setup.ts`) turns that photo into a Y4M video for Chromium's fake camera (`tests/e2e/fake-camera.ts`), written to `tests/e2e/.cache/`. The marker is visible for 4 s, then hidden for 2 s, in a loop, so the tests see both found and lost.
 - None of these files are committed. If a test cannot find them, run `npm run assets`.
 
