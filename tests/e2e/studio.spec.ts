@@ -180,6 +180,31 @@ test.describe('editor', () => {
     await expect(page.locator('#btn-undo')).toBeDisabled();
   });
 
+  test('the minimap draws every node and recentres the view on click', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const minimap = page.locator('.minimap');
+    await expect(minimap.locator('.mini-node')).toHaveCount(await page.locator('.studio-node').count());
+    const transform = () => page.locator('#editor > div').first().evaluate((el) => el.style.transform);
+    const before = await transform();
+    const box = (await minimap.boundingBox())!;
+    await page.mouse.click(box.x + 4, box.y + 4);
+    await expect.poll(transform).not.toBe(before);
+  });
+
+  test('Arrange lays the graph out, and one Undo restores it', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const positions = () => page.locator('.studio-node').evaluateAll((els) => els.map((el) => el.parentElement!.style.transform));
+    const before = await positions();
+    await page.click('#btn-arrange');
+    await expect.poll(positions).not.toEqual(before);
+    // Left to right: every wire goes from a node to one further right.
+    const doc = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave')!));
+    const x = new Map(doc.nodes.map((n: { id: string; position: { x: number } }) => [n.id, n.position.x]));
+    for (const e of doc.edges) expect(x.get(e.to.node)).toBeGreaterThan(x.get(e.from.node) as number);
+    await page.click('#btn-undo');
+    await expect.poll(positions).toEqual(before);
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');

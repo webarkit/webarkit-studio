@@ -25,6 +25,7 @@
       <span class="sep"></span>
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
       <button id="btn-redo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)">↷ Redo</button>
+      <button id="btn-arrange" title="Lay the graph out left to right">Arrange</button>
       <span class="sep"></span>
       <button id="btn-import">Import…</button>
       <details id="export-menu" class="menu">
@@ -36,7 +37,7 @@
     </header>
     <main class="layout">
       <aside class="palette">
-        <input id="palette-search" type="search" placeholder="Search nodes… (or right-click the canvas)" aria-label="Search nodes" />
+        <input id="palette-search" type="search" placeholder="Search nodes…" title="Filter the palette. Right-click the canvas to add a node where you click." aria-label="Search nodes" />
         <div id="palette"></div><section id="assets-panel"></section>
       </aside>
       <section id="editor" class="editor"></section>

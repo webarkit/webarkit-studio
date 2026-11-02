@@ -44,6 +44,7 @@ const studio = await createStudioEditor($('editor'), {
 });
 $('btn-undo').onclick = () => void studio.undo();
 $('btn-redo').onclick = () => void studio.redo();
+$('btn-arrange').onclick = () => void studio.arrange();
 
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
   studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),

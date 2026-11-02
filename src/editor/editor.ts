@@ -7,8 +7,10 @@ import { AreaExtensions, AreaPlugin, type Area2D } from 'rete-area-plugin';
 import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
 import { ContextMenuPlugin } from 'rete-context-menu-plugin';
 import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'rete-history-plugin';
+import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { layeredLayout } from './arrange';
 import type { MenuItem } from './context-menu';
 import { mergeParamEdit, ParamEditAction } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
@@ -36,6 +38,8 @@ export interface StudioEditor {
   zoomToFit(): Promise<void>;
   undo(): Promise<void>;
   redo(): Promise<void>;
+  /** Lays the graph out left to right (one undo step). */
+  arrange(): Promise<void>;
   destroy(): void;
 }
 
@@ -138,6 +142,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   area.use(contextMenu);
   history.addPreset(HistoryPresets.classic.setup());
   area.use(history);
+  area.use(new MinimapPlugin<Schemes>({ boundViewport: true }));
 
   const notifyHistory = () => queueMicrotask(() => events.onHistoryChange?.(history.getHistorySnapshot().length > 0));
 
@@ -272,6 +277,26 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
     undo,
     redo,
+
+    async arrange() {
+      const nodes = editor.getNodes();
+      if (!nodes.length) return;
+      const views = nodes.map((n) => area.nodeViews.get(n.id)?.position ?? { x: 0, y: 0 });
+      // Keep the graph where it is: the layout starts at the current top-left corner.
+      const origin = { x: Math.min(...views.map((p) => p.x)), y: Math.min(...views.map((p) => p.y)) };
+      const layout = layeredLayout(
+        nodes,
+        editor.getConnections().map((c) => ({ from: c.source, to: c.target })),
+        { x: 80, y: 40 },
+      );
+      history.separate(); // the drags below form one undo step, apart from what came before
+      for (const n of nodes) {
+        const p = layout.get(n.id)!;
+        await area.translate(n.id, { x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) });
+      }
+      history.separate();
+      await AreaExtensions.zoomAt(area, nodes);
+    },
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);

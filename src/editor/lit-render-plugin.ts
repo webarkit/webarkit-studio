@@ -19,6 +19,7 @@ import { SOCKET_TYPES } from '../core/sockets';
 import type { ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
 import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
+import { renderMinimap, type MinimapData } from './minimap-view';
 
 type Position = { x: number; y: number };
 type Side = 'input' | 'output';
@@ -39,6 +40,7 @@ export type RenderSignal =
   | AreaRenderSignal<'connection', { payload: StudioConnection; start?: Position; end?: Position }>
   | AreaRenderSignal<'socket', { payload: unknown; nodeId: string; side: Side; key: string }>
   | AreaRenderSignal<'contextmenu', { items: MenuItem[]; onHide(): void; searchBar?: boolean }>
+  | AreaRenderSignal<'minimap', Omit<MinimapData, 'element'> & { start(): { x: number; y: number; k: number } }>
   | { type: 'unmount'; data: { element: HTMLElement } };
 
 export interface LitRenderOptions {
@@ -70,6 +72,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
         if (context.data.type === 'node') this.renderNode(context.data as NodeRender);
         else if (context.data.type === 'connection') this.renderConnection(context.data as ConnectionRender);
         else if (context.data.type === 'contextmenu') renderContextMenu(context.data as ContextMenuData, this.opts.searchMenu);
+        else if (context.data.type === 'minimap') renderMinimap(context.data as MinimapData);
         // Socket elements are drawn as part of their node; acknowledging them with
         // `rendered` lets DOMSocketPosition measure them (connections need this).
         else if (context.data.type === 'socket') void this.parentScope().emit({ type: 'rendered', data: context.data } as RenderSignal);
@@ -120,6 +123,13 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
       </div>`,
       data.element,
     );
+
+    // Measured size, used by the minimap and Arrange.
+    const drawn = data.element.firstElementChild as HTMLElement | null;
+    if (drawn?.offsetWidth) {
+      node.width = drawn.offsetWidth;
+      node.height = drawn.offsetHeight;
+    }
 
     // Register socket elements (once per element) with the area / connection plugin.
     const parent = this.parentScope();
