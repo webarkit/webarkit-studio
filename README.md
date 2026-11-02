@@ -29,7 +29,8 @@ npm run dev         # studio at http://localhost:5173/, player at /player.html
 Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 **▶ Run** and point the camera at the printed markers. No camera? The
 "pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
-`source.videoFile` plays a recorded video the same way). **⟳ Reload** restarts the preview (Stop + Run),
+`source.videoFile` plays a recorded video the same way; if you fetched the
+assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 ## Multi NFT

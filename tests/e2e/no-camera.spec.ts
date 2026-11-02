@@ -31,14 +31,14 @@ test.describe('without a camera', () => {
     expect(await page.locator('#log').innerText()).toContain('init source.image');
   });
 
-  test('source.videoFile: tracks the marker in a looping video file', async ({ browser, page, baseURL }) => {
+  test('source.videoFile: tracks the marker in a looping video file', async ({ browser, page, baseURL }, testInfo) => {
     // A WebM of the marker photo, recorded by Playwright itself (headless MediaRecorder records no
     // frames, and no video file is committed or downloaded), then served to the studio by a route.
     // Landscape, like the photo once EXIF-oriented: a portrait recording shrinks the marker too much to track.
     const recorder = await browser.newContext({
       baseURL,
       viewport: { width: 640, height: 480 },
-      recordVideo: { dir: 'tests/e2e/.cache/video', size: { width: 640, height: 480 } },
+      recordVideo: { dir: testInfo.outputPath('recording'), size: { width: 640, height: 480 } },
     });
     const filming = await recorder.newPage();
     await filming.goto('/data/pinball-demo.jpg');

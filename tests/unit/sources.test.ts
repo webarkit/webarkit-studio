@@ -143,6 +143,17 @@ describe('source.videoFile', () => {
     expect(video.paused).toBe(false);
   });
 
+  it('logs a failed replay instead of leaving an unhandled rejection', async () => {
+    const logs: string[] = [];
+    const node = videoFileSource({ url: 'data/pinball.webm', loop: false }, { ...ctx, log: (m: string) => logs.push(m) });
+    await node.init!({});
+    const video = created[0] as FakeVideo;
+    Object.assign(video, { ended: true, paused: true });
+    FakeVideo.fail = true;
+    node.onParamChange!('loop', true);
+    await vi.waitFor(() => expect(logs.join('\n')).toContain('src: could not replay'));
+  });
+
   it('rejects a file without a picture (audio only)', async () => {
     FakeVideo.size = [0, 0];
     await expect(videoFileSource({ url: 'data/sound.webm', loop: true }, ctx).init!({})).rejects.toThrow(

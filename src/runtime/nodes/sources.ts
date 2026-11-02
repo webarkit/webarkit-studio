@@ -99,7 +99,9 @@ export const videoFileSource: NodeFactory = (params, ctx) => {
       if (key !== 'loop' || !video) return;
       video.loop = Boolean(value);
       // An ended video stays on its last frame: looping it means playing it again.
-      if (video.loop && video.ended) void video.play();
+      if (video.loop && video.ended) {
+        video.play().catch((err: Error) => ctx.log(`${ctx.nodeId}: could not replay the video: ${err.message}`));
+      }
     },
     dispose() {
       if (!video) return;
