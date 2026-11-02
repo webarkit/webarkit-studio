@@ -2,7 +2,7 @@
  * Rete.js editor wiring. The editor is a *view* over a GraphDocument:
  * load(doc) builds the Rete graph, toDocument() serializes it back.
  */
-import { NodeEditor } from 'rete';
+import { getUID, NodeEditor } from 'rete';
 import { AreaExtensions, AreaPlugin, type Area2D } from 'rete-area-plugin';
 import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
 import { ContextMenuPlugin } from 'rete-context-menu-plugin';
@@ -11,6 +11,7 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { layeredLayout } from './arrange';
+import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
 import { mergeParamEdit, ParamEditAction } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
@@ -118,7 +119,14 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       if ('source' in target && 'target' in target) {
         return { list: [{ label: 'Delete wire', key: 'delete', handler: () => void editor.removeConnection(target.id) }] };
       }
-      return { list: [{ label: 'Delete', key: 'delete', handler: () => removeNode(target.id) }] };
+      // On a selected node, Duplicate acts on the whole selection.
+      const ids = (target as StudioNode).selected ? selectedIds() : [target.id];
+      return {
+        list: [
+          { label: ids.length > 1 ? `Duplicate ${ids.length} nodes` : 'Duplicate', key: 'duplicate', handler: () => duplicate(ids) },
+          { label: 'Delete', key: 'delete', handler: () => removeNode(target.id) },
+        ],
+      };
     },
   });
 
@@ -167,6 +175,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) void undo();
     else if ((key === 'z' && e.shiftKey) || key === 'y') void redo();
+    else if (key === 'd' && !e.shiftKey) void duplicate(selectedIds());
     else return;
     e.preventDefault();
   };
@@ -181,7 +190,60 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const undo = () => serial(() => history.undo());
   const redo = () => serial(() => history.redo());
 
-  AreaExtensions.selectableNodes(area, AreaExtensions.selector(), { accumulating: AreaExtensions.accumulateOnCtrl() });
+  const selector = AreaExtensions.selector();
+  const selectable = AreaExtensions.selectableNodes(area, selector, { accumulating: AreaExtensions.accumulateOnCtrl() });
+  const selectedIds = () => editor.getNodes().filter((n) => n.selected).map((n) => n.id);
+
+  // ------------------------------------------------- copy / paste / duplicate
+  // Copy and paste go through the clipboard events (no permission prompt), as
+  // JSON text, so a selection can be pasted into another studio tab.
+  const onCopy = (e: ClipboardEvent) => {
+    const ids = selectedIds();
+    if (isEditable(e.target) || !ids.length || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
+    e.preventDefault();
+  };
+  const onPaste = (e: ClipboardEvent) => {
+    if (isEditable(e.target)) return;
+    const data = parseClipboard(e.clipboardData?.getData('text/plain') ?? '');
+    if (!data) return;
+    e.preventDefault();
+    void paste(data, { ...area.area.pointer });
+  };
+  document.addEventListener('copy', onCopy);
+  document.addEventListener('paste', onPaste);
+
+  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
+  async function paste(data: ClipboardData, at: { x: number; y: number }) {
+    const { nodes, edges } = pasteClipboard(data, getUID, at);
+    history.separate();
+    const added: string[] = [];
+    for (const n of nodes) {
+      if (!NODE_CATALOG[n.type]) continue; // from a newer studio, or hand-edited
+      await addNode(n.type, n.position, n.id, n.params);
+      added.push(n.id);
+    }
+    for (const e of edges) {
+      const source = editor.getNode(e.from.node);
+      const target = editor.getNode(e.to.node);
+      if (!source?.outputs[e.from.port] || !target?.inputs[e.to.port]) continue;
+      const conn = new StudioConnection(source, e.from.port, target, e.to.port);
+      conn.id = e.id;
+      await editor.addConnection(conn);
+    }
+    history.separate();
+    await selector.unselectAll();
+    for (const id of added) await selectable.select(id, true);
+  }
+
+  async function duplicate(ids: string[]) {
+    if (!ids.length) return;
+    const doc = toDocument();
+    const copied = doc.nodes.filter((n) => ids.includes(n.id));
+    // Next to the originals, offset so both stay visible.
+    const corner = { x: Math.min(...copied.map((n) => n.position?.x ?? 0)), y: Math.min(...copied.map((n) => n.position?.y ?? 0)) };
+    await paste(copySelection(doc, ids), { x: corner.x + 40, y: corner.y + 40 });
+  }
   AreaExtensions.simpleNodesOrder(area);
 
   // Type-check connections: same socket type, single connection on non-multiple inputs.
@@ -217,6 +279,27 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     await editor.addNode(node);
     await area.translate(node.id, position);
     return node;
+  }
+
+  function toDocument(): GraphDocument {
+    const doc = emptyGraph(graphName);
+    doc.format = GRAPH_FORMAT;
+    doc.version = GRAPH_VERSION;
+    doc.nodes = editor.getNodes().map((n) => {
+      const view = area.nodeViews.get(n.id);
+      return {
+        id: n.id,
+        type: n.type,
+        params: { ...n.params },
+        position: view ? { x: Math.round(view.position.x), y: Math.round(view.position.y) } : undefined,
+      };
+    });
+    doc.edges = editor.getConnections().map((c) => ({
+      id: c.id,
+      from: { node: c.source, port: c.sourceOutput },
+      to: { node: c.target, port: c.targetInput },
+    }));
+    return doc;
   }
 
   async function loadGraph(doc: GraphDocument) {
@@ -273,26 +356,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     },
 
 
-    toDocument() {
-      const doc = emptyGraph(graphName);
-      doc.format = GRAPH_FORMAT;
-      doc.version = GRAPH_VERSION;
-      doc.nodes = editor.getNodes().map((n) => {
-        const view = area.nodeViews.get(n.id);
-        return {
-          id: n.id,
-          type: n.type,
-          params: { ...n.params },
-          position: view ? { x: Math.round(view.position.x), y: Math.round(view.position.y) } : undefined,
-        };
-      });
-      doc.edges = editor.getConnections().map((c) => ({
-        id: c.id,
-        from: { node: c.source, port: c.sourceOutput },
-        to: { node: c.target, port: c.targetInput },
-      }));
-      return doc;
-    },
+    toDocument,
 
     async zoomToFit() {
       await AreaExtensions.zoomAt(area, editor.getNodes());
@@ -323,6 +387,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('paste', onPaste);
       area.destroy();
     },
   };

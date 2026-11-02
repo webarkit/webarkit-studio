@@ -222,6 +222,41 @@ test.describe('editor', () => {
     await expect.poll(positions).toEqual(before);
   });
 
+  test('copy / paste a selection keeps its inner wires, and one Undo removes it', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const nodes = page.locator('.studio-node');
+    const wires = page.locator('svg.connection path');
+    const [nodeCount, wireCount] = [await nodes.count(), await wires.count()];
+    // Scene → Primitive: one wire between them; the Scene's renderer wire and the Primitive's anchor wire stay out.
+    await page.locator('.studio-node:has(.title span:text-is("Scene")) .title').click();
+    await page.locator('.studio-node:has(.title span:text-is("Primitive")) .title').click({ modifiers: ['Control'] });
+    await expect(page.locator('.studio-node.selected')).toHaveCount(2);
+    await page.keyboard.press('Control+c');
+    const at = await emptyCanvas(page);
+    await page.mouse.move(at.x - 300, at.y + 200);
+    await page.keyboard.press('Control+v');
+    await expect(nodes).toHaveCount(nodeCount + 2);
+    await expect(wires).toHaveCount(wireCount + 1);
+    await expect(page.locator('.studio-node.selected')).toHaveCount(2); // the pasted copies
+    await page.keyboard.press('Control+z');
+    await expect(nodes).toHaveCount(nodeCount);
+    await expect(wires).toHaveCount(wireCount);
+  });
+
+  test('Duplicate from a node menu and Ctrl+D copy the node with its params', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const primitives = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
+    const size = primitives.first().locator('.param:has-text("Size") input');
+    await size.fill('55');
+    await size.dispatchEvent('change');
+    await primitives.first().locator('.title').click({ button: 'right' });
+    await page.locator('.context-menu .item', { hasText: 'Duplicate' }).click();
+    await expect(primitives).toHaveCount(2);
+    await expect(primitives.nth(1).locator('.param:has-text("Size") input')).toHaveValue('55');
+    await page.keyboard.press('Control+d'); // the duplicate is selected: duplicates it again
+    await expect(primitives).toHaveCount(3);
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');
