@@ -10,4 +10,5 @@ test-results/
 .traces/
 .idea/
 .playwright-mcp/
+generated/
 out/

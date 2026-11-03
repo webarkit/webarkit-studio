@@ -149,6 +149,19 @@ rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
+```
+pinball-nft-three-js/
+  index.html  graph.json  README.txt
+  assets/     player, three-adapter, jsartoolkit-nft plugin
+  jsartoolkit-nft/1.16.0/  the tracker worker of the graph's build (SIMD here)
+  data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
+```
+
+Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
+404 for missing files (see Known issues).
+Camera access requires a secure context: `localhost` works; on a phone use
+HTTPS or `adb reverse tcp:5173 tcp:5173`.
+
 ## MCP server
 
 An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
@@ -211,18 +224,17 @@ the Z of *Rotation*. It plays no animations. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
-```
-pinball-nft-three-js/
-  index.html  graph.json  README.txt
-  assets/     player, three-adapter, jsartoolkit-nft plugin
-  jsartoolkit-nft/1.16.0/  the tracker worker of the graph's build (SIMD here)
-  data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
+Before you upload a dataset made from a new image, check that it will track:
+
+```bash
+npm run trackability -- path/to/marker        # its .fset3 and .fset: detection points, coverage,
+                                              # repetition, tracking points; exit 1 when poor
+npm run example:marker                        # a generated marker image in generated/
+npm run example:project -- generated/scribbles   # its dataset + a glTF model + a graph, for Import…
 ```
 
-Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
-404 for missing files (see Known issues).
-Camera access requires a secure context: `localhost` works; on a phone use
-HTTPS or `adb reverse tcp:5173 tcp:5173`.
+[Creative tools](docs/agents/creative-tools.md) sets up Blender, ComfyUI and
+Krita as MCP servers for markers and models, and walks through the example.
 
 ## Architecture
 

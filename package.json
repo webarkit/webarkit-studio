@@ -29,7 +29,10 @@
     "trace:diff": "node scripts/trace-diff.mjs",
     "mcp:setup": "node scripts/mcp-setup.mjs",
     "mcp:studio": "node --import tsx src/mcp/main.ts",
-    "test:all": "npm run typecheck && npm test && npm run test:e2e"
+    "test:all": "npm run typecheck && npm test && npm run test:e2e",
+    "trackability": "node scripts/trackability.mjs",
+    "example:marker": "node scripts/example-pipeline.mjs marker",
+    "example:project": "node scripts/example-pipeline.mjs project"
   },
   "dependencies": {
     "@babylonjs/core": "9.30.0",
