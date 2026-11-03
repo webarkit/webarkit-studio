@@ -23,9 +23,8 @@ describe.skipIf(!haveAssets)('trackability of the example datasets', () => {
   it('rates pinball as good', () => {
     const report = checkTrackability(read(PINBALL));
     expect(report.verdict, JSON.stringify(report.checks)).toBe('good');
-    // 893 × 1117 px at 120 dpi.
-    expect(report.marker.widthPx).toBe(893);
-    expect(report.marker.widthMm).toBeCloseTo(189, 0);
+    // 893 × 1117 px at 120 dpi: the size the facade reports (TargetInfo.widthMm).
+    expect(report.marker).toEqual({ widthPx: 893, heightPx: 1117, dpi: 120, widthMm: 189, heightMm: 236.4 });
   });
 
   it('rates kuva as good', () => {
@@ -80,5 +79,8 @@ describe.skipIf(!haveAssets)('npm run trackability', () => {
     expect(grid.err).toMatch(/--grid must be an integer/);
     expect(cli(PINBALL, '--repetition-fail', '-1').code).toBe(2);
     expect(cli().code).toBe(2);
+    const zft = cli('public/data/DataNFT/pinball.zft');
+    expect(zft.code).toBe(2);
+    expect(zft.err).toMatch(/\.zft is not supported/);
   });
 });

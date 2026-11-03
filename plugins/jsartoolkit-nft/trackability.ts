@@ -9,11 +9,15 @@
  *
  * File layouts (little-endian), from WebARKitLib:
  * - .fset3 (`kpmSaveRefDataSet`, FREAK build): int num; num × { float x, y
- *   (pixels of the reference image); float X, Y (mm); uchar v[96]; float angle,
+ *   (pixels of the reference image); float X, Y (mm, (x + 0.5) / dpi × 25.4); uchar v[96]; float angle,
  *   scale; int maxima; int pageNo, refImageNo }; int pageNum; pageNum × { int
  *   pageNo, imageNum; imageNum × { int width, height, imageNo } }.
  * - .fset (`ar2SaveFeatureSet`): int num; num × { int scale; float maxdpi,
  *   mindpi; int num; num × { int x, y; float mx, my, maxSim } }.
+ *
+ * Pixel positions in the .fset3 are those of `KpmProcFullSize`, the mode
+ * webarkit/Nft-Marker-Creator-App writes (other modes store downsampled
+ * positions, and the coverage and size here would be wrong).
  */
 
 const FREAK_BYTES = 96;
@@ -38,7 +42,8 @@ export interface Fset3 {
 }
 
 export interface Fset {
-  scales: Array<{ points: Array<{ x: number; y: number }>; maxdpi: number; mindpi: number }>;
+  /** `scale` is the .iset scale the points belong to; 0 is the largest image. */
+  scales: Array<{ scale: number; points: Array<{ x: number; y: number }>; maxdpi: number; mindpi: number }>;
 }
 
 class Reader {
@@ -95,7 +100,7 @@ export function parseFset3(bytes: Uint8Array): Fset3 {
     const mmY = r.float();
     const descriptor = r.slice(FREAK_BYTES);
     r.offset += 12; // angle, scale, maxima
-    r.int(); // pageNo: the generator writes one page per dataset
+    r.int(); // pageNo: the generator writes one page (number 1) per dataset
     points.push({ x, y, mmX, mmY, image: r.int(), descriptor });
   }
   const images: Fset3['images'] = [];
@@ -107,6 +112,7 @@ export function parseFset3(bytes: Uint8Array): Fset3 {
       const width = r.int();
       const height = r.int();
       const imageNo = r.int();
+      if (imageNo < 0 || imageNo >= imageNum) throw new Error(`.fset3: image number ${imageNo} out of range`);
       if (width <= 0 || height <= 0) throw new Error(`.fset3: reference image ${imageNo} has size ${width} × ${height}`);
       if (images[imageNo]) throw new Error(`.fset3: reference image ${imageNo} twice`);
       images[imageNo] = { width, height };
@@ -125,7 +131,7 @@ export function parseFset(bytes: Uint8Array): Fset {
   const scales: Fset['scales'] = [];
   const num = r.count();
   for (let i = 0; i < num; i++) {
-    r.int(); // scale index
+    const scale = r.int();
     const maxdpi = r.float();
     const mindpi = r.float();
     const n = r.count();
@@ -135,7 +141,7 @@ export function parseFset(bytes: Uint8Array): Fset {
       points.push({ x: r.int(), y: r.int() });
       r.offset += 12; // mx, my, maxSim
     }
-    scales.push({ points, maxdpi, mindpi });
+    scales.push({ scale, points, maxdpi, mindpi });
   }
   r.end();
   return { scales };
@@ -168,7 +174,8 @@ export interface TrackabilityThresholds {
 
 /**
  * Calibrated on the pinball and kuva datasets (good) and on generated
- * checkerboard, gradient, random-disc and half-blank images.
+ * checkerboard, gradient, random-disc and half-blank images: the measured
+ * values are in docs/agents/creative-tools.md ("Calibration").
  */
 export const DEFAULT_TRACKABILITY: TrackabilityThresholds = {
   detectionPoints: { warn: 250, fail: 100 },
@@ -203,8 +210,12 @@ export interface TrackabilityCheck {
 
 export interface TrackabilityReport {
   verdict: 'good' | 'fair' | 'poor';
-  /** Size of the largest reference image; millimetres are null without points to measure them. */
-  marker: { widthPx: number; heightPx: number; widthMm: number | null; heightMm: number | null };
+  /**
+   * Size of the largest reference image, in millimetres as the jsartoolkitNFT
+   * facade reports it (pixels / integer dpi × 25.4); dpi and millimetres are
+   * null without points to measure them.
+   */
+  marker: { widthPx: number; heightPx: number; dpi: number | null; widthMm: number | null; heightMm: number | null };
   checks: TrackabilityCheck[];
 }
 
@@ -309,7 +320,7 @@ export function checkTrackability(
   // Points the generator could not place (non-finite) are not features.
   fset3.points = fset3.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.mmX));
   const largest = fset3.points.filter((p) => p.image === 0);
-  const tracking = fset.scales[0]?.points ?? [];
+  const tracking = fset.scales.find((s) => s.scale === 0)?.points ?? [];
 
   const values: Record<CheckId, number> = {
     'detection.points': largest.length,
@@ -337,14 +348,17 @@ export function checkTrackability(
     return { id, label: LABELS[id], value: values[id], limits: l, direction, status: rate(values[id], l, direction), hint: HINTS[id] };
   });
 
-  const mmPerPx = median(largest.filter((p) => p.x > 1).map((p) => p.mmX / p.x));
+  // The dataset does not store its dpi; recover it from the millimetre positions, truncated as the core does.
+  const measured = median(largest.filter((p) => p.mmX > 0).map((p) => (25.4 * (p.x + 0.5)) / p.mmX));
+  const dpi = measured === null ? null : Math.trunc(round(measured, 3));
   return {
     verdict: checks.some((c) => c.status === 'fail') ? 'poor' : checks.some((c) => c.status === 'warn') ? 'fair' : 'good',
     marker: {
       widthPx: base.width,
       heightPx: base.height,
-      widthMm: mmPerPx === null ? null : round(base.width * mmPerPx, 1),
-      heightMm: mmPerPx === null ? null : round(base.height * mmPerPx, 1),
+      dpi,
+      widthMm: dpi ? round((base.width / dpi) * 25.4, 1) : null,
+      heightMm: dpi ? round((base.height / dpi) * 25.4, 1) : null,
     },
     checks,
   };
@@ -352,7 +366,7 @@ export function checkTrackability(
 
 export function formatTrackability(report: TrackabilityReport): string {
   const { marker } = report;
-  const mm = marker.widthMm === null ? '' : `, ${marker.widthMm} × ${marker.heightMm} mm`;
+  const mm = marker.widthMm === null ? '' : `, ${marker.widthMm} × ${marker.heightMm} mm at ${marker.dpi} dpi`;
   const lines = [`Trackability: ${report.verdict}`, `Marker: ${marker.widthPx} × ${marker.heightPx} px${mm}`];
   const width = Math.max(...report.checks.map((c) => c.label.length));
   for (const c of report.checks) {

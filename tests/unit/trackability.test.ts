@@ -16,7 +16,7 @@ const IMAGES = [
 /** A dataset that passes every check: points everywhere, all descriptors distinct. */
 function goodDataset() {
   return {
-    fset3: writeFset3({ images: IMAGES, points: gridPoints(400, 400, 400), mmPerPx: 0.5 }),
+    fset3: writeFset3({ images: IMAGES, points: gridPoints(400, 400, 400), dpi: 127 }),
     fset: writeFset([{ points: gridPoints(100, 400, 400) }, { points: gridPoints(30, 200, 200) }]),
   };
 }
@@ -26,22 +26,24 @@ const status = (report: ReturnType<typeof checkTrackability>, id: string) => rep
 describe('NFT feature files', () => {
   it('reads the FREAK points and reference images of a .fset3', () => {
     const set = parseFset3(
-      writeFset3({ images: IMAGES, points: [{ x: 10, y: 20 }, { x: 5, y: 6, image: 1 }], mmPerPx: 0.5 }),
+      writeFset3({ images: IMAGES, points: [{ x: 10, y: 20 }, { x: 5, y: 6, image: 1 }], dpi: 127 }),
     );
     expect(set.images).toEqual([
       { width: 400, height: 400 },
       { width: 200, height: 200 },
     ]);
     expect(set.points).toHaveLength(2);
-    expect(set.points[0]).toMatchObject({ x: 10, y: 20, image: 0, mmX: 5 });
-    expect(set.points[1]).toMatchObject({ x: 5, y: 6, image: 1, mmX: 5 });
+    expect(set.points[0]).toMatchObject({ x: 10, y: 20, image: 0 });
+    expect(set.points[0].mmX).toBeCloseTo(2.1);
+    expect(set.points[1]).toMatchObject({ x: 5, y: 6, image: 1 });
+    expect(set.points[1].mmX).toBeCloseTo(2.2);
     expect(set.points[0].descriptor).toEqual(descriptorFor(0));
   });
 
   it('reads the points of every scale of a .fset', () => {
     const set = parseFset(writeFset([{ points: [{ x: 1, y: 2 }], maxdpi: 120, mindpi: 60 }, { points: [] }]));
     expect(set.scales).toHaveLength(2);
-    expect(set.scales[0]).toEqual({ points: [{ x: 1, y: 2 }], maxdpi: 120, mindpi: 60 });
+    expect(set.scales[0]).toEqual({ scale: 0, points: [{ x: 1, y: 2 }], maxdpi: 120, mindpi: 60 });
     expect(set.scales[1].points).toEqual([]);
   });
 
@@ -71,12 +73,14 @@ describe('NFT feature files', () => {
     };
     // The image table starts after the count, the points, pageNum, pageNo and imageNum.
     const table = 4 + 12;
-    // Image numbers 1, 1: image 0 is missing and 1 is repeated.
+    // Image numbers 1, 1.
     expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table + 8, 1))).toThrow(/reference image 1 twice/);
-    expect(() =>
-      parseFset3(at(at(writeFset3({ images: IMAGES, points: [] }), table + 8, 2), table + 20, 1)),
-    ).toThrow(/no reference image 0/);
+    // An empty image table.
+    expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table - 4, 0).subarray(0, table))).toThrow(
+      /no reference image 0/,
+    );
     expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table, 0))).toThrow(/size 0 × 400/);
+    expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table + 8, 7))).toThrow(/image number 7/);
   });
 
   it('rejects trailing bytes', () => {
@@ -99,7 +103,8 @@ describe('trackability check', () => {
       'tracking.coverage',
     ]);
     expect(report.checks.every((c) => c.status === 'pass')).toBe(true);
-    expect(report.marker).toEqual({ widthPx: 400, heightPx: 400, widthMm: 200, heightMm: 200 });
+    // The size the jsartoolkitNFT facade reports: pixels / integer dpi × 25.4.
+    expect(report.marker).toEqual({ widthPx: 400, heightPx: 400, dpi: 127, widthMm: 80, heightMm: 80 });
   });
 
   it('rates a dataset without feature points as poor', () => {
@@ -111,6 +116,7 @@ describe('trackability check', () => {
     expect(status(report, 'detection.points')).toBe('fail');
     expect(status(report, 'tracking.points')).toBe('fail');
     expect(report.marker.widthMm).toBeNull();
+    expect(report.marker.dpi).toBeNull();
   });
 
   it('flags points packed into one part of the marker', () => {
@@ -181,7 +187,17 @@ describe('trackability check', () => {
     const report = checkTrackability({ fset3: writeFset3({ images: IMAGES, points }), fset: goodDataset().fset });
     expect(report.checks.find((c) => c.id === 'detection.points')?.value).toBe(400);
     expect(report.checks.find((c) => c.id === 'detection.coverage')?.value).toBe(1);
-    expect(report.marker.widthMm).toBe(100);
+    expect(report.marker.widthMm).toBe(101.6);
+  });
+
+  it('rates the tracking points of the .fset scale 0, wherever it is stored', () => {
+    const fset = writeFset([{ points: [] }, { points: gridPoints(100, 400, 400) }]);
+    // Swap the scale indices: the second entry is scale 0.
+    const view = new DataView(fset.buffer);
+    view.setInt32(4, 1, true);
+    view.setInt32(4 + 16, 0, true);
+    const report = checkTrackability({ fset3: goodDataset().fset3, fset });
+    expect(report.checks.find((c) => c.id === 'tracking.points')?.value).toBe(100);
   });
 
   it('formats a report with the verdict, every check and a hint for failures', () => {

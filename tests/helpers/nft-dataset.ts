@@ -17,8 +17,8 @@ export interface Fset3Spec {
   /** Reference images (scales), largest first. */
   images: Array<{ width: number; height: number }>;
   points: Fset3PointSpec[];
-  /** Millimetres per pixel of image 0 (coord3D = coord2D × mmPerPx × scale). */
-  mmPerPx?: number;
+  /** Resolution of image 0; coord3D is (coord2D + 0.5) / dpi × 25.4 at each scale, as kpmGenRefDataSet writes it. */
+  dpi?: number;
 }
 
 /** A descriptor that differs from every other index's in many bits. */
@@ -32,7 +32,7 @@ export function descriptorFor(seed: number): Uint8Array {
   return d;
 }
 
-export function writeFset3({ images, points, mmPerPx = 0.25 }: Fset3Spec): Uint8Array {
+export function writeFset3({ images, points, dpi = 100 }: Fset3Spec): Uint8Array {
   const bytes = new Uint8Array(4 + points.length * 132 + 4 + 8 + images.length * 12);
   const view = new DataView(bytes.buffer);
   let o = 0;
@@ -40,11 +40,11 @@ export function writeFset3({ images, points, mmPerPx = 0.25 }: Fset3Spec): Uint8
   o += 4;
   points.forEach((p, i) => {
     const image = p.image ?? 0;
-    const scale = images[0].width / images[image].width;
+    const imageDpi = (dpi * images[image].width) / images[0].width;
     view.setFloat32(o, p.x, true);
     view.setFloat32(o + 4, p.y, true);
-    view.setFloat32(o + 8, p.x * scale * mmPerPx, true);
-    view.setFloat32(o + 12, (images[image].height - p.y) * scale * mmPerPx, true);
+    view.setFloat32(o + 8, ((p.x + 0.5) / imageDpi) * 25.4, true);
+    view.setFloat32(o + 12, ((images[image].height - 0.5 - p.y) / imageDpi) * 25.4, true);
     bytes.set(p.descriptor ?? descriptorFor(i), o + 16);
     // angle, scale and maxima of the FREAK feature are not read.
     view.setInt32(o + 124, 0, true);

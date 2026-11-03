@@ -70,6 +70,7 @@ try {
   fail(err.message.replace(/^trackability: /, '--'));
 }
 
+if (/\.zft$/i.test(args.positionals[0])) fail('a .zft is not supported: pass the dataset with its .iset, .fset and .fset3');
 const dataset = args.positionals[0].replace(/\.(iset|fset3?)$/i, '');
 let report;
 try {
