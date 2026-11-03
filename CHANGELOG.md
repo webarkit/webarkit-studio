@@ -24,6 +24,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - Param kinds `vector3` and `matrix4` (values are number arrays; the graph version is unchanged).
 - Primitive: live **Position** (mm) and **Rotation** (degrees); Spin turns it about its own Z axis.
   glTF Model uses the same Position / Rotation vectors.
+- Math nodes (#25): `math.number`, `math.vector3`, `math.splitVector3`, `math.add`, `math.multiply`, `math.addVector3`, `math.scaleVector3`,
+  `math.sin` (degrees) and `math.time`, on new `number` and `vector3` sockets, renderer-independent.
+  An input with the same name as a param overrides it while connected; Primitive gets a `position`
+  input. Demo: *pinball · math nodes*, a cube bobbing on the marker.
 
 ## [0.1.0] - 2026-10-31
 

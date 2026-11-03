@@ -77,7 +77,7 @@ describe('validateGraph', () => {
     expect(problems(doc)).toContain('graph contains a cycle');
   });
 
-  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image'])('demo graph %s is valid against the real catalog', (name) => {
+  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image', 'pinball-math'])('demo graph %s is valid against the real catalog', (name) => {
     const doc = JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
     expect(doc.version).toBe(GRAPH_VERSION);
     expect(() => validateGraph(doc)).not.toThrow();
@@ -122,6 +122,17 @@ describe('socketsCompatible', () => {
 });
 
 describe('catalog', () => {
+  it('an input that overrides a param (same name) is optional and has the socket type of the param kind', () => {
+    const socketOf = { number: 'number', vector3: 'vector3' } as Record<string, string>;
+    for (const def of Object.values(NODE_CATALOG)) {
+      for (const [key, input] of Object.entries(def.inputs)) {
+        const param = def.params[key];
+        if (!param) continue;
+        expect([input.type, input.optional], `${def.type}.${key}`).toEqual([socketOf[param.kind], true]);
+      }
+    }
+  });
+
   it('reserves the webarkit.* namespace', () => {
     expect(Object.keys(NODE_CATALOG).filter((t) => t.startsWith('webarkit.'))).toEqual([]);
   });

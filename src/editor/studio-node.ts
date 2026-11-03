@@ -30,6 +30,8 @@ export class StudioNode extends ClassicPreset.Node<
   params: Record<string, ParamValue>;
   /** Runtime feedback shown in the node (Inspector values, init errors). Not saved. */
   status: { text: string; error?: boolean } | null = null;
+  /** Params set by a connected input of the same name (shown disabled). Not saved: derived from the wires. */
+  driven = new Set<string>();
   /** Drawn size in px, measured by the renderer (minimap, Arrange); an estimate until then. */
   width = 230;
   height = 160;

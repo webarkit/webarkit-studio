@@ -30,7 +30,9 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 **▶ Run** and point the camera at the printed markers. No camera? The
 "pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
 `source.videoFile` plays a recorded video the same way; if you fetched the
-assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
+assets before this demo existed, run `npm run assets` again for the photo).
+"pinball · math nodes" animates a cube with `math.time`, `math.sin` and
+`math.vector3` wired into the Primitive's Position. **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -324,10 +326,17 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ | scene → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ ⚡ | scene → sceneObject (box, sphere, torus knot; position, rotation, spin) |
+| `scene.primitive` | ✅ ⚡ | scene, position? → sceneObject (box, sphere, torus knot; position, rotation, spin) |
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
+| `math.number` | ✅ ⚡ | → number |
+| `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
+| `math.splitVector3` | ✅ | vector3 → x, y, z |
+| `math.add` / `math.multiply` | ✅ ⚡ | a?, b? → number |
+| `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
+| `math.sin` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin(x) |
+| `math.time` | ✅ ⚡ | → seconds since start (× speed) |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
@@ -425,9 +434,11 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [x] Undo / redo (`rete-history-plugin`), including param edits
 - [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
 - [ ] Asset manager: upload images and datasets, glTF models
+- [x] First math nodes and a Primitive position driven by an input (#25)
 
 **Phase 3 — Logic & publishing**
 - [ ] Logic and action nodes consuming events
+- [ ] Math nodes: numbers, vectors, matrices, functions, renderer-independent (#24)
 - [ ] Export: readable jsartoolkitNFT source code (code generation, Three.js first)
 - [ ] Deploy: publish the bundle to GitHub Pages from the studio
 - [ ] Graph format migrations (`version` field)

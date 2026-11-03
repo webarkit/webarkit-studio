@@ -69,6 +69,8 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
   - The camera looks down −Z.
 - **Tracking is the jsartoolkitNFT tracker facade** (`createNFTTracker`, #5). `NftSession` (`src/runtime/trackers/`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the worker and the Node tests share it. Keep the worker a thin relay, and do not reimplement in this repository what the facade does (found / lost, filters, lens, projection).
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
+- **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired.
+- **Math nodes** (`math.*`) compute on plain numbers and arrays in marker space, never on renderer types; only the renderer adapters convert.
 
 ## Adding a node
 

@@ -377,6 +377,60 @@ test.describe('editor', () => {
   });
 });
 
+test.describe('math nodes', () => {
+  for (const renderer of ['three', 'babylon']) {
+    test(`pinball-math on ${renderer}: time → sin → vector3 drives the Primitive position live`, async ({ page }) => {
+      await loadDemo(page, 'pinball-math');
+      if (renderer === 'babylon') {
+        // Same graph on the other renderer: swap the renderer node in the autosave.
+        await page.evaluate(() => {
+          const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
+          const node = doc.nodes.find((n: { type: string }) => n.type === 'three.renderer');
+          Object.assign(node, { type: 'babylon.renderer', params: {} });
+          localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
+        });
+        await page.reload();
+        await expect(page.locator('.studio-node .title span:text-is("Babylon.js Renderer")')).toHaveCount(1);
+      }
+      await run(page);
+      await expect(page.locator('#stage canvas')).toHaveCount(1);
+      const lift = nodeStatus(page, 'Inspector', 1); // the second Inspector shows the vector
+      await expect(lift).toContainText(/\[0, 0, \d/);
+      const first = await lift.innerText();
+      await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
+      await expect(nodeStatus(page, 'Inspector', 0)).toContainText('● tracked', { timeout: 20_000 });
+      // Live: editing the sine applies without a restart.
+      const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input');
+      await amplitude.fill('5');
+      await amplitude.dispatchEvent('change');
+      await expect(page.locator('#log')).not.toContainText('press Reload');
+      expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
+    });
+  }
+
+  test('a param driven by a connected input is disabled; removing the wire (and undo) toggles it', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    const primitive = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
+    const x = primitive.locator('input[aria-label="Position x"]');
+    await expect(x).toBeDisabled();
+    await primitive.locator('.title').click();
+    await expect(page.locator('#inspector input[aria-label="Position x"]')).toBeDisabled();
+    await expect(page.locator('#inspector .param-vector3').first()).toHaveAttribute('title', /connected input/);
+    // Removing the Vector3 node removes its wire into Position: the param is editable again.
+    await page.locator('.studio-node:has(.title span:text-is("Vector3")) .remove').click();
+    await expect(x).toBeEnabled();
+    await page.click('#btn-undo');
+    await expect(x).toBeDisabled();
+  });
+
+  test('changing wires while the preview runs asks for a Reload', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    await run(page);
+    await page.locator('.studio-node:has(.title span:text-is("Vector3")) .remove').click();
+    await expect(page.locator('#log')).toContainText('wires changed: press Reload to apply them');
+  });
+});
+
 test.describe('tracking traces', () => {
   test('Trace Recorder downloads a JSONL trace of the running tracker', async ({ page }) => {
     // pinball-three plus a Trace Recorder on the controller's trace output, recording from the start.

@@ -148,7 +148,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
   }
 
   private paramEditor(node: StudioNode, key: string, spec: ParamSpec): TemplateResult {
-    return paramRow(spec, node.params[key] ?? spec.default, (v: ParamValue) => this.opts.onParamChange(node, key, v));
+    return paramRow(spec, node.params[key] ?? spec.default, (v: ParamValue) => this.opts.onParamChange(node, key, v), 'node', node.driven.has(key));
   }
 
   // ---------------------------------------------------------- connections

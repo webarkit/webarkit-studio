@@ -37,7 +37,7 @@ export function renderInspector(element: HTMLElement, node: StudioNode | null, s
       </header>
       <p class="description">${def.description}</p>
       ${params.length
-        ? html`<div class="params">${params.map(([key, spec]) => paramRow(spec, node.params[key] ?? spec.default, (v) => set(key, v), 'inspector'))}</div>`
+        ? html`<div class="params">${params.map(([key, spec]) => paramRow(spec, node.params[key] ?? spec.default, (v) => set(key, v), 'inspector', node.driven.has(key)))}</div>`
         : html`<p class="hint">No params.</p>`}`,
     ),
     element,
