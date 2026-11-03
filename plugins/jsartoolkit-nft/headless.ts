@@ -7,6 +7,7 @@
  * The Node build has a single build: the controller's `build` param only
  * picks a browser build, so it does not apply here.
  */
+import { isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createNFTTracker } from '@webarkit/jsartoolkit-nft/node';
 import type { HeadlessTracker, PoseFilterValue, TraceFrame } from '@webarkit/studio-plugin-api';
@@ -14,10 +15,16 @@ import { NftSession, type NftSettings } from './nft-session';
 import { letterbox } from './nodes';
 import type { ArtkCameraParamsValue, ArtkNftDatasetValue } from './types';
 
-/** A local file from a node's resolved URL: the Node build reads files, not URLs. */
-function localPath(url: string): string {
+/**
+ * The path the Node build loads for a node's resolved URL. The build mounts
+ * the working directory and opens "<mount>/" + path, so the path must be
+ * relative to `cwd` (an absolute path breaks on Linux), with `/` separators.
+ */
+export function trackerPath(url: string, cwd = process.cwd()): string {
   if (!url.startsWith('file:')) throw new Error(`the Node build reads local files only, not ${url}`);
-  return fileURLToPath(url);
+  const path = relative(cwd, fileURLToPath(url));
+  if (path.startsWith('..') || isAbsolute(path)) throw new Error(`${fileURLToPath(url)}: the Node build reads files inside the working directory (${cwd}) only`);
+  return path.split(sep).join('/');
 }
 
 const controller: HeadlessTracker = {
@@ -28,8 +35,8 @@ const controller: HeadlessTracker = {
     const datasets = inputs.dataset as ArtkNftDatasetValue[];
     setClock(frames[0]?.time ?? Date.now());
     const session = await NftSession.create(createNFTTracker, {
-      cameraUrl: localPath(camera.url),
-      datasetUrls: datasets.map((d) => localPath(d.url)),
+      cameraUrl: trackerPath(camera.url),
+      datasetUrls: datasets.map((d) => trackerPath(d.url)),
       filter: (inputs.filter as PoseFilterValue | undefined) ?? null,
       settings: (inputs.settings as NftSettings | undefined) ?? null,
       geometry: letterbox(video.width, video.height),

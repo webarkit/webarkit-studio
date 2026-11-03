@@ -12,7 +12,12 @@ import config from '../../webarkit-studio.config';
 import nodeConfig from '../../webarkit-studio.node.config';
 import { loadPlugins } from '../plugins/host';
 import { createStudioServer } from './server';
+import { REPO_ROOT } from './tool';
 import { loadHeadlessTrackers } from './trackers';
+
+// Trackers' Node builds read files relative to the working directory: make it the repository
+// root, wherever the client started the server.
+process.chdir(REPO_ROOT);
 
 // stdout carries JSON-RPC only. The tracker (its WASM prints through console.log) and the
 // nodes log with console.log / info / debug: send them to stderr. Nothing in the studio
