@@ -191,11 +191,15 @@ export const CORE_NODES: NodeDefinition[] = [
       'A light. Left unconnected (or wired to AR View) it lives in camera space and lights the scene from the viewer; ' +
       'wired to a Marker Anchor it follows the marker and lights from above it. ' +
       'Turn off "Default lights" on the Scene to light only with these.',
-    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      // Overrides the color param while connected (alpha ignored: a light has no opacity).
+      color: { type: 'color', label: 'Color', optional: true },
+    },
     outputs: { object: { type: 'sceneObject', label: 'Light' } },
     params: {
       kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient' } },
-      color: { kind: 'color', label: 'Color', default: '#ffffff' },
+      color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
       intensity: { kind: 'number', label: 'Intensity', default: 1.5, min: 0, max: 10, step: 0.1, live: true },
     },
   },
@@ -211,6 +215,8 @@ export const CORE_NODES: NodeDefinition[] = [
       scene: { type: 'scene', label: 'Scene' },
       // Overrides the position param while connected (e.g. from math nodes).
       position: { type: 'vector3', label: 'Position', optional: true },
+      // Overrides the color param while connected; alpha below 1 makes it transparent.
+      color: { type: 'color', label: 'Color', optional: true },
     },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
@@ -394,6 +400,44 @@ export const CORE_NODES: NodeDefinition[] = [
     inputs: {},
     outputs: { seconds: { type: 'number', label: 'Seconds' } },
     params: { speed: { kind: 'number', label: 'Speed', default: 1, step: 0.1, live: true } },
+  },
+
+  // --------------------------------------------------------------- color
+  // [r, g, b, a] values (0–1, sRGB). Inputs override the params of the same name.
+  {
+    type: 'color.rgba',
+    label: 'RGBA Color',
+    category: 'math',
+    provider: 'core',
+    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
+    inputs: {
+      r: { type: 'number', label: 'R', optional: true },
+      g: { type: 'number', label: 'G', optional: true },
+      b: { type: 'number', label: 'B', optional: true },
+      a: { type: 'number', label: 'A', optional: true },
+    },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: {
+      r: { kind: 'number', label: 'R', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      g: { kind: 'number', label: 'G', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      b: { kind: 'number', label: 'B', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      a: { kind: 'number', label: 'A', default: 1, min: 0, max: 1, step: 0.01, live: true },
+    },
+  },
+  {
+    type: 'color.split',
+    label: 'Split Color',
+    category: 'math',
+    provider: 'core',
+    description: 'The red, green, blue and alpha of a colour (0–1).',
+    inputs: { color: { type: 'color', label: 'Color' } },
+    outputs: {
+      r: { type: 'number', label: 'R' },
+      g: { type: 'number', label: 'G' },
+      b: { type: 'number', label: 'B' },
+      a: { type: 'number', label: 'A' },
+    },
+    params: {},
   },
 
   // --------------------------------------------------------------- debug

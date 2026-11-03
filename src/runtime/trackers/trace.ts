@@ -31,6 +31,8 @@ export type TraceSource =
       startMs: number;
       frameMs: number;
     }
+  /** Still images, by repo-relative path or 'blank', each shown `count` frames (the MCP server's tracking_run): not replayable. */
+  | { kind: 'images'; frames: Array<[image: string, count: number]>; startMs: number; frameMs: number }
   /** Converted from an older recording (the golden run of #5): not replayable. */
   | { kind: 'converted'; from: string };
 

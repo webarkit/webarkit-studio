@@ -27,6 +27,8 @@ export const CORE_SOCKET_TYPES = {
   number: { label: 'Number', color: '#a1887f' },
   /** x, y, z in marker space (mm, +Z up). */
   vector3: { label: 'Vector (x, y, z)', color: '#7986cb' },
+  /** [r, g, b, a], 0–1, sRGB (src/core/color.ts). */
+  color: { label: 'Color (r, g, b, a)', color: '#ffab91' },
   event: { label: 'Event', color: '#ffffff' },
   /** Inputs only: accepts any socket type (Inspector). */
   any: { label: 'Any', color: '#757575' },

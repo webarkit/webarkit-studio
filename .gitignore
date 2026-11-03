@@ -11,3 +11,4 @@ test-results/
 .idea/
 .playwright-mcp/
 generated/
+out/

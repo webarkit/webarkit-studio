@@ -7,12 +7,14 @@
  *
  * The shared socket types (CoreSocketType) and the values they carry are the
  * contract between plugins: changing one is a breaking change of this API and
- * bumps the API version (PLUGIN_API_VERSION in src/core/plugins.ts).
+ * bumps the API version (PLUGIN_API_VERSION in src/core/plugins.ts). Adding one
+ * is not. The `renderer`, `scene` and `sceneObject` values are studio internals,
+ * not part of the contract: plugins may only pass them through.
  */
-import type { GraphNode } from '../core/graph';
+import type { GraphNode, ParamValue } from '../core/graph';
 import type { PluginSocketType } from '../core/sockets';
 import type { NodeDefinition } from '../nodes/catalog';
-import type { NodeFactory } from '../runtime/types';
+import type { NodeFactory, PortValues } from '../runtime/types';
 import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
@@ -20,6 +22,7 @@ export type { CoreSocketType, PluginSocketType, SocketType } from '../core/socke
 export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
 export type {
   CameraValue,
+  ColorValue,
   EventValue,
   FrameInfo,
   MarkerInfoValue,
@@ -39,6 +42,7 @@ export type {
 } from '../runtime/types';
 export type { PoseFilterConfig } from '../runtime/filters/pose-filter';
 export type { TraceFrame, TraceHeader, TraceRecord, TraceSettings, TraceSource } from '../runtime/trackers/trace';
+import type { TraceFrame, TraceHeader, TraceSource } from '../runtime/trackers/trace';
 
 /** Origin of the virtual URLs of uploaded NFT datasets (RuntimeContext.virtualFiles keys), for a worker that serves them. */
 export type VirtualAssetOrigin = typeof VIRTUAL_ASSET_ORIGIN;
@@ -80,4 +84,58 @@ export interface StudioPlugin {
   factories: Record<string, NodeFactory>;
   sockets?: SocketDefinition[];
   exportFiles?: ExportFile[];
+}
+
+/** RGBA pixels, row by row (an ImageData without the DOM). */
+export interface PixelFrame {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
+/** Where the video goes in a tracker's processing frame: scaled to width × height at x, y of a frameWidth × frameHeight frame. */
+export interface ProcessGeometry {
+  frameWidth: number;
+  frameHeight: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** What a headless run of a tracker node produced. */
+export interface HeadlessRun {
+  header: TraceHeader;
+  /** Marker names and dataset URLs, in dataset order (index = position). */
+  markers: Array<{ name: string; url: string }>;
+  frames: TraceFrame[];
+}
+
+/**
+ * A tracker node run without a browser, on frames given as pixels (the MCP
+ * server's tracking_run, #8). Its runtime factory needs a canvas and a
+ * worker; this runs the same tracking code in Node. Node-only: a plugin
+ * lists its headless trackers in webarkit-studio.node.config.ts, never in
+ * its manifest (the studio's bundles must not pull in a Node build).
+ */
+export interface HeadlessTracker {
+  /** Input ports the frames replace (they are not evaluated from the graph). */
+  videoInputs: string[];
+  /** The processing frame for a video of this size. */
+  geometry(video: { width: number; height: number }): ProcessGeometry;
+  /**
+   * `inputs`: the node's other input values, as its factory's init() gets them.
+   * `params`: its params, defaults filled in (a param may not apply in Node: the
+   * jsartoolkitNFT controller's `build` picks a browser build). `video`: the images' size; `frames`
+   * are already placed in the processing frame of geometry(video).
+   * `setClock` pins Date.now: call it with each frame's time before processing it.
+   */
+  run(args: {
+    inputs: PortValues;
+    params: Record<string, ParamValue>;
+    video: { width: number; height: number };
+    frames: Array<{ image: PixelFrame; time: number }>;
+    source: TraceSource;
+    setClock: (now: number) => void;
+  }): Promise<HeadlessRun>;
 }

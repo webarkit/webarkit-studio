@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "webarkit-studio": {
+      "command": "node",
+      "args": ["--import", "tsx", "src/mcp/main.ts"]
+    },
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@0.0.83", "--isolated", "--config", "tests/e2e/.cache/playwright-mcp.json"]

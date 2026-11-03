@@ -1,8 +1,13 @@
 {
   "format": "webarkit-studio/graph",
   "version": 5,
-  "name": "Pinball NFT · math: a bobbing cube (Three.js)",
-  "plugins": [{ "id": "jsartoolkitNFT", "version": "0.1.0" }],
+  "name": "Pinball NFT · math and colour: a bobbing, fading cube (Three.js)",
+  "plugins": [
+    {
+      "id": "jsartoolkitNFT",
+      "version": "0.1.0"
+    }
+  ],
   "nodes": [
     {
       "id": "camera",
@@ -267,6 +272,33 @@
       "position": {
         "x": 1130,
         "y": 1350
+      }
+    },
+    {
+      "id": "fade",
+      "type": "math.sin",
+      "params": {
+        "x": 0,
+        "amplitude": 0.4,
+        "offset": 0.6
+      },
+      "position": {
+        "x": 540,
+        "y": 1560
+      }
+    },
+    {
+      "id": "tint",
+      "type": "color.rgba",
+      "params": {
+        "r": 1,
+        "g": 0,
+        "b": 0.333,
+        "a": 1
+      },
+      "position": {
+        "x": 810,
+        "y": 1560
       }
     }
   ],
@@ -577,6 +609,39 @@
       "to": {
         "node": "lift_value",
         "port": "value"
+      }
+    },
+    {
+      "id": "c1",
+      "from": {
+        "node": "speed",
+        "port": "value"
+      },
+      "to": {
+        "node": "fade",
+        "port": "x"
+      }
+    },
+    {
+      "id": "c2",
+      "from": {
+        "node": "fade",
+        "port": "value"
+      },
+      "to": {
+        "node": "tint",
+        "port": "a"
+      }
+    },
+    {
+      "id": "c3",
+      "from": {
+        "node": "tint",
+        "port": "color"
+      },
+      "to": {
+        "node": "prim_pinball",
+        "port": "color"
       }
     }
   ]

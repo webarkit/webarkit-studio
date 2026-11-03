@@ -24,6 +24,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Added
 
+- MCP server (#8, `npm run mcp:studio`, declared in `.mcp.json`): `catalog_list`, `graph_validate`,
+  `graph_create`, `graph_edit`, `tracking_run` (the graph's tracker on JPEG images in Node, as trace
+  records) and `export_bundle` (the standalone app). Plugins can run their trackers in Node with a
+  `HeadlessTracker` (plugin API), listed in `webarkit-studio.node.config.ts`. Traces gain an `images`
+  source (several still images, not replayable; additive, `TRACE_VERSION` unchanged).
 - Trackability check for NFT datasets (#10): `npm run trackability -- <dataset>` rates the
   feature points the NFT generator wrote (detection points, coverage, repetition, tracking
   points), with hints; the logic is `plugins/jsartoolkit-nft/trackability.ts`, ready for the MCP
@@ -54,6 +59,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   `math.sin` (degrees) and `math.time`, on new `number` and `vector3` sockets, renderer-independent.
   An input with the same name as a param overrides it while connected; Primitive gets a `position`
   input. Demo: *pinball · math nodes*, a cube bobbing on the marker.
+- Colour nodes (#33): a `color` socket (`[r, g, b, a]`, 0–1, sRGB), `color.rgba` and `color.split`.
+  Primitive and Light take a `color` input that overrides their Color param; alpha below 1 makes a
+  Primitive transparent on both renderers. Light's Color applies live. The math demo also fades the cube. The `color` namespace is
+  reserved for built-in nodes (a plugin cannot use `color` as its id).
 
 ## [0.1.0] - 2026-10-31
 

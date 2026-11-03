@@ -31,7 +31,7 @@ When the plugin is installed, the studio checks it (`validatePlugin`, `src/core/
 and refuses it with the list of problems if:
 
 - `id` is not a plain identifier (letters and digits), is one of the built-in namespaces
-  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `debug`), is
+  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `debug`), is
   `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT is taken by the
   bundled plugin);
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
@@ -79,9 +79,14 @@ nodes without listing it is invalid.
 
 The core socket types (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and the values they carry
 (`src/plugin-api`: `VideoValue`, `TrackingResultValue` / `TrackedMarkerValue`, `ProjectionValue`,
-`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`, …)
-are the contract between plugins. Changing one is a breaking change of the plugin API, which bumps
-`PLUGIN_API_VERSION`.
+`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`,
+`ColorValue`, …) are the contract between plugins. Changing one is a breaking change of the plugin
+API, which bumps `PLUGIN_API_VERSION`. Adding a socket type (as `number`, `vector3` and `color` were)
+is not: plugins built for the same API version keep working.
+
+The values of the `renderer`, `scene` and `sceneObject` sockets are studio internals, not part of
+plugin API v1: a plugin may pass them through (wire them from one port to another) but must not
+call methods on them. The plugin API exports no type for them.
 
 A tracker plugin that outputs `trackingResult`, `projection`, `onFound` / `onLost` and `stats`
 works with Select Marker, Marker Anchor, AR Camera, the filters, Inspector and Stats unchanged.
@@ -166,3 +171,17 @@ jsartoolkitNFT, `NftSession`), so the browser and the Node tests share it:
 
 The test setup (`tests/setup/plugins.ts`) installs every plugin of `webarkit-studio.config.ts`, so
 tests see the same catalog as the studio.
+
+## Running a tracker in Node
+
+The MCP server's `tracking_run` (#8) runs a graph's tracker node in Node, on still images. A tracker
+node's factory needs a browser (a canvas, a worker), so the plugin provides a `HeadlessTracker`
+(`src/plugin-api`) for it: the input ports the frames replace, the processing frame for a video
+size, and `run()`, which gets the node's other input values (evaluated from the graph by the
+registry's factories), its params and the frames already placed in the processing frame, and returns
+trace records. It runs the same session class as the worker (jsartoolkitNFT:
+[`plugins/jsartoolkit-nft/headless.ts`](../plugins/jsartoolkit-nft/headless.ts)).
+
+List it in [`webarkit-studio.node.config.ts`](../webarkit-studio.node.config.ts), under the plugin's id,
+never in the manifest: it imports the library's Node build, which the studio's bundles must not
+contain.
