@@ -58,6 +58,20 @@ describe('validateGraph', () => {
     expect(problems(doc)).toEqual([]);
   });
 
+  it('checks vector3 and matrix4 param values: length and finite numbers', () => {
+    const doc = graph([['t', 'test.transform']], []);
+    expect(problems(doc)).toEqual([]); // defaults
+    doc.nodes[0].params = { offset: [1, 2.5, -3], matrix: Array.from({ length: 16 }, (_, i) => i) };
+    expect(problems(doc)).toEqual([]);
+    doc.nodes[0].params = { offset: [1, 2], matrix: 'identity' };
+    expect(problems(doc)).toEqual([
+      'node t (test.transform): param "offset" must be 3 numbers',
+      'node t (test.transform): param "matrix" must be 16 numbers',
+    ]);
+    doc.nodes[0].params = { offset: [1, Number.NaN, 3] };
+    expect(problems(doc)).toEqual(['node t (test.transform): param "offset" must be 3 numbers']);
+  });
+
   it('detects cycles', () => {
     const doc = graph([['a', 'test.pass'], ['b', 'test.pass']], [['a', 'value', 'b', 'value'], ['b', 'value', 'a', 'value']]);
     expect(problems(doc)).toContain('graph contains a cycle');
@@ -84,7 +98,17 @@ describe('resolveParams', () => {
   it('fills defaults and keeps explicit values', () => {
     const def = NODE_CATALOG['scene.primitive'];
     const params = resolveParams(def, { size: 120 });
-    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true });
+    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true, position: [0, 0, 0], rotation: [0, 0, 0] });
+  });
+
+  it('copies array values, so a node changing one never changes the default or the document', () => {
+    const def = TEST_CATALOG['test.transform'];
+    const offset = [1, 2, 3];
+    const params = resolveParams(def, { offset });
+    (params.offset as number[])[0] = 99;
+    (params.matrix as number[])[0] = 99;
+    expect(offset).toEqual([1, 2, 3]);
+    expect((def.params.matrix.default as number[])[0]).toBe(1);
   });
 });
 
@@ -108,6 +132,10 @@ describe('catalog', () => {
         expect(port.type, `${def.type}.${port.label}`).toBeTypeOf('string');
       }
       for (const [key, spec] of Object.entries(def.params)) {
+        if (spec.kind === 'vector3' || spec.kind === 'matrix4') {
+          expect(spec.default, `${def.type}.${key}`).toHaveLength(spec.kind === 'vector3' ? 3 : 16);
+          continue;
+        }
         const expected = spec.kind === 'number' ? 'number' : spec.kind === 'boolean' ? 'boolean' : 'string';
         expect(typeof spec.default, `${def.type}.${key}`).toBe(expected);
         if (spec.kind === 'select') expect(Object.values(spec.options), `${def.type}.${key}`).toContain(spec.default);

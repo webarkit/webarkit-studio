@@ -74,7 +74,7 @@ describe('scene.gltf', () => {
     return { scene, calls, model };
   }
   const ctx = { baseUrl: 'http://localhost/studio/', log: () => {} } as unknown as RuntimeContext;
-  const params = { url: 'models/cube.glb', scale: 100, x: 0, y: 0, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
+  const params = { url: 'models/cube.glb', scale: 100, position: [0, 0, 0], rotation: [0, 0, 0] };
 
   afterEach(() => vi.unstubAllGlobals());
 
@@ -96,8 +96,8 @@ describe('scene.gltf', () => {
     const p = { ...params };
     const node = gltf(p, ctx);
     await node.init!({ scene });
-    p.z = 25;
-    node.onParamChange!('z', 25);
+    p.position = [0, 0, 25];
+    node.onParamChange!('position', p.position);
     expect(calls.at(-1)).toEqual(['setMatrix', Array.from(transformMatrix({ position: [0, 0, 25], rotation: [0, 0, 0], scale: 100 }))]);
   });
 

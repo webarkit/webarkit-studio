@@ -33,6 +33,15 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
+Editing:
+
+- **Add a node:** right-click the canvas and type to search (name, category or library), or filter the palette.
+- **Undo / redo:** ↶ / ↷, or Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y). Param edits are undone too.
+- **Copy / paste / duplicate:** Ctrl+C / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
+  or Duplicate in a node's right-click menu. Wires between the copied nodes are kept.
+- **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
+- **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
+
 ## Multi NFT
 
 ARControllerNFT tracks every NFT Dataset connected to its `Datasets` input
@@ -156,7 +165,7 @@ which also appears in its tracking traces.
 
 glTF Model (`scene.gltf`) stands models up on the marker with their front
 (glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
-*Rotate Z*. It plays no animations. Compressed models (Draco,
+the Z of *Rotation*. It plays no animations. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
@@ -277,7 +286,8 @@ frame. Intensities use the Three.js scale; Babylon scales them down.
 src/
   core/        graph.ts (format, validation, topo sort), sockets.ts (type system)
   nodes/       catalog.ts — node definitions (metadata only)
-  editor/      Rete setup, StudioNode, lit-html render plugin
+  editor/      Rete setup, StudioNode, lit-html render plugin (nodes, context menu, minimap);
+               node search, undo of param edits, clipboard, layered auto-arrange
   runtime/     GraphRuntime, registry, node implementations
     trackers/  NftSession: the graph mapped onto the jsartoolkitNFT tracker facade, shared by worker and tests; trace.ts (trace format)
     filters/   the pose filter slot's config (applied by the tracker)
@@ -314,7 +324,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ | scene → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ | scene → sceneObject |
+| `scene.primitive` | ✅ ⚡ | scene → sceneObject (box, sphere, torus knot; position, rotation, spin) |
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
@@ -411,8 +421,9 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [x] jsartoolkit-nft 1.15.0: the tracker facade (`createNFTTracker`) replaces the hand-written tracking code (#5)
 
 **Phase 2 — Authoring**
-- [ ] Inspector panel (Tweakpane) for complex params, undo/redo (`rete-history-plugin`)
-- [ ] Context menu / search to add nodes, minimap, auto-arrange
+- [x] Inspector panel for complex params (`vector3`, `matrix4` param kinds)
+- [x] Undo / redo (`rete-history-plugin`), including param edits
+- [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
 - [ ] Asset manager: upload images and datasets, glTF models
 
 **Phase 3 — Logic & publishing**

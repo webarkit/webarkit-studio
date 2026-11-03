@@ -149,7 +149,6 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       n.position.copyFrom(scratch.t);
     },
     setVisible: (o, v) => node(o).setEnabled(v),
-    rotateZ: (o, r) => void (transform(o).rotation.z += r),
     setColor(o, c) {
       const material = (node(o) as AbstractMesh).material as StandardMaterial | null;
       if (material) material.diffuseColor = Color3.FromHexString(c);

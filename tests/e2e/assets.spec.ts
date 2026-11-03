@@ -42,7 +42,7 @@ function graphWithUploads(demo: string, refs: { dataset: string }) {
   doc.name = `${doc.name} (uploads)`;
   const dataset = doc.nodes.find((n: { id: string }) => n.id === 'dataset');
   dataset.params = { url: refs.dataset, name: '' }; // the name comes from the upload
-  doc.nodes.push({ id: 'model', type: 'scene.gltf', params: { scale: 60, z: 10 }, position: { x: 900, y: 900 } });
+  doc.nodes.push({ id: 'model', type: 'scene.gltf', params: { scale: 60, position: [0, 0, 10] }, position: { x: 900, y: 900 } });
   doc.edges.push(
     { id: 'e-model-scene', from: { node: 'scene', port: 'scene' }, to: { node: 'model', port: 'scene' } },
     { id: 'e-model-anchor', from: { node: 'model', port: 'object' }, to: { node: 'anchor_pinball', port: 'children' } },

@@ -18,7 +18,11 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  */
 export const GRAPH_VERSION = 4;
 
-export type ParamValue = string | number | boolean;
+/** A param value; arrays hold `vector3` (3) and `matrix4` (16, column-major) params. */
+export type ParamValue = string | number | boolean | number[];
+
+/** Number of values of the array param kinds. */
+export const ARRAY_PARAM_LENGTH = { vector3: 3, matrix4: 16 } as const;
 
 export interface GraphNode {
   id: string;
@@ -55,7 +59,8 @@ export function emptyGraph(name = 'Untitled'): GraphDocument {
 export function resolveParams(def: NodeDefinition, params: Record<string, ParamValue>): Record<string, ParamValue> {
   const out: Record<string, ParamValue> = {};
   for (const [key, spec] of Object.entries(def.params)) {
-    out[key] = key in params ? params[key] : spec.default;
+    const value = key in params ? params[key] : spec.default;
+    out[key] = Array.isArray(value) ? [...value] : value; // nodes may change their copy
   }
   return out;
 }
@@ -115,6 +120,14 @@ export function validateGraph(doc: unknown, catalog: Record<string, NodeDefiniti
   for (const n of g.nodes) {
     const def = catalog[n.type];
     if (!def) continue;
+    for (const [key, spec] of Object.entries(def.params)) {
+      if (!(spec.kind in ARRAY_PARAM_LENGTH) || !n.params || !(key in n.params)) continue;
+      const length = ARRAY_PARAM_LENGTH[spec.kind as keyof typeof ARRAY_PARAM_LENGTH];
+      const value = n.params[key];
+      if (!Array.isArray(value) || value.length !== length || !value.every(Number.isFinite)) {
+        problems.push(`node ${n.id} (${def.label}): param "${key}" must be ${length} numbers`);
+      }
+    }
     for (const [port, spec] of Object.entries(def.inputs)) {
       if (!spec.optional && !inputUse.has(`${n.id}:${port}`)) {
         problems.push(`node ${n.id} (${def.label}): required input "${spec.label}" is not connected`);

@@ -30,6 +30,9 @@ export class StudioNode extends ClassicPreset.Node<
   params: Record<string, ParamValue>;
   /** Runtime feedback shown in the node (Inspector values, init errors). Not saved. */
   status: { text: string; error?: boolean } | null = null;
+  /** Drawn size in px, measured by the renderer (minimap, Arrange); an estimate until then. */
+  width = 230;
+  height = 160;
 
   constructor(
     readonly type: string,

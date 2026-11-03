@@ -100,7 +100,6 @@ export interface SceneHandle {
   setPosition(object: SceneObject, x: number, y: number, z: number): void;
   setMatrix(object: SceneObject, matrix: ArrayLike<number>): void;
   setVisible(object: SceneObject, visible: boolean): void;
-  rotateZ(object: SceneObject, radians: number): void;
   setColor(object: SceneObject, color: string): void;
   setIntensity(light: SceneObject, intensity: number): void;
 

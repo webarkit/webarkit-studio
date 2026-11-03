@@ -18,6 +18,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   opens it. The standalone app export bundles uploads under `data/assets/`.
 - `scene.gltf` (glTF Model) on Three.js and Babylon.js, with live scale,
   rotation and position; `models/cube.glb` as its default model.
+- Editor: a right-click menu with node search (name, category, library) and a palette filter;
+  undo / redo, including param edits; a minimap and **Arrange**; copy, paste and duplicate of
+  node selections, keeping the wires between them; a Properties panel for the selected node (#2).
+- Param kinds `vector3` and `matrix4` (values are number arrays; the graph version is unchanged).
+- Primitive: live **Position** (mm) and **Rotation** (degrees); Spin turns it about its own Z axis.
+  glTF Model uses the same Position / Rotation vectors.
 
 ## [0.1.0] - 2026-10-31
 

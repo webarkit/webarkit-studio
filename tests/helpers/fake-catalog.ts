@@ -28,6 +28,12 @@ export const TEST_CATALOG: Record<string, NodeDefinition> = {
     outputs: { value: { type: 'boolean', label: 'Out' } },
     params: { label: { kind: 'string', label: 'Label', default: '' } },
   }),
+  'test.transform': def('test.transform', {
+    params: {
+      offset: { kind: 'vector3', label: 'Offset', default: [0, 0, 0] },
+      matrix: { kind: 'matrix4', label: 'Matrix', default: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    },
+  }),
   'test.sink': def('test.sink', {
     inputs: { values: { type: 'boolean', label: 'Values', multiple: true, optional: true } },
   }),
