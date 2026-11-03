@@ -70,11 +70,34 @@ describe('applyOps', () => {
     ['a select value that is not an option', [{ op: 'setParam', node: 'controller', key: 'build', value: 'fast' }], /must be one of/],
     ['a vector3 of the wrong length', [{ op: 'addNode', type: 'scene.primitive', id: 'p' }, { op: 'setParam', node: 'p', key: 'position', value: [1, 2] }], /3 numbers/],
     ['an unknown edge', [{ op: 'disconnect', id: 'e99' }], /no edge "e99"/],
+    ['a second connection into a single input', [{ op: 'addNode', type: 'source.image', id: 'image2' }, { op: 'connect', from: { node: 'image2', port: 'video' }, to: { node: 'controller', port: 'video' } }], /already connected .*e1/],
+    ['the same connection twice', [{ op: 'connect', from: { node: 'pinball', port: 'dataset' }, to: { node: 'controller', port: 'dataset' } }], /already connected .*e3/],
+    ['an inherited property as a type', [{ op: 'addNode', type: 'toString' }], /unknown node type "toString"/],
+    ['an inherited property as a port', [{ op: 'connect', from: { node: 'image', port: 'constructor' }, to: { node: 'controller', port: 'constructor' } }], /no output "constructor"/],
+    ['an inherited property as a param', [{ op: 'setParam', node: 'controller', key: 'constructor', value: 'x' }], /no param "constructor"/],
+    ['an empty id', [{ op: 'addNode', type: 'math.number', id: '' }], /id must not be empty/],
   ])('rejects %s without changing the graph', (_, ops, message) => {
     const doc = applyOps(emptyGraph(), TRACKING);
     const before = structuredClone(doc);
     expect(() => applyOps(doc, [{ op: 'setName', name: 'changed' }, ...ops])).toThrow(message);
     expect(doc).toEqual(before);
+  });
+
+  it('names generated ids after the last segment of the type', () => {
+    const doc = applyOps(emptyGraph(), [
+      { op: 'addNode', type: 'scene.primitive' },
+      { op: 'addNode', type: 'scene.primitive' },
+      { op: 'addNode', type: 'scene.scene' },
+      { op: 'connect', from: { node: 'scene1', port: 'scene' }, to: { node: 'primitive2', port: 'scene' } },
+    ]);
+    expect(doc.nodes.map((n) => n.id)).toEqual(['primitive1', 'primitive2', 'scene1']);
+  });
+
+  it('keeps the plugin refs of plugins that are not loaded, so validation names them', () => {
+    const doc: GraphDocument = { ...emptyGraph(), plugins: [{ id: 'acme', version: '1.2.0' }], nodes: [{ id: 'a', type: 'acme.tracker', params: {} }] };
+    const out = applyOps(doc, [{ op: 'addNode', type: 'source.image', id: 'image' }]);
+    expect(out.plugins).toEqual([{ id: 'acme', version: '1.2.0' }]);
+    expect(() => validateGraph(out)).toThrow(/requires plugin acme ≥ 1\.2\.0, which is not loaded/);
   });
 
   it('names the failing op by its position', () => {

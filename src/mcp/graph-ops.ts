@@ -5,6 +5,7 @@
  * graph is complete is validateGraph()'s job.
  */
 import { ARRAY_PARAM_LENGTH, graphPlugins, type GraphDocument, type ParamValue, type PortRef } from '../core/graph';
+import { LOADED_PLUGINS } from '../core/plugins';
 import { socketsCompatible } from '../core/sockets';
 import { NODE_CATALOG, type NodeDefinition, type ParamSpec } from '../nodes/catalog';
 
@@ -16,9 +17,12 @@ export type GraphOp =
   | { op: 'setParam'; node: string; key: string; value: ParamValue }
   | { op: 'setName'; name: string };
 
+/** `table[key]` if it is the table's own entry (never an inherited one such as "constructor"). */
+const own = <T>(table: Record<string, T> | undefined, key: string): T | undefined => (table && Object.hasOwn(table, key) ? table[key] : undefined);
+
 /** Throws if `value` does not fit the param's kind. */
 function checkParam(def: NodeDefinition, key: string, value: unknown): asserts value is ParamValue {
-  const spec: ParamSpec | undefined = def.params[key];
+  const spec: ParamSpec | undefined = own(def.params, key);
   if (!spec) throw new Error(`${def.type} has no param "${key}" (params: ${Object.keys(def.params).join(', ') || 'none'})`);
   const where = `${def.type}.${key}`;
   switch (spec.kind) {
@@ -42,7 +46,7 @@ function checkParam(def: NodeDefinition, key: string, value: unknown): asserts v
   }
 }
 
-/** A free id `<prefix><n>`. */
+/** A free id `<prefix><n>`, n from 1. */
 function freeId(prefix: string, taken: Set<string>): string {
   let n = 1;
   while (taken.has(`${prefix}${n}`)) n++;
@@ -57,9 +61,10 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
   };
   switch (op.op) {
     case 'addNode': {
-      const def = catalog[op.type];
+      const def = own(catalog, op.type);
       if (!def) throw new Error(`unknown node type "${op.type}" (see catalog_list)`);
       const ids = new Set(doc.nodes.map((n) => n.id));
+      if (op.id === '') throw new Error('a node id must not be empty');
       if (op.id !== undefined && ids.has(op.id)) throw new Error(`the graph already has a node "${op.id}"`);
       const id = op.id ?? freeId(op.type.slice(op.type.lastIndexOf('.') + 1), ids);
       const params: Record<string, ParamValue> = {};
@@ -78,12 +83,18 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
     case 'connect': {
       const src = node(op.from.node);
       const dst = node(op.to.node);
-      const out = catalog[src.type]?.outputs[op.from.port];
-      const inp = catalog[dst.type]?.inputs[op.to.port];
-      if (!out) throw new Error(`${src.type} has no output "${op.from.port}" (outputs: ${Object.keys(catalog[src.type]?.outputs ?? {}).join(', ') || 'none'})`);
-      if (!inp) throw new Error(`${dst.type} has no input "${op.to.port}" (inputs: ${Object.keys(catalog[dst.type]?.inputs ?? {}).join(', ') || 'none'})`);
+      const out = own(own(catalog, src.type)?.outputs, op.from.port);
+      const inp = own(own(catalog, dst.type)?.inputs, op.to.port);
+      if (!out) throw new Error(`${src.type} has no output "${op.from.port}" (outputs: ${Object.keys(own(catalog, src.type)?.outputs ?? {}).join(', ') || 'none'})`);
+      if (!inp) throw new Error(`${dst.type} has no input "${op.to.port}" (inputs: ${Object.keys(own(catalog, dst.type)?.inputs ?? {}).join(', ') || 'none'})`);
       if (!socketsCompatible(out.type, inp.type)) throw new Error(`cannot connect ${out.type} (${op.from.node}.${op.from.port}) to ${inp.type} (${op.to.node}.${op.to.port})`);
+      const into = doc.edges.filter((e) => e.to.node === op.to.node && e.to.port === op.to.port);
+      const same = into.find((e) => e.from.node === op.from.node && e.from.port === op.from.port);
+      if (same || (!inp.multiple && into.length)) {
+        throw new Error(`${op.to.node}.${op.to.port} is already connected (edge ${(same ?? into[0]).id})${same ? '' : ' and accepts a single connection: disconnect it first'}`);
+      }
       const ids = new Set(doc.edges.map((e) => e.id));
+      if (op.id === '') throw new Error('an edge id must not be empty');
       if (op.id !== undefined && ids.has(op.id)) throw new Error(`the graph already has an edge "${op.id}"`);
       doc.edges.push({ id: op.id ?? freeId('e', ids), from: { node: op.from.node, port: op.from.port }, to: { node: op.to.node, port: op.to.port } });
       return;
@@ -94,7 +105,7 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       return;
     case 'setParam': {
       const n = node(op.node);
-      const def = catalog[n.type];
+      const def = own(catalog, n.type);
       if (!def) throw new Error(`node "${n.id}" has an unknown type "${n.type}"`);
       checkParam(def, op.key, op.value);
       n.params = { ...n.params, [op.key]: op.value };
@@ -110,7 +121,9 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
 
 /**
  * Applies `ops` in order to a copy of `doc` and returns it, with `plugins`
- * recomputed from its nodes. All or nothing: the first failing op throws
+ * recomputed from its nodes as the editor saves them (loaded plugins at their
+ * version); refs to plugins that are not loaded are kept, so validation
+ * reports them by name. All or nothing: the first failing op throws
  * "op <n> (<kind>): …" and `doc` is left as it was.
  */
 export function applyOps(doc: GraphDocument, ops: readonly GraphOp[], catalog: Record<string, NodeDefinition> = NODE_CATALOG): GraphDocument {
@@ -123,7 +136,8 @@ export function applyOps(doc: GraphDocument, ops: readonly GraphOp[], catalog: R
       throw new Error(`op ${i + 1} (${op.op}): ${(err as Error).message}`);
     }
   });
-  const plugins = graphPlugins(out.nodes);
+  const absent = Array.isArray(doc.plugins) ? doc.plugins.filter((p) => !Object.hasOwn(LOADED_PLUGINS, String(p?.id))) : [];
+  const plugins = [...graphPlugins(out.nodes), ...absent];
   if (plugins.length) out.plugins = plugins;
   else delete out.plugins;
   return out;
