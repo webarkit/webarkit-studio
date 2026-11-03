@@ -46,11 +46,13 @@ const controller: HeadlessTracker = {
       const out: TraceFrame[] = [];
       for (const { image, time } of frames) {
         setClock(time);
-        out.push(session.process(image, time).frame);
+        // Frames are awaited one by one, so none is skipped (null).
+        const result = await session.process(image, time);
+        if (result) out.push(result.frame);
       }
       return { header, markers: datasets.map((d) => ({ name: d.name, url: d.url })), frames: out };
     } finally {
-      session.dispose();
+      await session.dispose();
     }
   },
 };

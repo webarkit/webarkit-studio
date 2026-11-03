@@ -7,22 +7,21 @@ import { strFromU8, unzipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
 import { slugify } from '../../src/export/exporters';
+import { WORKER_DIR, workerFiles } from '../../plugins/jsartoolkit-nft/worker-files';
 import { withStaticServer } from '../../src/mcp/static-server';
 import { call, connectStudio } from '../helpers/mcp-client';
 
 const manifest = {
   entry: 'player.html',
-  files: ['player.html', 'assets/player.js', 'assets/three-adapter.js', 'assets/nft.js', 'assets/worker.js', 'assets/simd.js'],
+  files: ['player.html', 'assets/player.js', 'assets/three-adapter.js', 'assets/nft.js'],
   chunks: {
     'assets/player.js': { imports: [], dynamicImports: ['assets/three-adapter.js', 'assets/nft.js'], modules: ['src/app/player.ts'] },
     'assets/three-adapter.js': { imports: [], dynamicImports: [], modules: ['src/runtime/renderers/three-adapter.ts'] },
     'assets/nft.js': { imports: [], dynamicImports: [], modules: ['plugins/jsartoolkit-nft/index.ts'] },
-    'assets/worker.js': { imports: [], dynamicImports: ['assets/simd.js'], modules: ['plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts'] },
-    'assets/simd.js': { imports: [], dynamicImports: [], modules: ['node_modules/@webarkit/jsartoolkit-nft/dist/ARToolkitNFT_simd.js'] },
   },
 };
 
-/** A public/ directory: the player build (unless `player` is false) and the demo's data files. */
+/** A public/ directory: the player build (unless `player` is false), the tracker's worker files and the demo's data files. */
 function fakePublic(player = true): string {
   const dir = mkdtempSync(join(tmpdir(), 'webarkit-mcp-export-'));
   const files: Record<string, string> = {
@@ -32,6 +31,7 @@ function fakePublic(player = true): string {
     'data/DataNFT/pinball.fset': 'fset',
     'data/DataNFT/pinball.fset3': 'fset3',
   };
+  for (const f of workerFiles('simd')) files[WORKER_DIR + f] = `// ${f}`;
   if (player) {
     files['__player/manifest.json'] = JSON.stringify(manifest);
     files['__player/player.html'] = '<html><head><title>Player</title></head><body><script type="module" src="./assets/player.js"></script></body></html>';
@@ -62,7 +62,7 @@ describe('export_bundle', () => {
     expect(result.value.bytes).toBe(readFileSync(out).byteLength);
     const slug = slugify(JSON.parse(readFileSync(GRAPH, 'utf8')).name);
     const names = Object.keys(zip).map((n) => n.slice(slug.length + 1));
-    expect(names).toEqual(expect.arrayContaining(['index.html', 'graph.json', 'README.txt', 'assets/player.js', 'assets/worker.js', 'assets/simd.js', 'data/camera_para.dat', 'data/DataNFT/pinball.fset3', 'data/pinball-demo.jpg']));
+    expect(names).toEqual(expect.arrayContaining(['index.html', 'graph.json', 'README.txt', 'assets/player.js', ...workerFiles('simd').map((f) => WORKER_DIR + f), 'data/camera_para.dat', 'data/DataNFT/pinball.fset3', 'data/pinball-demo.jpg']));
     expect(strFromU8(zip[`${slug}/index.html`])).toContain('graph.json');
     expect(result.value.log.some((l: string) => l.includes('.zip'))).toBe(true);
   });
