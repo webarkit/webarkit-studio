@@ -6,6 +6,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import type { ParamValue } from '../core/graph';
 import type { ParamSpec } from '../nodes/catalog';
+import { checkExpression, EXPRESSION_VARIABLES } from '../core/expression';
 
 /** Column-major 4x4 identity. */
 export const IDENTITY_MATRIX: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -105,7 +106,10 @@ export function paramRow(
   const title = driven ? 'Set by the connected input' : spec.live ? 'Live: applied while running' : 'Applied on the next Run';
   const cls = `param param-${spec.kind} ${driven ? 'driven' : ''}`;
   if (spec.kind !== 'vector3' && spec.kind !== 'matrix4') {
-    return html`<label class=${cls} title=${title}><span>${name}</span>${paramControl(spec, value, set, place, driven)}</label>`;
+    const row = html`<label class=${cls} title=${title}><span>${name}</span>${paramControl(spec, value, set, place, driven)}</label>`;
+    // A formula (math.expression) shows where it is wrong, under its field.
+    const error = spec.kind === 'string' && spec.syntax === 'expression' ? checkExpression(String(value), EXPRESSION_VARIABLES) : null;
+    return error ? html`${row}<small class="param-error" role="alert">✗ ${error.message} (character ${error.position + 1})</small>` : row;
   }
   // A disabled fieldset disables every field of a vector or a matrix.
   const id = `param-row-${++rowIds}`;

@@ -39,7 +39,11 @@ export type AssetKind = 'file' | 'nftDataset' | 'model';
 
 export type ParamSpec = ParamBase &
   (
-    | { kind: 'string'; default: string; asset?: AssetKind }
+    /**
+     * `syntax: 'expression'`: a math.expression formula (src/core/expression.ts) with the variables a–d and t;
+     * the editor shows its errors under the field. Meant for math.expression's own variables only.
+     */
+    | { kind: 'string'; default: string; asset?: AssetKind; syntax?: 'expression' }
     | { kind: 'number'; default: number; min?: number; max?: number; step?: number }
     | { kind: 'boolean'; default: boolean }
     | { kind: 'select'; default: string; options: Record<string, string> }
@@ -400,6 +404,31 @@ export const CORE_NODES: NodeDefinition[] = [
     inputs: {},
     outputs: { seconds: { type: 'number', label: 'Seconds' } },
     params: { speed: { kind: 'number', label: 'Speed', default: 1, step: 0.1, live: true } },
+  },
+  {
+    type: 'math.expression',
+    label: 'Expression',
+    category: 'math',
+    provider: 'core',
+    description:
+      'A number from a formula, e.g. 40 + 30 * sin(t * 180). Variables a, b, c, d (params, or their inputs) and t ' +
+      '(seconds since the first frame, or its input). Operators + - * / % ^, unary - and ! (not), comparisons, && ||, ? :, pi; functions ' +
+      'sin cos tan asin acos atan atan2 (degrees), sqrt abs min max clamp lerp pow log exp floor ceil round mod.',
+    inputs: {
+      a: { type: 'number', label: 'A', optional: true },
+      b: { type: 'number', label: 'B', optional: true },
+      c: { type: 'number', label: 'C', optional: true },
+      d: { type: 'number', label: 'D', optional: true },
+      t: { type: 'number', label: 'T (s)', optional: true },
+    },
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: {
+      expression: { kind: 'string', label: 'Formula', default: 'a + b', syntax: 'expression', live: true },
+      a: { kind: 'number', label: 'A', default: 0, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 0, step: 0.1, live: true },
+      c: { kind: 'number', label: 'C', default: 0, step: 0.1, live: true },
+      d: { kind: 'number', label: 'D', default: 0, step: 0.1, live: true },
+    },
   },
 
   // --------------------------------------------------------------- color

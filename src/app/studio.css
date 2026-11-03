@@ -138,3 +138,6 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .param-control { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
 .param.driven > span { font-style: italic; opacity: 0.7; }
 .param.driven input, .param.driven select { opacity: 0.5; }
+
+/* A formula error (math.expression), under its field. */
+.param-error { display: block; margin: -1px 0 4px; color: #ef9a9a; font-size: 10.5px; white-space: normal; }

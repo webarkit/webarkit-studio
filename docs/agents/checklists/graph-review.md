@@ -74,7 +74,8 @@ key by key; a renamed key looks like one removal plus one addition.
   compatibility rule can break saved connections, so treat it as a format change.
 - An input that overrides a param (same name) is `optional`, has the socket type of the
   param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
-  no valid value (AGENTS.md, "Inputs override params").
+  no valid value (AGENTS.md, "Inputs override params"). An optional input without a
+  same-named param documents what the node does when it is unwired.
 
 ## 6. Units and spaces
 
