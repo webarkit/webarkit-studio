@@ -6,7 +6,8 @@
 
 export type Rgba = [number, number, number, number];
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+/** 0–1; NaN (an empty or non-numeric param) is 0. */
+const clamp01 = (v: number) => (Number.isNaN(v) ? 0 : Math.min(1, Math.max(0, v)));
 
 /** Four finite numbers. */
 export function isRgba(value: unknown): value is Rgba {

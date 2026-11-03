@@ -52,6 +52,11 @@ describe('color.rgba', () => {
     expect(node.update!({ a: 0.25 }, frame)).toBeUndefined();
   });
 
+  it('an empty or non-numeric param counts as 0, so the output is always a valid colour', () => {
+    const { node } = make('color.rgba', rgba, { r: Number.NaN, g: 1, b: 1, a: 1 });
+    expect(node.init!({})).toEqual({ color: [0, 1, 1, 1] });
+  });
+
   it('applies a live param change', () => {
     const { node, p } = make('color.rgba', rgba);
     node.init!({});

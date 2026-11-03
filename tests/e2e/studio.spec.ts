@@ -113,8 +113,9 @@ test.describe('editor', () => {
     const menu = page.locator('.context-menu');
     await expect(menu.locator('input[type=search]')).toBeFocused();
     await page.keyboard.type('primit');
-    await expect(menu.locator('.item')).toHaveCount(1);
-    await expect(menu.locator('.item')).toContainText('Primitive');
+    // Best match first (descriptions that mention a Primitive rank below it).
+    await expect(menu.locator('.item').first()).toContainText('Primitive');
+    await expect(menu.locator('.item.active')).toContainText('Primitive');
     await page.keyboard.press('Enter');
     await expect(menu).toBeHidden();
     await expect(nodes).toHaveCount(before + 1);
@@ -400,6 +401,7 @@ test.describe('math nodes', () => {
       await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
       await expect(nodeStatus(page, 'Inspector', 0)).toContainText('● tracked', { timeout: 20_000 });
       // Live: editing the sine applies without a restart.
+      // The first Sine in document order is `bob` (height); the second, `fade`, drives the alpha.
       const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input').first();
       await amplitude.fill('5');
       await amplitude.dispatchEvent('change');

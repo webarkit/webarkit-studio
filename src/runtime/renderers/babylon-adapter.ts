@@ -74,6 +74,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const node = (o: SceneObject) => (assertOwned(handle, o), o.native as BabylonNode);
   const transform = (o: SceneObject) => node(o) as TransformNode;
   const scratch = { s: new Vector3(), r: new Quaternion(), t: new Vector3() };
+  /** Hemispheric lights standing in for ambient ones: their ground follows their colour. */
+  const ambients = new WeakSet<Light>();
   /** Hemispheric lights with a parent, and their direction in the parent's space. */
   const adoptedHemis = new Map<HemisphericLight, Vector3>();
 
@@ -127,6 +129,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         // Babylon has no ambient light: a hemisphere with equal sky / ground colour is equivalent.
         (light as HemisphericLight).groundColor = Color3.FromHexString(spec.color);
         light.specular = Color3.Black();
+        ambients.add(light);
       }
       return wrap(light);
     },
@@ -154,6 +157,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       // sRGB values, as Color3.FromHexString gives them for the params.
       if (n instanceof Light) {
         n.diffuse = new Color3(r, g, b);
+        // An ambient light has one colour (sky = ground); a hemisphere keeps its fixed ground.
+        if (ambients.has(n)) (n as HemisphericLight).groundColor = new Color3(r, g, b);
         return;
       }
       const material = (n as AbstractMesh).material as StandardMaterial | null;

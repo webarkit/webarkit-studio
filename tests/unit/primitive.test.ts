@@ -118,6 +118,21 @@ describe('colour inputs', () => {
     expect(colours.at(-1)).toEqual([0, 0, 1, 1]);
   });
 
+  it('Primitive and Light are created with the param colour normalised to #rrggbb', () => {
+    const specs: Array<{ color: string }> = [];
+    const object = { scene: null, native: 'o' } as unknown as SceneObject;
+    const scene = {
+      createPrimitive: (spec: { color: string }) => (specs.push(spec), object),
+      createLight: (spec: { color: string }) => (specs.push(spec), object),
+      addRoot: () => {},
+      setMatrix: () => {},
+      setColor: () => {},
+    } as unknown as SceneHandle;
+    primitive(params({ color: '#f00' }), ctx).init!({ scene });
+    light(resolveParams(NODE_CATALOG['scene.light'], { color: '#0f0' }), ctx).init!({ scene });
+    expect(specs.map((s) => s.color)).toEqual(['#ff0000', '#00ff00']);
+  });
+
   it('Primitive: without a colour input nothing is re-applied every frame', () => {
     const { scene, colours } = colourScene();
     const node = primitive(params({ color: '#ff0000' }), ctx);

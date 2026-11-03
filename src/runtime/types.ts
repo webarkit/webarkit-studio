@@ -1,3 +1,4 @@
+import type { Rgba } from '../core/color';
 import type { ParamValue } from '../core/graph';
 import type { RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
 import type { PoseFilterConfig } from './filters/pose-filter';
@@ -16,7 +17,7 @@ export type PoseFilterValue = PoseFilterConfig;
 export type PoseValue = ArrayLike<number> | null;
 export type ProjectionValue = ArrayLike<number> | null;
 /** color: [r, g, b, a], each 0–1, in sRGB (src/core/color.ts). */
-export type ColorValue = [number, number, number, number];
+export type ColorValue = Rgba;
 /** matrix4: any column-major 4x4 matrix. */
 export type Matrix4Value = ArrayLike<number>;
 /** markerInfo: a marker's image size and resolution, and the physical size they imply. */

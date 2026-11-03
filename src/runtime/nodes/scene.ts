@@ -2,7 +2,7 @@
  * Renderer-agnostic scene nodes. Objects are created in the SceneHandle that
  * arrives on the `scene` input; the renderer is only reached through it.
  */
-import { clampRgba, hexToRgba, isRgba, type Rgba } from '../../core/color';
+import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/color';
 import type { ParamValue } from '../../core/graph';
 import { transformMatrix, type LightSpec, type PrimitiveSpec } from '../renderers/adapter';
 import type {
@@ -53,7 +53,7 @@ export const light: NodeFactory = (params) => {
       scene = inputs.scene as SceneValue;
       handle = scene.createLight({
         kind: String(params.kind) as LightSpec['kind'],
-        color: String(params.color),
+        color: colour.hex(),
         intensity: Number(params.intensity),
       });
       // In the scene root (camera space) until something adopts it, e.g. an anchor.
@@ -85,28 +85,41 @@ const sameVec3 = (a: readonly number[] | null, b: readonly number[] | null) => a
  * `color` param (opaque). `apply` runs only when the effective colour changes.
  */
 function drivenColor(params: Record<string, ParamValue>) {
+  /** The param as rgba, parsed once per change (not every frame). */
+  let param = hexToRgba(String(params.color));
+  let input: unknown;
   let driven: Rgba | null = null;
   let applied: Rgba | null = null;
   let apply: ((c: Rgba) => void) | null = null;
   const refresh = () => {
-    const c = driven ?? hexToRgba(String(params.color));
+    const c = driven ?? param;
     if (applied && c.every((v, i) => v === applied![i])) return;
     applied = c;
     apply?.(c);
   };
+  const read = (value: unknown) => {
+    if (value === input) return; // same value as last frame: nothing to parse
+    input = value;
+    driven = isRgba(value) ? clampRgba(value) : null;
+  };
   return {
+    /** The param colour normalised to #rrggbb, for creating the engine object. */
+    hex: () => rgbaToHex(param),
     init(inputs: PortValues, set: (c: Rgba) => void) {
       apply = set;
-      driven = isRgba(inputs.color) ? clampRgba(inputs.color) : null;
-      // The engine object starts with the param colour: apply only an override.
-      applied = hexToRgba(String(params.color));
+      read(inputs.color);
+      // The engine object is created with the param colour: apply only an override.
+      applied = param;
       refresh();
     },
     update(inputs: PortValues) {
-      driven = isRgba(inputs.color) ? clampRgba(inputs.color) : null;
+      read(inputs.color);
       refresh();
     },
-    paramChanged: refresh,
+    paramChanged() {
+      param = hexToRgba(String(params.color));
+      refresh();
+    },
   };
 }
 
@@ -135,7 +148,7 @@ export const primitive: NodeFactory = (params) => {
       mesh = scene.createPrimitive({
         shape: String(params.shape) as PrimitiveSpec['shape'],
         size,
-        color: String(params.color),
+        color: colour.hex(),
       });
       applyTransform();
       colour.init(inputs, (c) => scene!.setColor(mesh!, c));

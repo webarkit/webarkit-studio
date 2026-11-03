@@ -7,7 +7,9 @@
  *
  * The shared socket types (CoreSocketType) and the values they carry are the
  * contract between plugins: changing one is a breaking change of this API and
- * bumps the API version (PLUGIN_API_VERSION in src/core/plugins.ts).
+ * bumps the API version (PLUGIN_API_VERSION in src/core/plugins.ts). Adding one
+ * is not. The `renderer`, `scene` and `sceneObject` values are studio internals,
+ * not part of the contract: plugins may only pass them through.
  */
 import type { GraphNode } from '../core/graph';
 import type { PluginSocketType } from '../core/sockets';
