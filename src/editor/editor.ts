@@ -8,7 +8,7 @@ import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
 import { ContextMenuPlugin } from 'rete-context-menu-plugin';
 import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'rete-history-plugin';
 import { MinimapPlugin } from 'rete-minimap-plugin';
-import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, type GraphDocument, type ParamValue } from '../core/graph';
+import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { layeredLayout } from './arrange';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
@@ -400,6 +400,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       from: { node: c.source, port: c.sourceOutput },
       to: { node: c.target, port: c.targetInput },
     }));
+    doc.plugins = graphPlugins(doc.nodes);
     return doc;
   }
 

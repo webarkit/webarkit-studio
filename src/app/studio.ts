@@ -14,6 +14,8 @@ import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
 import { parseAssetRef } from '../core/assets';
+import { loadPlugins } from '../plugins/host';
+import studioConfig from '../../webarkit-studio.config';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -26,6 +28,8 @@ const log = (msg: string) => {
   logEl.scrollTop = logEl.scrollHeight;
 };
 
+// Every plugin of the build, before the editor: the palette lists their nodes.
+await loadPlugins(studioConfig).catch((err) => log(`✗ plugins: ${(err as Error).message}`));
 const assetStore = await openAssetStore(log);
 
 const inspectorEl = $('inspector');

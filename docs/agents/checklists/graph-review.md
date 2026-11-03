@@ -7,6 +7,7 @@ registry, node implementations or the demo graphs:
 - `src/nodes/catalog.ts`
 - `src/runtime/registry.ts`
 - `src/runtime/nodes/`
+- `src/plugin-api/`, `src/plugins/` and the plugins' catalogs and manifests (`plugins/jsartoolkit-nft/catalog.ts`, `plugins/jsartoolkit-nft/index.ts`)
 - `public/graphs/`
 
 It is tool-agnostic. The Claude Code agent `.claude/agents/graph-reviewer.md` runs
@@ -43,9 +44,18 @@ key by key; a renamed key looks like one removal plus one addition.
 - Every output a factory returns is declared in the catalog, and every required input
   the factory reads is declared (optional ones with `optional: true`).
 
+- A plugin's nodes, sockets and factories are in its manifest only (`StudioPlugin`,
+  `src/plugin-api/index.ts`); its code imports the plugin API as types, its own files and npm
+  packages, never `src/`; `src/` never imports a plugin (only `webarkit-studio.config.ts` does).
+- A graph that uses a plugin's nodes lists the plugin in `plugins` (format v5), with the
+  plugin's version; a demo graph lists the version of the plugin in this repository.
+- A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
+  the plugin API: `PLUGIN_API_VERSION` is bumped.
+
 ## 3. Naming
 
-- Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
+- Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
+  nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
 - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).

@@ -7,7 +7,6 @@
  */
 import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
-import type { NftSettings } from '../trackers/nft-session';
 
 const REPORT_INTERVAL_MS = 200;
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
@@ -153,7 +152,7 @@ export const statsNode: NodeFactory = (params, ctx) => {
 export class TraceRecorder {
   private seen: TrackingTraceValue | null = null;
   /** Settings in force now: the header's, then the last live change. */
-  private settings: NftSettings | null = null;
+  private settings: object | null = null;
   private header: TraceHeader | null = null;
   private records: TraceRecord[] = [];
   private frameCount = 0;

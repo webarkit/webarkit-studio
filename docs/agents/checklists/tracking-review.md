@@ -3,8 +3,8 @@
 Use this checklist for a diff that touches tracking:
 
 - `src/runtime/trackers/`
-- `src/runtime/workers/`
-- `src/runtime/nodes/jsartoolkit-nft.ts`
+- `plugins/`
+- `plugins/jsartoolkit-nft/nodes.ts`
 - `src/runtime/nodes/tracking.ts`
 - `src/runtime/filters/`
 - `tests/integration/`
@@ -18,15 +18,15 @@ wins on conflict.
 
 - The jsartoolkitNFT tracker facade (`createNFTTracker`, #5) does the tracking: poses,
   found / lost, filters, the lens and its projection.
-- `NftSession` (`src/runtime/trackers/nft-session.ts`) only maps the graph onto the facade:
+- `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto the facade:
   Controller Settings → `configure()`, the filter slot → `filter`, target ids → dataset
   indices. It depends only on the facade's public API (type imports and an injected
   `createNFTTracker`), so the browser worker and the Node tests share it. No DOM, worker
-  globals or build-specific imports in `src/runtime/trackers/`.
+  globals or build-specific imports in `src/runtime/trackers/` or `plugins/jsartoolkit-nft/nft-session.ts`.
 - Reimplementing in this repository what the facade does (a lost timer, a pose filter, a
   lens rebuild, a projection rescale) is **Blocking**: use the facade's setting or method.
-- The worker (`src/runtime/workers/jsartoolkit-nft.worker.ts`) only picks the build and
-  relays messages (`src/runtime/workers/nft-protocol.ts`). Any state, filtering, event
+- The worker (`plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts`) only picks the build and
+  relays messages (`plugins/jsartoolkit-nft/protocol.ts`). Any state, filtering, event
   logic or matrix maths added to the worker is **Blocking**: move it into `NftSession`.
 
 ## 2. Found / lost semantics

@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FrameResult } from '@webarkit/jsartoolkit-nft';
-import {
-  parseTrace,
-  serializeTrace,
-  traceFrame,
-  traceHeader,
-  TRACE_VERSION,
-  TRACKER,
-  type Trace,
-  type TraceFrame,
-} from '../../src/runtime/trackers/trace';
+import { parseTrace, serializeTrace, traceHeader, TRACE_VERSION, type Trace, type TraceFrame } from '../../src/runtime/trackers/trace';
+import { traceFrame, TRACKER } from '../../plugins/jsartoolkit-nft/nft-session';
 import { TraceRecorder, traceNode } from '../../src/runtime/nodes/debug';
 import { diffTraces } from '../helpers/trace-diff';
 import type { RuntimeContext, TrackingTraceValue } from '../../src/runtime/types';
@@ -19,6 +11,7 @@ const settings = { continuousDetection: true, detectionInterval: 0, logLevel: 3,
 
 const header = () =>
   traceHeader({
+    tracker: TRACKER,
     frame: { width: 320, height: 240 },
     settings,
     filter: null,

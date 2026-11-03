@@ -7,14 +7,14 @@
  *  - An NFT dataset is a URL *prefix* the tracker completes with .iset / .fset
  *    / .fset3, which a blob: URL cannot express. It becomes a virtual prefix
  *    under VIRTUAL_ASSET_ORIGIN, and `virtualFiles` maps each file URL under it
- *    to a blob: URL; the tracker worker serves them (workers/virtual-fetch.ts).
+ *    to a blob: URL; a tracker worker serves them (plugins/jsartoolkit-nft/virtual-fetch.ts).
  */
 import { NFT_DATASET_EXTENSIONS } from '../core/assets';
 import type { AssetLookup } from '../assets/asset';
 import type { AssetKind } from '../nodes/catalog';
 
 /** Origin of virtual NFT dataset prefixes. `.invalid` never resolves, so a fetch that bypasses the worker shim fails at once. */
-export const VIRTUAL_ASSET_ORIGIN = 'https://assets.webarkit.invalid';
+export const VIRTUAL_ASSET_ORIGIN = 'https://assets.webarkit.invalid' as const;
 
 const KIND_LABEL: Record<AssetKind, string> = { file: 'file', nftDataset: 'NFT dataset', model: 'model' };
 

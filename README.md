@@ -236,6 +236,12 @@ Key decisions:
    `onLost` come from the tracker's per-frame `transitions` (`found` on the
    first tracked frame, `lost` once after `lostTimeout`, 200 ms by default);
    a marker's `found` output is the raw per-frame tracking.
+10. **Trackers are plugins.** A plugin (#12) adds nodes, sockets, factories
+    and export files through a typed manifest (`StudioPlugin`,
+    `src/plugin-api`), without changes to the studio. jsartoolkitNFT is one
+    (`plugins/jsartoolkit-nft/`), listed in `webarkit-studio.config.ts`: the
+    studio loads every plugin, the player only those its graph lists in
+    `plugins`. See [Writing a plugin](docs/plugins.md).
 
 ### Naming
 
@@ -244,9 +250,10 @@ Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 use generic namespaces (`source.*`, `filter.*`, `scene.*`, `output.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
-JsartoolkitNFT controller. Library-specific data has its own socket type
-(`artkCameraParams`, `artkNftDataset`), so it cannot be wired into another
-library's node.
+JsartoolkitNFT controller. Library-specific data has its own socket type,
+defined by its plugin and prefixed with the plugin id
+(`jsartoolkitNFT.cameraParams`, `jsartoolkitNFT.dataset`), so it cannot be
+wired into another library's node.
 
 ### Renderer conventions
 
@@ -286,17 +293,22 @@ frame. Intensities use the Three.js scale; Babylon scales them down.
 
 ```
 src/
-  core/        graph.ts (format, validation, topo sort), sockets.ts (type system)
-  nodes/       catalog.ts — node definitions (metadata only)
+  core/        graph.ts (format, validation, topo sort), sockets.ts (type system), plugins.ts (manifest checks)
+  nodes/       catalog.ts — core node definitions (metadata only)
+  plugin-api/  the types a plugin is written against (@webarkit/studio-plugin-api)
+  plugins/     host.ts — installs plugins into the catalog, sockets and registry
   editor/      Rete setup, StudioNode, lit-html render plugin (nodes, context menu, minimap);
                node search, undo of param edits, clipboard, layered auto-arrange
   runtime/     GraphRuntime, registry, node implementations
-    trackers/  NftSession: the graph mapped onto the jsartoolkitNFT tracker facade, shared by worker and tests; trace.ts (trace format)
+    trackers/  trace.ts (trace format)
     filters/   the pose filter slot's config (applied by the tracker)
     renderers/ RendererAdapter + Three.js / Babylon.js adapters
-    workers/   JsartoolkitNFT worker
   app/         studio.ts (editor + live preview), player.ts (standalone)
   export/      exporters (graph JSON, standalone app bundle)
+plugins/
+  jsartoolkit-nft/  the jsartoolkitNFT plugin: catalog, factories, NftSession (the graph mapped onto
+                    the tracker facade, shared by worker and tests), worker and its protocol
+webarkit-studio.config.ts  the plugins this build loads
 public/graphs/ pinball-three.json, pinball-babylon.json, multi-three.json
 scripts/       fetch-assets.mjs, trace-record.mjs / trace-diff.mjs (tracking traces), check-agent-docs.mjs
 tests/         unit/, integration/, e2e/, bench/, helpers/
@@ -314,9 +326,9 @@ Planned split once the format stabilises (npm workspaces):
 | `source.camera` | ✅ | → video |
 | `source.image` | ✅ | → video (a still image: testing without a camera) |
 | `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
-| `jsartoolkitNFT.cameraParams` | ✅ | → artkCameraParams |
-| `jsartoolkitNFT.dataset` | ✅ | → artkNftDataset |
-| `jsartoolkitNFT.settings` | ✅ ⚡ | → artkSettings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
+| `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
+| `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
+| `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
 | `jsartoolkitNFT.controller` | ✅ | video, cameraParams, datasets[], settings?, filter? → markers, onFound, onLost, projection, cameraMatrix, stats, trace |
 | `tracking.selectMarker` | ✅ ⚡ | markers → pose, found, onFound, onLost, markerInfo |
 | `jsartoolkitNFT.nativeFilter` | ✅ | → poseFilter (the tracker's `'native'` filter) |
@@ -340,7 +352,7 @@ Planned split once the format stabilises (npm workspaces):
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
-| `jsartoolkitNFT.datasetZft` | planned | → artkNftDataset (`.zft`) |
+| `jsartoolkitNFT.datasetZft` | planned | → NFT dataset (`.zft`) |
 | `jsartoolkitNFT.controller` threaded build (`/td`) | planned | needs COOP/COEP headers |
 | `webarkit.cvBackend` | planned | → cvBackend (jsfeatNext / PureCV, @webarkit/cv-backend-spec) |
 | `webarkit.target` | planned | → wnftTarget (`.wnft`) |
@@ -435,6 +447,8 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
 - [ ] Asset manager: upload images and datasets, glTF models
 - [x] First math nodes and a Primitive position driven by an input (#25)
+- [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
+- [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
 **Phase 3 — Logic & publishing**
 - [ ] Logic and action nodes consuming events

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GraphRuntime, NodeRuntimeError } from '../../src/runtime/runtime';
 import { VIRTUAL_ASSET_ORIGIN } from '../../src/runtime/assets';
-import { virtualFetch } from '../../src/runtime/workers/virtual-fetch';
+import { virtualFetch } from '../../plugins/jsartoolkit-nft/virtual-fetch';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
 import type { NodeDefinition } from '../../src/nodes/catalog';
@@ -37,7 +37,7 @@ async function start(params: Record<string, string>) {
   const seen: { params?: Record<string, unknown>; ctx?: RuntimeContext } = {};
   const factory: NodeFactory = (p, ctx) => ((seen.params = { ...p }), (seen.ctx = ctx), {});
   const rt = new GraphRuntime(
-    { format: 'webarkit-studio/graph', version: 4, nodes: [{ id: 'n', type: 'test.assets', params }], edges: [] },
+    { format: 'webarkit-studio/graph', version: 5, nodes: [{ id: 'n', type: 'test.assets', params }], edges: [] },
     {
       stage: {} as HTMLElement,
       baseUrl: 'http://localhost/',

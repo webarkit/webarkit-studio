@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { GRAPH_VERSION, GraphValidationError, resolveParams, topologicalOrder, validateGraph } from '../../src/core/graph';
+import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph } from '../../src/core/graph';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { socketsCompatible } from '../../src/core/sockets';
 import { graph, TEST_CATALOG } from '../helpers/fake-catalog';
@@ -23,7 +23,7 @@ describe('validateGraph', () => {
 
   it('rejects wrong format and version', () => {
     const doc = { ...graph([], []), format: 'other', version: 1 };
-    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1']);
+    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 5)']);
   });
 
   it('still accepts the format id of the WebAR-Studio prototype', () => {
@@ -81,6 +81,72 @@ describe('validateGraph', () => {
     const doc = JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
     expect(doc.version).toBe(GRAPH_VERSION);
     expect(() => validateGraph(doc)).not.toThrow();
+  });
+});
+
+describe('validateGraph: plugins (v5)', () => {
+  const ACME = { ...TEST_CATALOG['test.source'], type: 'acme.source', provider: 'Acme' };
+  const catalog = { ...TEST_CATALOG, 'acme.source': ACME };
+  const withAcme = (plugins?: unknown) => ({ ...graph([['a', 'acme.source'], ['s', 'test.sink']], [['a', 'value', 's', 'values']]), plugins });
+  const problemsWith = (doc: unknown, loaded: Record<string, string>) => {
+    try {
+      validateGraph(doc, catalog, loaded);
+      return [];
+    } catch (err) {
+      return (err as GraphValidationError).problems;
+    }
+  };
+
+  it('is version 5, and rejects version 4 documents', () => {
+    expect(GRAPH_VERSION).toBe(5);
+    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+  });
+
+  it('reports only the version of a document in another version, not what that version lacks', () => {
+    // A v4 graph cannot list plugins: its plugin nodes are not errors of their own.
+    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+  });
+
+  it('accepts a graph that lists the plugins of its nodes', () => {
+    expect(problemsWith(withAcme([{ id: 'acme', version: '0.1.0' }]), { acme: '0.1.0' })).toEqual([]);
+  });
+
+  it('names a missing plugin and its version, instead of unknown node types or ports', () => {
+    // Without the plugin, its nodes are not in the catalog either: no edge error for their ports.
+    const doc = withAcme([{ id: 'acme', version: '0.2.0' }]);
+    let problems: string[] = [];
+    try {
+      validateGraph(doc, TEST_CATALOG, {});
+    } catch (err) {
+      problems = (err as GraphValidationError).problems;
+    }
+    expect(problems).toEqual(['requires plugin acme ≥ 0.2.0, which is not loaded']);
+  });
+
+  it('reports a node without a type instead of crashing', () => {
+    const doc = { ...graph([], []), nodes: [{ id: 'x', params: {} }] };
+    expect(problems(doc)).toEqual(['node x: unknown type "undefined"']);
+  });
+
+  it('names a plugin older than the graph needs', () => {
+    expect(problemsWith(withAcme([{ id: 'acme', version: '0.2.0' }]), { acme: '0.1.5' })).toEqual([
+      'requires plugin acme ≥ 0.2.0, but version 0.1.5 is loaded',
+    ]);
+  });
+
+  it('requires the plugins of its nodes to be listed', () => {
+    expect(problemsWith(withAcme(), { acme: '0.1.0' })).toEqual([`node a: type "acme.source" is from plugin acme, which the graph's plugins do not list`]);
+  });
+
+  it('checks the shape of the plugins list', () => {
+    expect(problemsWith(withAcme({ acme: '0.1.0' }), { acme: '0.1.0' })).toContain('plugins must be an array of { id, version }');
+    expect(problemsWith(withAcme([{ id: 'acme', version: 'any' }]), { acme: '0.1.0' })).toContain('plugins: acme needs a version x.y.z');
+    expect(problemsWith(withAcme([{ id: 'acme', version: '1.2.3abc' }]), { acme: '0.1.0' })).toContain('plugins: acme needs a version x.y.z');
+  });
+
+  it('graphPlugins lists the loaded plugins the nodes use, at the loaded version', () => {
+    expect(graphPlugins(withAcme().nodes, { acme: '0.3.1', other: '1.0.0' })).toEqual([{ id: 'acme', version: '0.3.1' }]);
+    expect(graphPlugins(graph([['s', 'test.source']], []).nodes, { acme: '0.3.1' })).toEqual([]);
   });
 });
 

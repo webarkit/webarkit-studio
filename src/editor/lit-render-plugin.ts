@@ -15,7 +15,7 @@ import { Scope } from 'rete';
 import type { RenderSignal as AreaRenderSignal } from 'rete-area-plugin';
 import { classicConnectionPath, getDOMSocketPosition } from 'rete-render-utils';
 import type { StudioConnection, StudioNode } from './studio-node';
-import { SOCKET_TYPES } from '../core/sockets';
+import { SOCKET_TYPES, type SocketType } from '../core/sockets';
 import type { ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
 import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
@@ -95,7 +95,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
     const node = data.payload;
     const stop = (e: Event) => e.stopPropagation();
 
-    const socket = (side: Side, key: string, type: keyof typeof SOCKET_TYPES) =>
+    const socket = (side: Side, key: string, type: SocketType) =>
       html`<span class="socket" data-side=${side} data-key=${key} title=${SOCKET_TYPES[type].label}
         style="--socket-color:${SOCKET_TYPES[type].color}"></span>`;
 
