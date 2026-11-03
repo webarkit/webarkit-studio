@@ -5,6 +5,7 @@
  * Neither side depends on the other: the document is plain JSON.
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
+import { compareVersions, LOADED_PLUGINS } from './plugins';
 import { socketsCompatible } from './sockets';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
@@ -14,9 +15,10 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v2: provider-namespaced node types (jsartoolkitNFT.*), renderer nodes, pose filter slot.
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
+ * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
  * Older documents are rejected (prototype stage, no migration).
  */
-export const GRAPH_VERSION = 4;
+export const GRAPH_VERSION = 5;
 
 /** A param value; arrays hold `vector3` (3) and `matrix4` (16, column-major) params. */
 export type ParamValue = string | number | boolean | number[];
@@ -43,12 +45,32 @@ export interface GraphEdge {
   to: PortRef;
 }
 
+/** A plugin a graph needs (format v5): its id and the minimum version. */
+export interface PluginRef {
+  id: string;
+  version: string;
+}
+
 export interface GraphDocument {
   format: typeof GRAPH_FORMAT;
   version: number;
   name?: string;
+  /** Plugins the nodes come from, with the minimum version (v5). Absent: none. */
+  plugins?: PluginRef[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+/** Namespace of a node type: "jsartoolkitNFT.controller" → "jsartoolkitNFT". */
+const namespaceOf = (type: string) => type.slice(0, Math.max(0, type.indexOf('.')));
+
+/**
+ * The `plugins` a document of these nodes must list: every loaded plugin a
+ * node comes from, at its loaded version. The editor writes it on save.
+ */
+export function graphPlugins(nodes: readonly GraphNode[], loaded: Record<string, string> = LOADED_PLUGINS): PluginRef[] {
+  const ids = new Set(nodes.map((n) => namespaceOf(n.type)).filter((ns) => Object.hasOwn(loaded, ns)));
+  return [...ids].sort().map((id) => ({ id, version: loaded[id] }));
 }
 
 export function emptyGraph(name = 'Untitled'): GraphDocument {
@@ -72,12 +94,17 @@ export class GraphValidationError extends Error {
 }
 
 /**
- * Structural validation: known node types, existing ports, matching socket
- * types, single connection on non-multiple inputs, no cycles.
+ * Structural validation: the plugins the graph needs are loaded, known node
+ * types, existing ports, matching socket types, single connection on
+ * non-multiple inputs, no cycles.
  * Throws GraphValidationError listing every problem found.
- * `catalog` is injectable for tests.
+ * `catalog` and `loaded` (plugin id → version) are injectable for tests.
  */
-export function validateGraph(doc: unknown, catalog: Record<string, NodeDefinition> = NODE_CATALOG): GraphDocument {
+export function validateGraph(
+  doc: unknown,
+  catalog: Record<string, NodeDefinition> = NODE_CATALOG,
+  loaded: Record<string, string> = LOADED_PLUGINS,
+): GraphDocument {
   const problems: string[] = [];
   const g = doc as GraphDocument;
 
@@ -88,11 +115,33 @@ export function validateGraph(doc: unknown, catalog: Record<string, NodeDefiniti
     throw new GraphValidationError([...problems, 'nodes and edges must be arrays']);
   }
 
+  // A missing plugin is reported once, by name, rather than as unknown types of its nodes.
+  const listed = new Set<string>();
+  const missing = new Set<string>();
+  if (g.plugins !== undefined && !Array.isArray(g.plugins)) problems.push('plugins must be an array of { id, version }');
+  for (const ref of Array.isArray(g.plugins) ? g.plugins : []) {
+    const id = String(ref?.id);
+    listed.add(id);
+    if (typeof ref?.version !== 'string' || !/^\d+\.\d+\.\d+/.test(ref.version)) {
+      problems.push(`plugins: ${id} needs a version x.y.z`);
+    } else if (!Object.hasOwn(loaded, id)) {
+      missing.add(id);
+      problems.push(`requires plugin ${id} ≥ ${ref.version}, which is not loaded`);
+    } else if (compareVersions(loaded[id], ref.version) < 0) {
+      problems.push(`requires plugin ${id} ≥ ${ref.version}, but version ${loaded[id]} is loaded`);
+    }
+  }
+
   const nodes = new Map<string, GraphNode>();
   for (const n of g.nodes) {
     if (nodes.has(n.id)) problems.push(`duplicate node id ${n.id}`);
     nodes.set(n.id, n);
+    const ns = namespaceOf(n.type);
+    if (missing.has(ns)) continue;
     if (!catalog[n.type]) problems.push(`node ${n.id}: unknown type "${n.type}"`);
+    else if (Object.hasOwn(loaded, ns) && !listed.has(ns)) {
+      problems.push(`node ${n.id}: type "${n.type}" is from plugin ${ns}, which the graph's plugins do not list`);
+    }
   }
 
   const inputUse = new Map<string, number>();

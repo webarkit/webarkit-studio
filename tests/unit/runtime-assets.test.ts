@@ -37,7 +37,7 @@ async function start(params: Record<string, string>) {
   const seen: { params?: Record<string, unknown>; ctx?: RuntimeContext } = {};
   const factory: NodeFactory = (p, ctx) => ((seen.params = { ...p }), (seen.ctx = ctx), {});
   const rt = new GraphRuntime(
-    { format: 'webarkit-studio/graph', version: 4, nodes: [{ id: 'n', type: 'test.assets', params }], edges: [] },
+    { format: 'webarkit-studio/graph', version: 5, nodes: [{ id: 'n', type: 'test.assets', params }], edges: [] },
     {
       stage: {} as HTMLElement,
       baseUrl: 'http://localhost/',

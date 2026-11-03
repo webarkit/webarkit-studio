@@ -11,6 +11,9 @@
 import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
 import type { AssetLookup } from '../assets/asset';
+import type { GraphDocument } from '../core/graph';
+import { loadPlugins } from '../plugins/host';
+import studioConfig from '../../webarkit-studio.config';
 
 /** Graphs handed over by the studio may use its uploaded assets (same origin, same IndexedDB). */
 async function studioAssets(): Promise<AssetLookup | undefined> {
@@ -48,6 +51,9 @@ startButton.addEventListener('click', async () => {
     const graph = await loadGraph();
     const name = (graph as { name?: unknown }).name;
     if (typeof name === 'string' && name) document.title = name;
+    // Only the plugins the graph lists; validation names any this build does not have.
+    const plugins = (graph as Partial<GraphDocument>).plugins;
+    await loadPlugins(studioConfig, Array.isArray(plugins) ? plugins.map((p) => String(p?.id)) : []);
     const runtime = new GraphRuntime(graph, { stage, assets: await studioAssets() });
     await runtime.start();
     startButton.remove();
