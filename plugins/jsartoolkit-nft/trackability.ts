@@ -106,10 +106,14 @@ export function parseFset3(bytes: Uint8Array): Fset3 {
     for (let i = 0; i < imageNum; i++) {
       const width = r.int();
       const height = r.int();
-      images[r.int()] = { width, height };
+      const imageNo = r.int();
+      if (width <= 0 || height <= 0) throw new Error(`.fset3: reference image ${imageNo} has size ${width} × ${height}`);
+      if (images[imageNo]) throw new Error(`.fset3: reference image ${imageNo} twice`);
+      images[imageNo] = { width, height };
     }
   }
   r.end();
+  if (!images[0]) throw new Error('.fset3: no reference image 0');
   for (const p of points) {
     if (!images[p.image]) throw new Error(`.fset3: point on unknown reference image ${p.image}`);
   }
@@ -243,7 +247,10 @@ function coverage(points: Iterable<{ u: number; v: number }>, grid: number): num
   return cells.size / (grid * grid);
 }
 
-/** Share of the points with a near-identical descriptor at least `minDistance` pixels away. */
+/**
+ * Share of the points with a near-identical descriptor at least `minDistance` pixels away.
+ * Quadratic in the points of one image: about 75 ms for pinball's 636.
+ */
 function repetition(points: Fset3Point[], maxBits: number, minDistance: number): number {
   if (points.length === 0) return 0;
   const min2 = minDistance * minDistance;
@@ -261,6 +268,7 @@ function repetition(points: Fset3Point[], maxBits: number, minDistance: number):
 }
 
 function rate(value: number, limits: Limits, direction: 'min' | 'max'): CheckStatus {
+  if (!Number.isFinite(value)) return 'fail';
   if (direction === 'min') return value < limits.fail ? 'fail' : value < limits.warn ? 'warn' : 'pass';
   return value > limits.fail ? 'fail' : value > limits.warn ? 'warn' : 'pass';
 }
@@ -273,14 +281,33 @@ function median(values: number[]): number | null {
 
 const round = (v: number, digits: number) => Math.round(v * 10 ** digits) / 10 ** digits;
 
+const LIMIT_KEYS = ['detectionPoints', 'detectionCoverage', 'repetition', 'trackingPoints', 'trackingCoverage'] as const;
+
+/** Throws on thresholds that would make a check meaningless (NaN compares false, so it would pass). */
+export function validateThresholds(t: TrackabilityThresholds): void {
+  const number = (name: string, v: unknown) => {
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error(`trackability: ${name} must be a number >= 0`);
+  };
+  if (!Number.isInteger(t.grid) || t.grid < 1) throw new Error('trackability: grid must be an integer >= 1');
+  number('repeatBits', t.repeatBits);
+  number('repeatDistance', t.repeatDistance);
+  for (const key of LIMIT_KEYS) {
+    number(`${key}.warn`, t[key]?.warn);
+    number(`${key}.fail`, t[key]?.fail);
+  }
+}
+
 export function checkTrackability(
   dataset: { fset3: Uint8Array; fset: Uint8Array },
   thresholds: TrackabilityThresholds = DEFAULT_TRACKABILITY,
 ): TrackabilityReport {
+  validateThresholds(thresholds);
   const fset3 = parseFset3(dataset.fset3);
   const fset = parseFset(dataset.fset);
   const t = thresholds;
-  const base = fset3.images[0] ?? { width: 0, height: 0 };
+  const base = fset3.images[0];
+  // Points the generator could not place (non-finite) are not features.
+  fset3.points = fset3.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.mmX));
   const largest = fset3.points.filter((p) => p.image === 0);
   const tracking = fset.scales[0]?.points ?? [];
 
@@ -296,9 +323,7 @@ export function checkTrackability(
     'detection.repetition': round(repetition(largest, t.repeatBits, t.repeatDistance * base.width), 3),
     'tracking.points': tracking.length,
     // The .fset's largest scale is the same image as the .fset3's (both come from the .iset's first scale).
-    'tracking.coverage': base.width
-      ? round(coverage(tracking.map((p) => ({ u: p.x / base.width, v: p.y / base.height })), t.grid), 3)
-      : 0,
+    'tracking.coverage': round(coverage(tracking.map((p) => ({ u: p.x / base.width, v: p.y / base.height })), t.grid), 3),
   };
   const limits: Record<CheckId, [Limits, 'min' | 'max']> = {
     'detection.points': [t.detectionPoints, 'min'],

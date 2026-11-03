@@ -43,7 +43,7 @@ try {
 }
 if (args.positionals.length !== 1) fail('usage: trackability <dataset> [--json] [--<threshold> <value>]');
 
-const { DEFAULT_TRACKABILITY, checkTrackability, formatTrackability } = await tsImport(
+const { DEFAULT_TRACKABILITY, checkTrackability, formatTrackability, validateThresholds } = await tsImport(
   '../plugins/jsartoolkit-nft/trackability.ts',
   import.meta.url,
 );
@@ -58,14 +58,19 @@ const thresholds = structuredClone(DEFAULT_TRACKABILITY);
 for (const [flag, key] of Object.entries(NUMBERS)) {
   if (args.values[flag] !== undefined) thresholds[key] = number(flag);
 }
-if (!Number.isInteger(thresholds.grid) || thresholds.grid < 1) fail('--grid must be an integer >= 1');
 for (const [flag, key] of Object.entries(LIMITS)) {
   for (const level of ['warn', 'fail']) {
     if (args.values[`${flag}-${level}`] !== undefined) thresholds[key][level] = number(`${flag}-${level}`);
   }
 }
 
-const dataset = args.positionals[0].replace(/\.(iset|fset3?)$/, '');
+try {
+  validateThresholds(thresholds);
+} catch (err) {
+  fail(err.message.replace(/^trackability: /, '--'));
+}
+
+const dataset = args.positionals[0].replace(/\.(iset|fset3?)$/i, '');
 let report;
 try {
   report = checkTrackability(

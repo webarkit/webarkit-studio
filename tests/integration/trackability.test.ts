@@ -39,6 +39,7 @@ describe.skipIf(!haveAssets)('npm run trackability', () => {
     expect(r.code, r.err).toBe(0);
     expect(r.out).toMatch(/Trackability: good/);
     expect(cli(`${PINBALL}.iset`).code).toBe(0);
+    expect(cli(`${PINBALL}.FSET3`).code).toBe(0);
   });
 
   it('prints JSON with --json', () => {
@@ -48,6 +49,7 @@ describe.skipIf(!haveAssets)('npm run trackability', () => {
     expect(report.dataset).toBe(KUVA);
     expect(report.verdict).toBe('good');
     expect(report.checks).toHaveLength(5);
+    expect(report.thresholds.grid).toBe(8);
   });
 
   it('exits 1 for a poor dataset, and takes threshold flags', () => {
@@ -73,6 +75,10 @@ describe.skipIf(!haveAssets)('npm run trackability', () => {
   it('exits 2 on a missing dataset or a bad flag', () => {
     expect(cli('does/not/exist').code).toBe(2);
     expect(cli(PINBALL, '--grid', 'zero').code).toBe(2);
+    const grid = cli(PINBALL, '--grid', '0');
+    expect(grid.code).toBe(2);
+    expect(grid.err).toMatch(/--grid must be an integer/);
+    expect(cli(PINBALL, '--repetition-fail', '-1').code).toBe(2);
     expect(cli().code).toBe(2);
   });
 });

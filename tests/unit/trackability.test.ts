@@ -52,6 +52,33 @@ describe('NFT feature files', () => {
     expect(() => parseFset(fset.subarray(0, 30))).toThrow(/\.fset\b/);
   });
 
+  it('rejects negative counts', () => {
+    const fset = writeFset([{ points: [] }]);
+    new DataView(fset.buffer).setInt32(0, -1, true);
+    expect(() => parseFset(fset)).toThrow(/negative count/);
+  });
+
+  it('rejects points on an unknown reference image', () => {
+    const fset3 = writeFset3({ images: IMAGES, points: [{ x: 1, y: 1 }] });
+    new DataView(fset3.buffer).setInt32(4 + 128, 5, true);
+    expect(() => parseFset3(fset3)).toThrow(/unknown reference image 5/);
+  });
+
+  it('rejects reference images that are missing, repeated or empty', () => {
+    const at = (bytes: Uint8Array, offset: number, value: number) => {
+      new DataView(bytes.buffer).setInt32(offset, value, true);
+      return bytes;
+    };
+    // The image table starts after the count, the points, pageNum, pageNo and imageNum.
+    const table = 4 + 12;
+    // Image numbers 1, 1: image 0 is missing and 1 is repeated.
+    expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table + 8, 1))).toThrow(/reference image 1 twice/);
+    expect(() =>
+      parseFset3(at(at(writeFset3({ images: IMAGES, points: [] }), table + 8, 2), table + 20, 1)),
+    ).toThrow(/no reference image 0/);
+    expect(() => parseFset3(at(writeFset3({ images: IMAGES, points: [] }), table, 0))).toThrow(/size 0 × 400/);
+  });
+
   it('rejects trailing bytes', () => {
     const fset = writeFset([{ points: [] }]);
     const longer = new Uint8Array(fset.byteLength + 4);
@@ -138,6 +165,23 @@ describe('trackability check', () => {
       detectionPoints: { warn: 1000, fail: 500 },
     });
     expect(status(report, 'detection.points')).toBe('fail');
+  });
+
+  it('rejects invalid thresholds instead of passing every check', () => {
+    expect(() => checkTrackability(goodDataset(), { ...DEFAULT_TRACKABILITY, grid: 0 })).toThrow(/grid/);
+    expect(() => checkTrackability(goodDataset(), { ...DEFAULT_TRACKABILITY, grid: 2.5 })).toThrow(/grid/);
+    expect(() =>
+      checkTrackability(goodDataset(), { ...DEFAULT_TRACKABILITY, repetition: { warn: Number.NaN, fail: 0.7 } }),
+    ).toThrow(/repetition\.warn/);
+    expect(() => checkTrackability(goodDataset(), { ...DEFAULT_TRACKABILITY, repeatBits: -1 })).toThrow(/repeatBits/);
+  });
+
+  it('ignores points with non-finite coordinates', () => {
+    const points = [...gridPoints(400, 400, 400), { x: Number.NaN, y: 3 }, { x: Number.POSITIVE_INFINITY, y: 3 }];
+    const report = checkTrackability({ fset3: writeFset3({ images: IMAGES, points }), fset: goodDataset().fset });
+    expect(report.checks.find((c) => c.id === 'detection.points')?.value).toBe(400);
+    expect(report.checks.find((c) => c.id === 'detection.coverage')?.value).toBe(1);
+    expect(report.marker.widthMm).toBe(100);
   });
 
   it('formats a report with the verdict, every check and a hint for failures', () => {
