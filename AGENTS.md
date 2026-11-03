@@ -32,6 +32,7 @@ Pointer files never duplicate a rule, except where a tool cannot follow links (C
 - E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock (`PW_NO_LOCK=1` skips it too). Each checkout serves its build on its own port, derived from its path; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
 - Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
 - Agent files: `npm run check:agents`.
+- MCP server: `npm run mcp:studio` (stdio; see "MCP server" below).
 - Tracking traces: `npm run trace:record -- --out a.jsonl` records a deterministic trace in Node (`--filter`, `--settings`, `--replay <trace>`, `--golden`); `npm run trace:diff -- a.jsonl b.jsonl` compares two traces and exits non-zero above its thresholds. See "Tracking traces" below.
 
 CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.
@@ -53,6 +54,24 @@ CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, bu
 - `.mcp.json` provides Playwright MCP (the studio with the e2e fake camera; `npm run mcp:setup` generates the video and its config from `.claude/mcp/playwright.json`) and Chrome DevTools MCP (`--isolated`, no usage statistics, Chrome's synthetic camera with the permission granted: the graph starts, but no marker is ever found), pinned to exact versions; `npm run check:agents` validates it. Playwright MCP needs its own Chromium revision, installed once per version (see the `tracking-debugger` skill).
 
 In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger/`) reproduces, records, diffs and reports.
+
+## MCP server
+
+`src/mcp/` is an MCP server (#8) over stdio, declared in `.mcp.json` as `webarkit-studio`
+(`node --import tsx src/mcp/main.ts`, from the repository root). It loads the plugins of
+`webarkit-studio.config.ts`, so its tools see the studio's catalog and registry, never a node list of their own.
+
+- `catalog_list`: node types, ports, params, defaults, `live` flags, the graph version and the loaded plugins.
+- `graph_validate`: `validateGraph()`, as a list of problems.
+- `graph_create`, `graph_edit`: ops (add / remove nodes, connect / disconnect, set params), checked against the catalog, all or nothing.
+- `tracking_run`: the graph's tracker on JPEG frames in Node; returns trace records (`TraceFrame`, the facade's `FrameResult`) and a per-marker summary. Needs `npm run assets` for the demo data.
+- `export_bundle`: the standalone app `.zip`; needs `npm run build:player`.
+
+Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
+JSON or as a path; nothing is written except `export_bundle`'s zip. A tool is one module in `src/mcp/tools/` (a
+`StudioTool`) and one entry in `src/mcp/tools/index.ts`. `src/mcp/` never imports `src/editor` or `plugins/`:
+a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webarkit-studio.node.config.ts`
+(kept out of the browser config, it imports Node builds).
 
 ## Architecture rules
 

@@ -2,9 +2,9 @@
 //  - every pointer file links to AGENTS.md (and Gemini's context file is AGENTS.md);
 //  - every `npm run <script>` they name exists in package.json;
 //  - every repository path they name (in backticks, links or Copilot `applyTo` globs) exists;
-//  - .mcp.json declares the Playwright and Chrome DevTools MCP servers, each package pinned to
-//    an exact version, Chrome DevTools started with --isolated and without usage statistics, and
-//    every --config file exists.
+//  - .mcp.json declares the studio's own MCP server (node, its entry file exists) and the
+//    Playwright and Chrome DevTools MCP servers, each package pinned to an exact version, Chrome
+//    DevTools started with --isolated and without usage statistics, and every --config file exists.
 // Run from the repository root: npm run check:agents
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
@@ -117,6 +117,11 @@ if (!existsSync(mcp)) {
     const config = args.indexOf('--config');
     if (config !== -1) checkPath(mcp, args[config + 1] ?? '');
   }
+  // The studio's own server (#8) runs from the repository: no package to pin.
+  const studio = servers['webarkit-studio'];
+  const entry = (studio?.args ?? []).find((a) => a.endsWith('.ts'));
+  if (studio?.command !== 'node' || !entry) problems.push(`${mcp}: "webarkit-studio" must run its entry (.ts) with node`);
+  else checkPath(mcp, entry);
   const devtools = servers['chrome-devtools']?.args ?? [];
   for (const flag of ['--isolated', '--usageStatistics=false']) {
     if (!devtools.includes(flag)) problems.push(`${mcp}: "chrome-devtools" must be started with ${flag}`);

@@ -149,6 +149,25 @@ rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
+## MCP server
+
+An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
+Gemini CLI…) author, check, run and export graphs without the UI. `.mcp.json` declares it; to start it by hand:
+
+```bash
+npm run mcp:studio   # stdio, from the repository root
+```
+
+| Tool | What it does |
+|---|---|
+| `catalog_list` | node types with ports, params, defaults and live flags (core + plugins) |
+| `graph_validate` | the studio's validation, as a list of problems |
+| `graph_create` / `graph_edit` | build or change a graph with ops: add / remove nodes, connect, set params |
+| `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
+| `export_bundle` | the standalone app `.zip` (needs `npm run build:player`) |
+
+See `AGENTS.md`, "MCP server".
+
 ## Assets
 
 **Upload…** in the *assets* panel (under the palette) adds files to the
@@ -408,7 +427,7 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
-- Graph format is `webarkit-studio/graph` v4; older versions are rejected, the
+- Graph format is `webarkit-studio/graph` v5; older versions are rejected, the
   studio falls back to the demo. Graphs saved by the prototype under its former
   name (`webar-studio/graph`) still load, and so does its last autosave.
 - JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light
@@ -457,6 +476,7 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - [x] First math nodes and a Primitive position driven by an input (#25)
 - [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
 - [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
+- [x] MCP server (#8): catalog, graph editing and validation, tracking on images in Node, app export
 - [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
 **Phase 3 — Logic & publishing**
