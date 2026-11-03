@@ -21,6 +21,9 @@ import type {
 import { version as JSARTOOLKIT_NFT_VERSION } from '@webarkit/jsartoolkit-nft/package.json';
 import type { PoseFilterConfig, TraceFrame, TraceHeader, TraceSource } from '@webarkit/studio-plugin-api';
 
+/** The plugin's id: its node and socket namespace, and the `library` of its native filter. */
+export const PLUGIN_ID = 'jsartoolkitNFT';
+
 /** The tracker in this plugin's traces. */
 export const TRACKER = { name: 'jsartoolkit-nft', version: JSARTOOLKIT_NFT_VERSION };
 
@@ -127,7 +130,7 @@ export class NftSession {
   /** Rejects if any dataset fails to load, with one line per failed dataset. */
   static async create(create: NftTrackerFactory, options: NftSessionOptions): Promise<NftSession> {
     if (!options.datasetUrls.length) throw new Error('at least one NFT dataset is required');
-    if (options.filter?.kind === 'native' && options.filter.library !== 'jsartoolkitNFT') {
+    if (options.filter?.kind === 'native' && options.filter.library !== PLUGIN_ID) {
       throw new Error(`native filter for "${options.filter.library}" cannot be used with JsartoolkitNFT`);
     }
     const tracker = await create({
@@ -193,6 +196,7 @@ export class NftSession {
 
   /** The header of a trace of this session, with the current settings. */
   traceHeader(source: TraceSource): TraceHeader<NftSettings> {
+    // The plugin API is types only: its types tie format and version to src/runtime/trackers/trace.ts.
     return {
       type: 'header',
       format: 'webarkit-studio/trace',

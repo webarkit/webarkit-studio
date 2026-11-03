@@ -22,10 +22,12 @@ async function listFiles(dir: string): Promise<string[]> {
 
 // fileName -> statically imported chunks, dynamically imported chunks, source modules.
 // Shared by the main build and the worker build (workers are bundled separately).
-const chunks = new Map<string, { imports: string[]; dynamicImports: string[]; modules: string[] }>();
+// `entry`: the chunk's facade module (what a dynamic import or a worker loads), also kept for package modules.
+const chunks = new Map<string, { imports: string[]; dynamicImports: string[]; modules: string[]; entry: string | null }>();
+const relativeId = (m: string) => relative(import.meta.dirname, m).replaceAll('\\', '/');
 
-/** Package modules the exporter's OPTIONAL_MODULES rules look for (src/export/app-bundle.ts): kept in the manifest. */
-const OPTIONAL_PACKAGE_MODULES = ['jsartoolkit-nft/dist/', 'three/examples/jsm/loaders/GLTFLoader.js', '@babylonjs/loaders/glTF/2.0/glTFLoader.js'];
+/** Package modules the core's OPTIONAL_MODULES rules look for (src/export/app-bundle.ts) inside their chunks: kept in the manifest. */
+const OPTIONAL_PACKAGE_MODULES = ['three/examples/jsm/loaders/GLTFLoader.js', '@babylonjs/loaders/glTF/2.0/glTFLoader.js'];
 
 /** Collects chunk reachability; with `write`, writes manifest.json when the build ends. */
 function playerManifest(write: boolean): Plugin {
@@ -37,7 +39,8 @@ function playerManifest(write: boolean): Plugin {
         chunks.set(item.fileName, {
           imports: item.imports,
           dynamicImports: item.dynamicImports,
-          modules: Object.keys(item.modules).map((m) => relative(import.meta.dirname, m).replaceAll('\\', '/')),
+          modules: Object.keys(item.modules).map(relativeId),
+          entry: item.facadeModuleId ? relativeId(item.facadeModuleId) : null,
         });
       }
     },
@@ -45,7 +48,7 @@ function playerManifest(write: boolean): Plugin {
       if (!write) return;
       const files = (await listFiles(outDir)).map((f) => relative(outDir, f).replaceAll('\\', '/')).filter((f) => f !== 'manifest.json');
       const graph = Object.fromEntries(
-        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || m.startsWith('plugins/') || OPTIONAL_PACKAGE_MODULES.some((p) => m.includes(p))) }]),
+        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || m.startsWith('plugins/') || m === c.entry || OPTIONAL_PACKAGE_MODULES.some((p) => m.includes(p))) }]),
       );
       await writeFile(join(outDir, 'manifest.json'), JSON.stringify({ entry: 'player.html', files, chunks: graph }, null, 1));
     },

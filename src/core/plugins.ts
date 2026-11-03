@@ -7,7 +7,7 @@
  * with each other or with the built-in nodes.
  */
 import type { NodeDefinition } from '../nodes/catalog';
-import { CORE_SOCKET_TYPES, isSocketType } from './sockets';
+import { isSocketType } from './sockets';
 
 /** The plugin API version this studio implements (src/plugin-api). */
 export const PLUGIN_API_VERSION = 1;
@@ -25,7 +25,7 @@ export interface PluginManifest {
   sockets?: Array<{ id: string; label: string; color: string }>;
 }
 
-/** Loaded plugins: id → version. Filled by src/plugins/host.ts, read by validateGraph(). */
+/** Loaded plugins: id → version. Written only by installPlugin (src/plugins/host.ts), read by validateGraph(). */
 export const LOADED_PLUGINS: Record<string, string> = {};
 
 export class PluginValidationError extends Error {
@@ -38,6 +38,9 @@ export class PluginValidationError extends Error {
 }
 
 const VERSION = /^\d+\.\d+\.\d+(?:[-+].*)?$/;
+
+/** An x.y.z version, with an optional pre-release or build suffix. */
+export const isVersion = (value: unknown): value is string => typeof value === 'string' && VERSION.test(value);
 
 /** Compares two x.y.z versions (a pre-release or build suffix is ignored). */
 export function compareVersions(a: string, b: string): number {
@@ -59,7 +62,7 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
   if (typeof id !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(id)) problems.push(`id "${String(id)}" must be a plain identifier (letters and digits)`);
   if (RESERVED_NAMESPACES.includes(id)) problems.push(`id "${id}" is reserved for built-in nodes`);
   if (env.installed.includes(id)) problems.push(`a plugin "${id}" is already loaded`);
-  if (typeof plugin.version !== 'string' || !VERSION.test(plugin.version)) problems.push(`version "${String(plugin.version)}" must be x.y.z`);
+  if (!isVersion(plugin.version)) problems.push(`version "${String(plugin.version)}" must be x.y.z`);
   if (plugin.apiVersion !== PLUGIN_API_VERSION) {
     problems.push(`built for plugin API version ${String(plugin.apiVersion)}, this studio implements version ${PLUGIN_API_VERSION}`);
   }
@@ -67,15 +70,15 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
   const prefix = `${id}.`;
   const own = new Set<string>();
   for (const socket of plugin.sockets ?? []) {
-    if (!socket.id.startsWith(prefix)) problems.push(`socket "${socket.id}" must start with "${prefix}"`);
-    else if (own.has(socket.id) || socket.id in CORE_SOCKET_TYPES) problems.push(`socket "${socket.id}" is defined twice`);
+    if (typeof socket.id !== 'string' || !socket.id.startsWith(prefix)) problems.push(`socket "${String(socket.id)}" must start with "${prefix}"`);
+    else if (own.has(socket.id)) problems.push(`socket "${socket.id}" is defined twice`);
     own.add(socket.id);
   }
   const known = (type: string) => own.has(type) || isSocketType(type);
 
   const types = new Set<string>();
   for (const def of plugin.nodes ?? []) {
-    if (!def.type.startsWith(prefix)) problems.push(`node type "${def.type}" must start with "${prefix}"`);
+    if (typeof def.type !== 'string' || !def.type.startsWith(prefix)) problems.push(`node type "${String(def.type)}" must start with "${prefix}"`);
     if (types.has(def.type)) problems.push(`node type "${def.type}" is defined twice`);
     types.add(def.type);
     if (typeof plugin.factories?.[def.type] !== 'function') problems.push(`no factory for "${def.type}"`);

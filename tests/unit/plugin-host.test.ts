@@ -5,7 +5,7 @@ import { SOCKET_TYPES } from '../../src/core/sockets';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { NODE_REGISTRY } from '../../src/runtime/registry';
 import { GraphRuntime } from '../../src/runtime/runtime';
-import { installPlugin, loadPlugins, type StudioConfig } from '../../src/plugins/host';
+import { installPlugin, loadPlugins, pluginIdsOf, type StudioConfig } from '../../src/plugins/host';
 import type { StudioPlugin } from '../../src/plugin-api';
 
 /** A plugin with a source node on its own socket and a sink reading it. Ids differ per test: installs are global. */
@@ -103,5 +103,34 @@ describe('loadPlugins', () => {
 
   it('refuses a plugin whose id differs from its config key', async () => {
     await expect(loadPlugins(config, ['wrong'])).rejects.toThrow(/config key "wrong".*"omega"/);
+  });
+
+  it('installs the other plugins when one fails, and names each failure', async () => {
+    const mixed: StudioConfig = {
+      plugins: {
+        eta: async () => ({ default: plugin('eta') }),
+        broken: async () => {
+          throw new Error('chunk failed to load');
+        },
+        theta: async () => ({ default: plugin('theta') }),
+      },
+    };
+    const err = await loadPlugins(mixed).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/plugin "broken": chunk failed to load/);
+    expect(LOADED_PLUGINS.eta).toBe('0.1.0');
+    expect(LOADED_PLUGINS.theta).toBe('0.1.0');
+  });
+});
+
+describe('pluginIdsOf', () => {
+  it("lists the graph's plugins and the namespaces of its nodes, so a missing list is reported by name", () => {
+    const doc = { plugins: [{ id: 'acme', version: '0.1.0' }], nodes: [{ type: 'other.node' }, { type: 'source.camera' }, { type: 'acme.x' }] };
+    expect(pluginIdsOf(doc).sort()).toEqual(['acme', 'other', 'source']);
+  });
+
+  it('accepts a malformed document', () => {
+    expect(pluginIdsOf(null)).toEqual([]);
+    expect(pluginIdsOf({ plugins: 'x', nodes: [{ type: 1 }] })).toEqual([]);
   });
 });

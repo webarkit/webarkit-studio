@@ -18,13 +18,15 @@ const manifest: PlayerManifest = {
     'assets/three-dep.js',
     'assets/babylon-adapter.js',
     'assets/babylon-dep.js',
+    'assets/jsartoolkit-nft.js',
     'assets/worker.js',
     'assets/ARToolkitNFT.js',
     'assets/ARToolkitNFT_simd.js',
     'assets/style.css',
   ],
   chunks: {
-    'assets/player.js': { imports: ['assets/shared.js'], dynamicImports: ['assets/three-adapter.js', 'assets/babylon-adapter.js'], modules: ['src/app/player.ts'] },
+    'assets/player.js': { imports: ['assets/shared.js'], dynamicImports: ['assets/three-adapter.js', 'assets/babylon-adapter.js', 'assets/jsartoolkit-nft.js'], modules: ['src/app/player.ts'] },
+    'assets/jsartoolkit-nft.js': { imports: ['assets/shared.js'], dynamicImports: [], modules: ['plugins/jsartoolkit-nft/index.ts'] },
     'assets/shared.js': { imports: [], dynamicImports: [], modules: ['src/runtime/renderers/adapter.ts'] },
     'assets/three-adapter.js': { imports: ['assets/three-dep.js'], dynamicImports: [], modules: ['src/runtime/renderers/three-adapter.ts'] },
     'assets/three-dep.js': { imports: [], dynamicImports: [], modules: [] },
@@ -52,7 +54,7 @@ describe('selectPlayerFiles', () => {
   it('keeps only Three.js and the SIMD build for a Three.js + SIMD graph', () => {
     const files = selectPlayerFiles(manifest, html, doc([['three.renderer'], ['jsartoolkitNFT.controller', { build: 'simd' }]]));
     expect([...files].sort()).toEqual(
-      ['player.html', 'assets/player.js', 'assets/shared.js', 'assets/three-adapter.js', 'assets/three-dep.js', 'assets/worker.js', 'assets/ARToolkitNFT_simd.js', 'assets/style.css'].sort(),
+      ['player.html', 'assets/player.js', 'assets/shared.js', 'assets/three-adapter.js', 'assets/three-dep.js', 'assets/jsartoolkit-nft.js', 'assets/worker.js', 'assets/ARToolkitNFT_simd.js', 'assets/style.css'].sort(),
     );
   });
 
@@ -79,9 +81,10 @@ describe('selectPlayerFiles', () => {
     expect(selectPlayerFiles(withLoaders, html, doc([['babylon.renderer'], ['scene.gltf']])).has('assets/ext.js')).toBe(true);
   });
 
-  it('leaves the tracker worker out of a graph without a controller', () => {
+  it('leaves the tracker worker out of a graph without a controller, and the plugin out of a graph without its nodes', () => {
     const files = selectPlayerFiles(manifest, html, doc([['three.renderer']]));
     expect(files.has('assets/worker.js')).toBe(false);
+    expect(files.has('assets/jsartoolkit-nft.js')).toBe(false);
   });
 
   it('works on the real player manifest when it has been built', () => {
@@ -133,6 +136,12 @@ describe('plugin exportFiles', () => {
     expect(files.has('assets/acme.js')).toBe(false);
     expect(files.has('assets/acme.worker.js')).toBe(false);
     expect(files.has('assets/heavy.js')).toBe(false);
+  });
+
+  it('fails when a needed worker or module of a plugin is not in the player build', () => {
+    const lost = { ...acme, exportFiles: [{ kind: 'worker', module: 'plugins/acme/missing.worker.ts' }] } as StudioPlugin;
+    expect(() => selectPlayerFiles(withAcme, html, acmeGraph(), [lost])).toThrow(/acme.*plugins\/acme\/missing\.worker\.ts.*not in the player build/);
+    expect(() => selectPlayerFiles(withAcme, html, doc([['three.renderer']]), [lost])).not.toThrow(); // not needed
   });
 
   it('copies the static files of the plugins the graph uses', async () => {

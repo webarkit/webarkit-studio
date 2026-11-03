@@ -23,6 +23,7 @@ import type {
 } from '@webarkit/studio-plugin-api';
 import type { ArtkCameraParamsValue, ArtkNftDatasetValue, ArtkSettingsValue } from './types';
 import type { WorkerRequest, WorkerResponse } from './protocol';
+import { PLUGIN_ID } from './nft-session';
 import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
 
@@ -109,7 +110,7 @@ export const artkSettings: NodeFactory = (params) => {
 /** jsartoolkitNFT.nativeFilter — ARToolKit's built-in filtering. */
 export const artkNativeFilter: NodeFactory = () => ({
   init(): { filter: PoseFilterValue } {
-    return { filter: { kind: 'native', library: 'jsartoolkitNFT' } };
+    return { filter: { kind: 'native', library: PLUGIN_ID } };
   },
 });
 

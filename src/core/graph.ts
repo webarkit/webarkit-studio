@@ -5,7 +5,7 @@
  * Neither side depends on the other: the document is plain JSON.
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
-import { compareVersions, LOADED_PLUGINS } from './plugins';
+import { compareVersions, isVersion, LOADED_PLUGINS } from './plugins';
 import { socketsCompatible } from './sockets';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
@@ -62,7 +62,7 @@ export interface GraphDocument {
 }
 
 /** Namespace of a node type: "jsartoolkitNFT.controller" → "jsartoolkitNFT". */
-const namespaceOf = (type: string) => type.slice(0, Math.max(0, type.indexOf('.')));
+const namespaceOf = (type: unknown) => (typeof type === 'string' ? type.slice(0, Math.max(0, type.indexOf('.'))) : '');
 
 /**
  * The `plugins` a document of these nodes must list: every loaded plugin a
@@ -122,7 +122,7 @@ export function validateGraph(
   for (const ref of Array.isArray(g.plugins) ? g.plugins : []) {
     const id = String(ref?.id);
     listed.add(id);
-    if (typeof ref?.version !== 'string' || !/^\d+\.\d+\.\d+/.test(ref.version)) {
+    if (!isVersion(ref?.version)) {
       problems.push(`plugins: ${id} needs a version x.y.z`);
     } else if (!Object.hasOwn(loaded, id)) {
       missing.add(id);
@@ -152,6 +152,7 @@ export function validateGraph(
       problems.push(`edge ${e.id}: references a missing node`);
       continue;
     }
+    if (missing.has(namespaceOf(src.type)) || missing.has(namespaceOf(dst.type))) continue; // reported as the missing plugin
     const out = catalog[src.type]?.outputs[e.from.port];
     const inp = catalog[dst.type]?.inputs[e.to.port];
     if (!out) problems.push(`edge ${e.id}: ${src.type} has no output "${e.from.port}"`);

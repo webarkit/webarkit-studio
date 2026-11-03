@@ -139,8 +139,10 @@ exportFiles: [
 
 `module` is a source path as the player build records it, matched by its end. `needed` receives
 the graph's nodes of this plugin; without it, a file is needed whenever the graph uses the plugin.
-The player build keeps the module paths of `src/` and `plugins/` in its manifest, and those of the
-packages it lists in `OPTIONAL_PACKAGE_MODULES` (`vite.player.config.ts`).
+The player build's manifest keeps every module under `src/` and `plugins/`, and the entry module of
+every chunk (what a dynamic `import()` or a worker loads), so a package's on-demand build or a
+plugin installed from npm is found by its entry. The export fails, naming the plugin and the
+module, when a needed `module` or `worker` is not in the build.
 
 ## Testing with the Node build
 

@@ -7,13 +7,14 @@
  */
 import type { StudioPlugin } from '@webarkit/studio-plugin-api';
 import { NODES, SOCKETS } from './catalog';
+import { PLUGIN_ID } from './nft-session';
 import { artkCameraParams, artkController, artkNativeFilter, artkNftDataset, artkSettings } from './nodes';
 
 const controllers = (build: 'simd' | 'default') => (nodes: Array<{ type: string; params: Record<string, unknown> }>) =>
   nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === build);
 
 const plugin: StudioPlugin = {
-  id: 'jsartoolkitNFT',
+  id: PLUGIN_ID,
   version: '0.1.0',
   apiVersion: 1,
   nodes: NODES,

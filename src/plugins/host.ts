@@ -32,16 +32,46 @@ export function installPlugin(plugin: StudioPlugin): void {
 }
 
 /**
+ * The plugin ids a (not yet validated) graph may need: those it lists, and the
+ * namespaces of its node types. loadPlugins skips ids the config does not have,
+ * so a graph that forgets to list a plugin gets "not listed", not "unknown type".
+ */
+export function pluginIdsOf(doc: unknown): string[] {
+  const g = (doc ?? {}) as { plugins?: unknown; nodes?: unknown };
+  const listed = Array.isArray(g.plugins) ? g.plugins.map((p) => String((p as { id?: unknown })?.id)) : [];
+  const used = Array.isArray(g.nodes)
+    ? g.nodes.map((n) => (n as { type?: unknown })?.type).filter((t): t is string => typeof t === 'string' && t.includes('.')).map((t) => t.slice(0, t.indexOf('.')))
+    : [];
+  return [...new Set([...listed, ...used])];
+}
+
+/**
  * Loads and installs the config's plugins: all of them, or only `ids` (the
- * ones a graph lists). Ids the config does not have are skipped: validating
+ * ones a graph needs). Ids the config does not have are skipped: validating
  * the graph then reports them as missing. Returns the plugins installed now.
+ * A plugin that fails to load or install does not stop the others: they are
+ * installed, then an error names each failed plugin.
  */
 export async function loadPlugins(config: StudioConfig, ids: readonly string[] = Object.keys(config.plugins)): Promise<StudioPlugin[]> {
   const wanted = ids.filter((id) => Object.hasOwn(config.plugins, id) && !INSTALLED_PLUGINS.has(id));
-  const modules = await Promise.all(wanted.map((id) => config.plugins[id]()));
-  return modules.map(({ default: plugin }, i) => {
-    if (plugin?.id !== wanted[i]) throw new Error(`config key "${wanted[i]}" loads plugin "${String(plugin?.id)}": the key must be the plugin's id`);
-    installPlugin(plugin);
-    return plugin;
+  const results = await Promise.allSettled(wanted.map((id) => config.plugins[id]()));
+  const installed: StudioPlugin[] = [];
+  const failures: string[] = [];
+  results.forEach((result, i) => {
+    const id = wanted[i];
+    try {
+      if (result.status === 'rejected') throw result.reason;
+      const plugin = result.value.default;
+      if (plugin?.id !== id) throw new Error(`config key "${id}" loads plugin "${String(plugin?.id)}": the key must be the plugin's id`);
+      installPlugin(plugin);
+      installed.push(plugin);
+    } catch (err) {
+      failures.push(`plugin "${id}": ${(err as Error)?.message ?? String(err)}`);
+    }
   });
+  if (failures.length) {
+    const loaded = installed.length ? `\n(loaded: ${installed.map((p) => p.id).join(', ')})` : '';
+    throw new Error(`${failures.join('\n')}${loaded}`);
+  }
+  return installed;
 }

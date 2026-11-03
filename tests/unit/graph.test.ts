@@ -106,8 +106,21 @@ describe('validateGraph: plugins (v5)', () => {
     expect(problemsWith(withAcme([{ id: 'acme', version: '0.1.0' }]), { acme: '0.1.0' })).toEqual([]);
   });
 
-  it('names a missing plugin and its version, instead of unknown node types', () => {
-    expect(problemsWith(withAcme([{ id: 'acme', version: '0.2.0' }]), {})).toEqual(['requires plugin acme ≥ 0.2.0, which is not loaded']);
+  it('names a missing plugin and its version, instead of unknown node types or ports', () => {
+    // Without the plugin, its nodes are not in the catalog either: no edge error for their ports.
+    const doc = withAcme([{ id: 'acme', version: '0.2.0' }]);
+    let problems: string[] = [];
+    try {
+      validateGraph(doc, TEST_CATALOG, {});
+    } catch (err) {
+      problems = (err as GraphValidationError).problems;
+    }
+    expect(problems).toEqual(['requires plugin acme ≥ 0.2.0, which is not loaded']);
+  });
+
+  it('reports a node without a type instead of crashing', () => {
+    const doc = { ...graph([], []), nodes: [{ id: 'x', params: {} }] };
+    expect(problems(doc)).toEqual(['node x: unknown type "undefined"']);
   });
 
   it('names a plugin older than the graph needs', () => {
@@ -123,6 +136,7 @@ describe('validateGraph: plugins (v5)', () => {
   it('checks the shape of the plugins list', () => {
     expect(problemsWith(withAcme({ acme: '0.1.0' }), { acme: '0.1.0' })).toContain('plugins must be an array of { id, version }');
     expect(problemsWith(withAcme([{ id: 'acme', version: 'any' }]), { acme: '0.1.0' })).toContain('plugins: acme needs a version x.y.z');
+    expect(problemsWith(withAcme([{ id: 'acme', version: '1.2.3abc' }]), { acme: '0.1.0' })).toContain('plugins: acme needs a version x.y.z');
   });
 
   it('graphPlugins lists the loaded plugins the nodes use, at the loaded version', () => {

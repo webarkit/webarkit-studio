@@ -86,7 +86,13 @@ export function selectPlayerFiles(
   plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
 ): Set<string> {
   const chunkWith = (module: string) => Object.entries(manifest.chunks).find(([, c]) => c.modules.some((m) => m.endsWith(module)))?.[0];
-  const fromPlugins = pluginExportFiles(doc, plugins);
+  const fromPlugins = [...plugins].flatMap((plugin) => pluginExportFiles(doc, [plugin]).map((f) => ({ ...f, plugin: plugin.id })));
+  // A needed file the build does not have would leave the app without it: say so at export time.
+  for (const { file, needed, plugin } of fromPlugins) {
+    if (needed && file.kind !== 'file' && !chunkWith(file.module)) {
+      throw new ExportError(`plugin ${plugin}: ${file.module} is not in the player build (rebuild it with "npm run build:player")`);
+    }
+  }
   const optional = [
     ...OPTIONAL_MODULES.map((o) => ({ module: o.module, needed: o.needed(doc) })),
     ...fromPlugins.flatMap(({ file, needed }) => (file.kind === 'module' ? [{ module: file.module, needed }] : [])),

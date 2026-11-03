@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CORE_NODES } from '../../src/nodes/catalog';
 import { PLUGIN_API_VERSION, PluginValidationError, RESERVED_NAMESPACES, compareVersions, validatePlugin } from '../../src/core/plugins';
 import type { PluginSocketType, StudioPlugin } from '../../src/plugin-api';
 
@@ -54,6 +55,18 @@ describe('validatePlugin', () => {
       expect(RESERVED_NAMESPACES).toContain(ns);
       expect(problemsOf(plugin({ id: ns, nodes: [], factories: {}, sockets: [] }))).toContainEqual(expect.stringMatching(/reserved/));
     }
+  });
+
+  it('reserves every namespace of the core nodes', () => {
+    for (const ns of new Set(CORE_NODES.map((d) => d.type.split('.')[0]))) expect(RESERVED_NAMESPACES).toContain(ns);
+  });
+
+  it('reports malformed node types and socket ids instead of crashing', () => {
+    const p = plugin({ sockets: [{ id: 7 as unknown as PluginSocketType, label: 'M', color: '#fff' }] });
+    p.nodes[0] = { ...p.nodes[0], type: undefined as unknown as string };
+    const problems = problemsOf(p);
+    expect(problems).toContainEqual(expect.stringMatching(/socket "7" must start with "acme\."/));
+    expect(problems).toContainEqual(expect.stringMatching(/node type "undefined" must start with "acme\."/));
   });
 
   it('rejects a second plugin with the same id', () => {

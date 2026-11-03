@@ -22,7 +22,7 @@ wins on conflict.
   Controller Settings → `configure()`, the filter slot → `filter`, target ids → dataset
   indices. It depends only on the facade's public API (type imports and an injected
   `createNFTTracker`), so the browser worker and the Node tests share it. No DOM, worker
-  globals or build-specific imports in `src/runtime/trackers/`.
+  globals or build-specific imports in `src/runtime/trackers/` or `plugins/jsartoolkit-nft/nft-session.ts`.
 - Reimplementing in this repository what the facade does (a lost timer, a pose filter, a
   lens rebuild, a projection rescale) is **Blocking**: use the facade's setting or method.
 - The worker (`plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts`) only picks the build and
