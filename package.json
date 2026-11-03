@@ -22,7 +22,7 @@
     "assets": "node scripts/fetch-assets.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e.mjs",
     "bench": "tsx tests/bench/run.ts",
     "check:agents": "node scripts/check-agent-docs.mjs",
     "trace:record": "node scripts/trace-record.mjs",
