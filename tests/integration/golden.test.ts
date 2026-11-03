@@ -34,8 +34,9 @@ describe.skipIf(!haveAssets)('golden tracking run', () => {
     });
     const run = await runGolden(
       frames,
-      (frame, now) => {
-        const r = s.process(frame, now);
+      async (frame, now) => {
+        // The Node tracker never skips a frame.
+        const r = (await s.process(frame, now))!;
         return {
           found: r.poses.map((p) => p !== null),
           poses: r.poses,

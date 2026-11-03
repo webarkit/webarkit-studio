@@ -7,11 +7,25 @@
  *   npm run test:e2e
  *
  * PW_CHROMIUM_PATH=/path/to/chrome uses an already installed Chromium.
+ * PW_PORT=<port> serves the build on that port instead of the checkout's own.
+ * PW_REUSE_SERVER=1 tests a server already running on the port instead of
+ * failing; check that it serves this checkout's build.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { FAKE_CAMERA } from './tests/e2e/paths';
 
-const PORT = 4173;
+/**
+ * One port per checkout, derived from its path: worktrees running their e2e
+ * suites at the same time each test their own build. A shared fixed port let
+ * a run attach to another checkout's server and fail when that one stopped.
+ */
+function checkoutPort(dir: string): number {
+  let hash = 0x811c9dc5; // FNV-1a
+  for (const ch of dir.toLowerCase()) hash = Math.imul(hash ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+  return 40000 + (hash % 10000);
+}
+
+const PORT = Number(process.env.PW_PORT) || checkoutPort(process.cwd());
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -43,7 +57,8 @@ export default defineConfig({
   webServer: {
     command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}/index.html`,
-    reuseExistingServer: !process.env.CI,
+    // Off by default: a busy port fails clearly (--strictPort) instead of testing someone else's server.
+    reuseExistingServer: process.env.PW_REUSE_SERVER === '1',
     timeout: 180_000,
   },
 });

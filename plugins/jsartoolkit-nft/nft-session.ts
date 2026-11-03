@@ -1,12 +1,12 @@
 /**
- * NftSession: the jsartoolkitNFT tracker facade (createNFTTracker, #5) as the
- * controller node uses it.
+ * NftSession: the jsartoolkitNFT tracker facade (#5) as the controller node uses it:
+ * createNFTTrackerWorker in the browser, createNFTTracker in the Node tests.
  *
  * The facade does the tracking: per-target poses, found / lost transitions
  * after `lostTimeout`, pose filters, the lens and its projection. This file
  * only maps the graph's values onto it (Controller Settings → configure(),
  * filter slot → `filter`) and its target ids onto dataset indices, so the
- * same code runs in the browser worker and in Node tests with the Node build.
+ * same code runs on the page, over the facade's worker, and in Node tests with the Node build.
  */
 import type {
   FilterConfig,
@@ -16,6 +16,7 @@ import type {
   NFTTracker,
   NFTTrackerConfig,
   NFTTrackerPatch,
+  SkippedFrame,
   TargetLoad,
 } from '@webarkit/jsartoolkit-nft';
 import { version as JSARTOOLKIT_NFT_VERSION } from '@webarkit/jsartoolkit-nft/package.json';
@@ -38,8 +39,18 @@ export function traceFrame(result: FrameResult): TraceFrame {
   };
 }
 
-/** createNFTTracker of one build (browser, SIMD or Node). */
-export type NftTrackerFactory = (config: NFTTrackerConfig) => Promise<NFTTracker>;
+/**
+ * The facade's tracker, on the same thread (createNFTTracker: NFTTracker) or in its worker
+ * (createNFTTrackerWorker: every call is a Promise, and process() resolves `{ skipped: true }`
+ * while another frame is in flight).
+ */
+export interface NftTracker extends Pick<NFTTracker, 'cameraMatrix' | 'configure' | 'addNFTTargets' | 'projectionFor'> {
+  process(...args: Parameters<NFTTracker['process']>): FrameResult | Promise<FrameResult | SkippedFrame>;
+  dispose(): void | Promise<void>;
+}
+
+/** createNFTTracker (Node) or createNFTTrackerWorker (browser), with its options bound. */
+export type NftTrackerFactory = (config: NFTTrackerConfig) => Promise<NftTracker>;
 
 /** The jsartoolkitNFT.settings value (see the catalog for the defaults). */
 export interface NftSettings {
@@ -59,6 +70,11 @@ export interface NftSessionOptions {
   cameraUrl: string;
   /** Dataset URL prefixes; marker index = position in this array. */
   datasetUrls: string[];
+  /**
+   * What the tracker loads for each dataset, when it differs from its URL (an uploaded
+   * dataset's virtualSource()). Errors and traces name `datasetUrls`.
+   */
+  datasetSources?: string[];
   filter: PoseFilterConfig | null;
   settings: NftSettings | null;
   /**
@@ -115,7 +131,7 @@ export const describeLoadError = (load: Extract<TargetLoad, { status: 'error' }>
 
 export class NftSession {
   private constructor(
-    private readonly tracker: NFTTracker,
+    private readonly tracker: NftTracker,
     private readonly geometry: FrameGeometry,
     /** Facade target id → dataset index. */
     private readonly indexOf: Map<number, number>,
@@ -130,6 +146,9 @@ export class NftSession {
   /** Rejects if any dataset fails to load, with one line per failed dataset. */
   static async create(create: NftTrackerFactory, options: NftSessionOptions): Promise<NftSession> {
     if (!options.datasetUrls.length) throw new Error('at least one NFT dataset is required');
+    if (options.datasetSources && options.datasetSources.length !== options.datasetUrls.length) {
+      throw new Error('datasetSources must have one source per dataset URL');
+    }
     if (options.filter?.kind === 'native' && options.filter.library !== PLUGIN_ID) {
       throw new Error(`native filter for "${options.filter.library}" cannot be used with JsartoolkitNFT`);
     }
@@ -141,9 +160,9 @@ export class NftSession {
       ...(options.settings ? settingsPatch(options.settings) : {}),
     });
     try {
-      const loads = await tracker.addNFTTargets(options.datasetUrls);
-      const failed = loads.filter((l) => l.status === 'error');
-      if (failed.length) throw new Error(failed.map(describeLoadError).join('\n'));
+      const loads = await tracker.addNFTTargets(options.datasetSources ?? options.datasetUrls);
+      const failed = loads.flatMap((l, i) => (l.status === 'error' ? [describeLoadError({ ...l, url: options.datasetUrls[i] })] : []));
+      if (failed.length) throw new Error(failed.join('\n'));
       const indexOf = new Map<number, number>();
       const markers = loads.map((load, index) => {
         if (load.status !== 'loaded') throw new Error('unreachable');
@@ -153,7 +172,7 @@ export class NftSession {
       });
       return new NftSession(tracker, options.geometry, indexOf, markers, [...options.datasetUrls], options.filter, options.settings);
     } catch (err) {
-      tracker.dispose();
+      void tracker.dispose();
       throw err;
     }
   }
@@ -178,9 +197,14 @@ export class NftSession {
     return after.some((v, i) => v !== before[i]);
   }
 
-  /** Processes one RGBA frame of the processing size; `time` is an increasing clock, ms. */
-  process(image: { data: Uint8ClampedArray; width: number; height: number }, time: number): NftFrameResult {
-    const result = this.tracker.process(image, time);
+  /**
+   * Processes one RGBA frame of the processing size; `time` is an increasing clock, ms. The
+   * worker takes the frame's buffer (transferred). Resolves null for a frame the worker
+   * skipped because another was in flight.
+   */
+  async process(image: { data: Uint8ClampedArray; width: number; height: number }, time: number): Promise<NftFrameResult | null> {
+    const result = await this.tracker.process(image, time);
+    if (result.skipped) return null;
     const poses: NftFrameResult['poses'] = new Array(this.markers.length).fill(null);
     for (const t of result.targets) {
       const index = this.indexOf.get(t.id);
@@ -210,7 +234,8 @@ export class NftSession {
     };
   }
 
-  dispose() {
-    this.tracker.dispose();
+  /** Resolves once the tracker is disposed (for the worker: terminated). */
+  async dispose(): Promise<void> {
+    await this.tracker.dispose();
   }
 }

@@ -15,6 +15,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - The jsartoolkitNFT nodes are now a plugin (`plugins/jsartoolkit-nft/`), with unchanged node
   types, ports, params and tracking (same trace before and after). Its socket types are
   `jsartoolkitNFT.cameraParams`, `jsartoolkitNFT.dataset` and `jsartoolkitNFT.settings` (were `artk*`).
+- The controller runs the tracker in the facade's own worker, `createNFTTrackerWorker` from the
+  light client of `@webarkit/jsartoolkit-nft` 1.16.0 (#14), instead of a worker of ours. Its
+  worker files are served from `jsartoolkit-nft/<version>/` next to the page; exported apps get only the
+  worker of their build. A worker that does not start within 30 s fails the controller with a
+  clear error (the dataset loads that follow have no limit; stopping the graph ends them). Requires `@webarkit/jsartoolkit-nft` ≥ 1.16.0, whose One Euro filter keeps poses
+  rigid: One Euro-filtered poses differ slightly from 1.15.0 (no other tracking change).
 
 ### Added
 

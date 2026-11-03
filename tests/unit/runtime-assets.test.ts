@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GraphRuntime, NodeRuntimeError } from '../../src/runtime/runtime';
 import { VIRTUAL_ASSET_ORIGIN } from '../../src/runtime/assets';
-import { virtualFetch } from '../../plugins/jsartoolkit-nft/virtual-fetch';
+import { virtualFetch, virtualSource } from '../../plugins/jsartoolkit-nft/virtual-fetch';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
 import type { NodeDefinition } from '../../src/nodes/catalog';
@@ -102,22 +102,36 @@ describe('asset references at runtime', () => {
   });
 });
 
-describe('virtualFetch (tracker worker)', () => {
-  const files = { [`${VIRTUAL_ASSET_ORIGIN}/nft/pinball.iset`]: 'blob:test/1' };
+describe('virtualSource / virtualFetch (tracker worker)', () => {
+  const prefix = `${VIRTUAL_ASSET_ORIGIN}/id/my%20marker`;
+  const files = {
+    [`${prefix}.iset`]: 'blob:test/1',
+    [`${prefix}.fset`]: 'blob:test/2',
+    [`${VIRTUAL_ASSET_ORIGIN}/other/x.iset`]: 'blob:test/3',
+  };
   const base = vi.fn(async (input: RequestInfo | URL) => new Response(`fetched ${String(input)}`));
+  // The facade adds the extension before a prefix's query string (jsartoolkit-nft 1.16.0).
+  const withExtension = (source: string, ext: string) => source.replace('?', `.${ext}?`);
+
+  it("puts the dataset's own files in a virtual prefix, and leaves other URLs alone", () => {
+    const source = virtualSource(prefix, files);
+    expect(source.startsWith(`${prefix}?`)).toBe(true);
+    expect(Object.fromEntries(new URL(source).searchParams)).toEqual({ iset: 'blob:test/1', fset: 'blob:test/2' });
+    expect(virtualSource('http://localhost/data/DataNFT/pinball', files)).toBe('http://localhost/data/DataNFT/pinball');
+  });
 
   it('serves a virtual file from its blob URL', async () => {
-    const res = await virtualFetch(files, base)(`${VIRTUAL_ASSET_ORIGIN}/nft/pinball.iset`);
+    const res = await virtualFetch(base)(withExtension(virtualSource(prefix, files), 'iset'));
     expect(await res.text()).toBe('fetched blob:test/1');
   });
 
   it('answers 404 for other virtual URLs (the .zft probe)', async () => {
-    const res = await virtualFetch(files, base)(`${VIRTUAL_ASSET_ORIGIN}/nft/pinball.zft`, { signal: undefined });
+    const res = await virtualFetch(base)(withExtension(virtualSource(prefix, files), 'zft'), { signal: undefined });
     expect(res.status).toBe(404);
   });
 
   it('passes every other request through', async () => {
-    const res = await virtualFetch(files, base)('http://localhost/data/camera_para.dat');
+    const res = await virtualFetch(base)('http://localhost/data/camera_para.dat');
     expect(await res.text()).toBe('fetched http://localhost/data/camera_para.dat');
   });
 });

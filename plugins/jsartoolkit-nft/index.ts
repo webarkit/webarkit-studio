@@ -1,6 +1,6 @@
 /**
  * The jsartoolkitNFT plugin (#12): NFT tracking with @webarkit/jsartoolkit-nft
- * (its tracker facade, createNFTTracker) in a Web Worker.
+ * (its tracker facade, in the worker of createNFTTrackerWorker).
  *
  * Built against the plugin API only (@webarkit/studio-plugin-api, types), like
  * an external plugin: see docs/plugins.md.
@@ -9,9 +9,15 @@ import type { StudioPlugin } from '@webarkit/studio-plugin-api';
 import { NODES, SOCKETS } from './catalog';
 import { PLUGIN_ID } from './nft-session';
 import { artkCameraParams, artkController, artkNativeFilter, artkNftDataset, artkSettings } from './nodes';
+import { WORKER_DIR, workerFiles, type WorkerBuild } from './worker-files';
 
-const controllers = (build: 'simd' | 'default') => (nodes: Array<{ type: string; params: Record<string, unknown> }>) =>
+const controllers = (build: WorkerBuild) => (nodes: Array<{ type: string; params: Record<string, unknown> }>) =>
   nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === build);
+
+/** The worker files of each build the graph's controllers use (worker-files.ts), at the same path next to the page. */
+const workerExportFiles = (['simd', 'default'] as const).flatMap((build) =>
+  workerFiles(build).map((path) => ({ kind: 'file' as const, from: WORKER_DIR + path, to: WORKER_DIR + path, needed: controllers(build) })),
+);
 
 const plugin: StudioPlugin = {
   id: PLUGIN_ID,
@@ -29,10 +35,8 @@ const plugin: StudioPlugin = {
   exportFiles: [
     // This module's chunk: left out of apps whose graph does not use the plugin.
     { kind: 'module', module: 'plugins/jsartoolkit-nft/index.ts' },
-    { kind: 'worker', module: 'plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts', needed: (nodes) => nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
-    // The two builds the worker imports on demand (each embeds its WASM): only the one the controllers use.
-    { kind: 'module', module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js', needed: controllers('simd') },
-    { kind: 'module', module: 'jsartoolkit-nft/dist/ARToolkitNFT.js', needed: controllers('default') },
+    // The facade's worker of each build (each embeds its WASM): only the one the controllers use.
+    ...workerExportFiles,
   ],
 };
 

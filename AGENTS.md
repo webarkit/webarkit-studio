@@ -29,7 +29,7 @@ Pointer files never duplicate a rule, except where a tool cannot follow links (C
 - Typecheck: `npm run typecheck`
 - Unit + integration tests: `npm test`. Integration tests use the Node build of `@webarkit/jsartoolkit-nft` and read the assets with paths relative to the repository root, so run them from the root.
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
-- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium.
+- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock (`PW_NO_LOCK=1` skips it too). Each checkout serves its build on its own port, derived from its path; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
 - Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
 - Agent files: `npm run check:agents`.
 - Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
@@ -61,7 +61,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both.
 - **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
   - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.
-  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
+  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily. A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
   - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`).
 - **Renamed or removed node types, ports or params are a format change**: bump `GRAPH_VERSION`, update `public/graphs/` and add a `CHANGELOG.md` line.
 - **Naming:**
@@ -72,7 +72,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
   - The camera looks down −Z.
-- **Tracking is the jsartoolkitNFT tracker facade** (`createNFTTracker`, #5). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the worker and the Node tests share it. Keep the worker a thin relay, and do not reimplement in this repository what the facade does (found / lost, filters, lens, projection).
+- **Tracking is the jsartoolkitNFT tracker facade** (#5), in the facade's own worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the browser (over the worker) and the Node tests (`createNFTTracker`) share it. Do not reimplement in this repository what the facade does (found / lost, filters, lens, projection, the worker and its protocol). The worker files are served unchanged from `jsartoolkit-nft/<version>/` next to the page (`plugins/jsartoolkit-nft/worker-files.ts`, `vite.ts`); the only code of ours in the worker is `virtual-fetch.ts`, which serves uploaded datasets.
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 - **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired.
 - **Math nodes** (`math.*`) compute on plain numbers and arrays in marker space, never on renderer types; only the renderer adapters convert.

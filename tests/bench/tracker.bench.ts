@@ -34,11 +34,11 @@ export async function trackerBench(): Promise<Bench> {
   // An increasing clock, as process() expects.
   let t = 0;
   const now = () => (t += 33);
-  for (let i = 0; i < 5; i++) one.process(photo, now()), two.process(photo, now());
+  for (let i = 0; i < 5; i++) await one.process(photo, now()), await two.process(photo, now());
 
   bench
-    .add('1 marker, tracked (AR2)', () => void one.process(photo, now()))
-    .add('2 markers, tracked (AR2)', () => void two.process(photo, now()))
-    .add('2 datasets, nothing visible (KPM every frame)', () => void search.process(empty, now()));
+    .add('1 marker, tracked (AR2)', async () => void (await one.process(photo, now())))
+    .add('2 markers, tracked (AR2)', async () => void (await two.process(photo, now())))
+    .add('2 datasets, nothing visible (KPM every frame)', async () => void (await search.process(empty, now())));
   return bench;
 }
