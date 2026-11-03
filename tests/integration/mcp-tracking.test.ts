@@ -71,14 +71,15 @@ describe('tracking_run', () => {
   });
 
   it('rejects a controller id that is not a tracker node', async () => {
-    const graph = (await call(client, 'graph_edit', {
-      graphPath: 'public/graphs/multi-three.json',
-      ops: [],
-    })) as { value: { graph: { nodes: Array<{ id: string; type: string }> } } };
-    const ids = graph.value.graph.nodes.filter((n) => n.type === 'jsartoolkitNFT.controller').map((n) => n.id);
-    const result = await call(client, 'tracking_run', { graph: graph.value.graph, frames: FRAMES, controller: 'nope' });
-    expect(result).toEqual({ ok: false, error: expect.stringContaining('no tracker node "nope"') });
-    expect(ids.length).toBeGreaterThan(0);
+    const result = await call(client, 'tracking_run', { graphPath: 'public/graphs/multi-three.json', frames: FRAMES, controller: 'nope' });
+    expect(result).toEqual({ ok: false, error: 'no tracker node "nope" (tracker nodes: controller)' });
+  });
+
+  it('writes repo-relative dataset paths and a replayable source for a photo that fills the frame', async () => {
+    const { value } = (await call(client, 'tracking_run', { graphPath: 'public/graphs/pinball-image.json', frames: FRAMES, summaryOnly: true })) as { value: any };
+    expect(value.header.targets.map((t: { url: string }) => t.url)).toEqual(['public/data/DataNFT/pinball']);
+    expect(value.markers[0].url).toBe('public/data/DataNFT/pinball');
+    expect(value.header.source).toEqual({ kind: 'sequence', photo: FIXTURE_PHOTO, sequence: [['photo', 10], ['blank', 12]], startMs: 1_700_000_000_000, frameMs: 33 });
   });
 
   it('rejects uploaded assets, which only the studio has', async () => {
@@ -94,6 +95,28 @@ describe('tracking_run', () => {
     writeFileSync(small, jpeg.encode({ data: Buffer.alloc(64 * 48 * 4, 128), width: 64, height: 48 }, 80).data);
     const result = await call(client, 'tracking_run', { graph: await agentGraph(), frames: [{ image: FIXTURE_PHOTO }, { image: small }] });
     expect(result).toEqual({ ok: false, error: expect.stringContaining('small.jpg is 64 × 48') });
+  });
+
+  it('runs overlapping calls one after the other and gives Date.now back', async () => {
+    const args = { graphPath: 'public/graphs/pinball-image.json', frames: [{ image: FIXTURE_PHOTO, count: 3 }] };
+    const results = await Promise.all([call(client, 'tracking_run', args), call(client, 'tracking_run', args)]);
+    expect(results.map((r) => r.ok)).toEqual([true, true]);
+    const before = Date.now();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(Date.now()).toBeGreaterThan(before);
+    expect(Math.abs(Date.now() - new Date().getTime())).toBeLessThan(1000);
+  });
+
+  it('returns only the summary when asked', async () => {
+    const { value } = (await call(client, 'tracking_run', { graphPath: 'public/graphs/pinball-image.json', frames: FRAMES, summaryOnly: true })) as { value: any };
+    expect(value.frames).toBeUndefined();
+    expect(value.markers[0].foundFrames).toBeGreaterThan(0);
+    expect(value.markers[0].firstPose).toHaveLength(16);
+  });
+
+  it('caps the number of frames of a run', async () => {
+    const result = await call(client, 'tracking_run', { graphPath: 'public/graphs/pinball-image.json', frames: [{ image: FIXTURE_PHOTO, count: 1000 }, { image: 'blank', count: 1000 }, { image: 'blank', count: 1 }] });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('at most 2000 frames') });
   });
 
   it('needs a frame that is an image', async () => {
