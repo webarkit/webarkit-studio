@@ -122,7 +122,8 @@ export interface HeadlessTracker {
   geometry(video: { width: number; height: number }): ProcessGeometry;
   /**
    * `inputs`: the node's other input values, as its factory's init() gets them.
-   * `params`: its params, defaults filled in. `video`: the images' size; `frames`
+   * `params`: its params, defaults filled in (a param may not apply in Node: the
+   * jsartoolkitNFT controller's `build` picks a browser build). `video`: the images' size; `frames`
    * are already placed in the processing frame of geometry(video).
    * `setClock` pins Date.now: call it with each frame's time before processing it.
    */

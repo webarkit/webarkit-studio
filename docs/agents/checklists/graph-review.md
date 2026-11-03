@@ -46,8 +46,9 @@ key by key; a renamed key looks like one removal plus one addition.
 
 - A plugin's nodes, sockets and factories are in its manifest only (`StudioPlugin`,
   `src/plugin-api/index.ts`); its code imports the plugin API as types, its own files and npm
-  packages, never `src/`; `src/` never imports a plugin (only `webarkit-studio.config.ts` does, and
-  `vite.config.ts` for a plugin's build-time part, a Node-side Vite plugin).
+  packages, never `src/`; `src/` never imports a plugin (only `webarkit-studio.config.ts` does,
+  `webarkit-studio.node.config.ts` for the Node-only parts, and `vite.config.ts` for a plugin's
+  build-time part, a Node-side Vite plugin).
 - A graph that uses a plugin's nodes lists the plugin in `plugins` (format v5), with the
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of

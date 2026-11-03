@@ -25,7 +25,7 @@ describe('studio MCP server', () => {
   it('lists the tools of the issue', async () => {
     client = await connectStudio();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['catalog_list', 'graph_validate']));
+    expect(tools.map((t) => t.name)).toEqual(['catalog_list', 'graph_validate', 'graph_create', 'graph_edit', 'tracking_run', 'export_bundle']);
     for (const tool of tools) expect(tool.description).toBeTruthy();
   });
 

@@ -42,7 +42,6 @@ export interface RecordOptions {
   changes?: TraceSettings<NftSettings>[];
 }
 
-
 /** Records a trace of the current build over a sequence (by default the golden run's, with its settings and no filter). */
 export async function recordTrace(options: RecordOptions = {}): Promise<Trace<NftSettings>> {
   const {

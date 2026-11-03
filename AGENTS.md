@@ -68,7 +68,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - `export_bundle`: the standalone app `.zip`; needs `npm run build:player`.
 
 Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
-JSON or as a path; nothing is written except `export_bundle`'s zip. A tool is one module in `src/mcp/tools/` (a
+JSON or as a path; nothing is written except `export_bundle`'s zip (an existing file is overwritten). A tool is one module in `src/mcp/tools/` (a
 `StudioTool`) and one entry in `src/mcp/tools/index.ts`. `src/mcp/` never imports `src/editor` or `plugins/`:
 a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webarkit-studio.node.config.ts`
 (kept out of the browser config, it imports Node builds).
@@ -79,7 +79,7 @@ a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webar
 - **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both.
 - **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
   - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.
-  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily. A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
+  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily (and `webarkit-studio.node.config.ts`, the plugins' Node-only parts for the MCP server). A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
   - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`).
 - **Renamed or removed node types, ports or params are a format change**: bump `GRAPH_VERSION`, update `public/graphs/` and add a `CHANGELOG.md` line.
 - **Naming:**

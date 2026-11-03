@@ -28,7 +28,7 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   `graph_create`, `graph_edit`, `tracking_run` (the graph's tracker on JPEG images in Node, as trace
   records) and `export_bundle` (the standalone app). Plugins can run their trackers in Node with a
   `HeadlessTracker` (plugin API), listed in `webarkit-studio.node.config.ts`. Traces gain an `images`
-  source (several still images, not replayable).
+  source (several still images, not replayable; additive, `TRACE_VERSION` unchanged).
 - Plugin API (#12): a typed `StudioPlugin` manifest (`src/plugin-api`, types only) that adds
   nodes, sockets, factories and export files; plugins listed in `webarkit-studio.config.ts` are
   checked when loaded and become lazy chunks. See [Writing a plugin](docs/plugins.md).
