@@ -6,6 +6,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-03
+
 ### Changed
 
 - **Graph format v5** (#12): `plugins: [{ id, version }]` lists the plugins a graph's nodes
