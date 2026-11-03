@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { bundlePath, collectAssets, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
+import { bundlePath, collectAssets, collectPluginFiles, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
+import type { StudioPlugin } from '../../src/plugin-api';
 import { slugify, type ExportContext } from '../../src/export/exporters';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
@@ -95,6 +96,60 @@ describe('selectPlayerFiles', () => {
     expect([...files].some((f) => f.includes('three-adapter'))).toBe(true);
     expect([...files].some((f) => f.includes('babylon-adapter'))).toBe(false);
     expect([...files].some((f) => f.includes('jsartoolkit-nft.worker'))).toBe(true);
+  });
+});
+
+describe('plugin exportFiles', () => {
+  /** A plugin whose chunk, worker and optional heavy build are in the manifest, plus a data file. */
+  const acme = {
+    id: 'acme',
+    exportFiles: [
+      { kind: 'module', module: 'plugins/acme/index.ts' },
+      { kind: 'worker', module: 'plugins/acme/acme.worker.ts' },
+      { kind: 'module', module: 'acme-lib/dist/heavy.js', needed: (nodes) => nodes.some((n) => n.params.heavy === true) },
+      { kind: 'file', from: 'data/acme/model.bin', to: 'data/acme/model.bin' },
+    ],
+  } as StudioPlugin;
+  const withAcme: PlayerManifest = structuredClone(manifest);
+  withAcme.chunks['assets/player.js'].dynamicImports.push('assets/acme.js');
+  withAcme.chunks['assets/acme.js'] = { imports: [], dynamicImports: [], modules: ['plugins/acme/index.ts'] };
+  withAcme.chunks['assets/acme.worker.js'] = { imports: [], dynamicImports: ['assets/heavy.js'], modules: ['plugins/acme/acme.worker.ts'] };
+  withAcme.chunks['assets/heavy.js'] = { imports: [], dynamicImports: [], modules: ['node_modules/acme-lib/dist/heavy.js'] };
+  const acmeGraph = (params: Record<string, unknown> = {}): GraphDocument => ({
+    ...doc([['three.renderer']]),
+    nodes: [{ id: 'a', type: 'acme.tracker', params: params as GraphDocument['nodes'][number]['params'] }],
+  });
+
+  it('bundles the plugin chunk and worker for a graph using the plugin, and its optional modules when needed', () => {
+    const files = selectPlayerFiles(withAcme, html, acmeGraph(), [acme]);
+    expect(files.has('assets/acme.js')).toBe(true);
+    expect(files.has('assets/acme.worker.js')).toBe(true);
+    expect(files.has('assets/heavy.js')).toBe(false);
+    expect(selectPlayerFiles(withAcme, html, acmeGraph({ heavy: true }), [acme]).has('assets/heavy.js')).toBe(true);
+  });
+
+  it('leaves out every file of a plugin the graph does not use', () => {
+    const files = selectPlayerFiles(withAcme, html, doc([['three.renderer']]), [acme]);
+    expect(files.has('assets/acme.js')).toBe(false);
+    expect(files.has('assets/acme.worker.js')).toBe(false);
+    expect(files.has('assets/heavy.js')).toBe(false);
+  });
+
+  it('copies the static files of the plugins the graph uses', async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url);
+      return new Response('BIN');
+    });
+    try {
+      const base = new URL('http://localhost:5173/index.html');
+      const files = await collectPluginFiles(acmeGraph(), base, [acme]);
+      expect(fetched).toEqual(['http://localhost:5173/data/acme/model.bin']);
+      expect(new TextDecoder().decode(files['data/acme/model.bin'])).toBe('BIN');
+      expect(await collectPluginFiles(doc([['three.renderer']]), base, [acme])).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

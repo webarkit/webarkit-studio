@@ -11,11 +11,13 @@
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
-import { validateGraph, type GraphDocument } from '../core/graph';
+import { validateGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
+import { INSTALLED_PLUGINS } from '../plugins/host';
+import type { ExportFile, StudioPlugin } from '../plugin-api';
 
 export interface PlayerManifest {
   entry: string;
@@ -48,6 +50,16 @@ const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => bool
   { module: 'src/runtime/workers/jsartoolkit-nft.worker.ts', needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
 ];
 
+/** The plugins' export files, each with whether this graph needs it (it uses the plugin, and `needed` agrees). */
+function pluginExportFiles(doc: GraphDocument, plugins: Iterable<StudioPlugin>): Array<{ file: ExportFile; needed: boolean }> {
+  const out: Array<{ file: ExportFile; needed: boolean }> = [];
+  for (const plugin of plugins) {
+    const nodes: GraphNode[] = doc.nodes.filter((n) => n.type.startsWith(`${plugin.id}.`));
+    for (const file of plugin.exportFiles ?? []) out.push({ file, needed: nodes.length > 0 && (file.needed?.(nodes) ?? true) });
+  }
+  return out;
+}
+
 class ExportError extends Error {}
 
 async function fetchBytes(url: string, what: string): Promise<Uint8Array> {
@@ -68,12 +80,30 @@ async function tryFetch(url: string): Promise<Uint8Array | null> {
   }
 }
 
-/** Player files the graph needs, following the chunk graph from the entry page and worker roots. */
-/** Exported for tests. */
-export function selectPlayerFiles(manifest: PlayerManifest, entryHtml: string, doc: GraphDocument): Set<string> {
+/**
+ * Player files the graph needs, following the chunk graph from the entry page
+ * and worker roots. `plugins`: the loaded plugins, whose exportFiles add
+ * optional modules and worker roots. Exported for tests.
+ */
+export function selectPlayerFiles(
+  manifest: PlayerManifest,
+  entryHtml: string,
+  doc: GraphDocument,
+  plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
+): Set<string> {
   const chunkWith = (module: string) => Object.entries(manifest.chunks).find(([, c]) => c.modules.some((m) => m.endsWith(module)))?.[0];
+  const fromPlugins = pluginExportFiles(doc, plugins);
+  const optional = [
+    ...OPTIONAL_MODULES.map((o) => ({ module: o.module, needed: o.needed(doc) })),
+    ...fromPlugins.flatMap(({ file, needed }) => (file.kind === 'module' ? [{ module: file.module, needed }] : [])),
+  ];
+  const workers = [
+    ...WORKER_ROOTS.map((w) => ({ module: w.module, needed: w.needed(doc) })),
+    ...fromPlugins.flatMap(({ file, needed }) => (file.kind === 'worker' ? [{ module: file.module, needed }] : [])),
+  ];
   const excluded = new Set(
-    OPTIONAL_MODULES.filter((o) => !o.needed(doc))
+    optional
+      .filter((o) => !o.needed)
       .map((o) => chunkWith(o.module))
       .filter((f): f is string => !!f),
   );
@@ -82,8 +112,8 @@ export function selectPlayerFiles(manifest: PlayerManifest, entryHtml: string, d
   const queue: string[] = [];
   // Scripts and styles referenced by the entry page.
   for (const m of entryHtml.matchAll(/(?:src|href)="\.\/([^"]+)"/g)) queue.push(m[1]);
-  for (const root of WORKER_ROOTS) {
-    const file = root.needed(doc) ? chunkWith(root.module) : undefined;
+  for (const root of workers) {
+    const file = root.needed ? chunkWith(root.module) : undefined;
     if (file) queue.push(file);
   }
   while (queue.length) {
@@ -190,6 +220,19 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
   return files;
 }
 
+/** The static files (`kind: 'file'`) of the plugins the graph uses, as bundle path → bytes. Exported for tests. */
+export async function collectPluginFiles(
+  doc: GraphDocument,
+  base: URL,
+  plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
+): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  for (const { file, needed } of pluginExportFiles(doc, plugins)) {
+    if (file.kind === 'file' && needed) files[file.to] = await fetchBytes(new URL(file.from, base).href, `plugin file ${file.to}`);
+  }
+  return files;
+}
+
 export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
   const doc = validateGraph(structuredClone(input));
   const base = new URL(ctx.baseUrl);
@@ -213,6 +256,7 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
 
   // ---------------------------------------------------------------- assets
   Object.assign(files, await collectAssets(doc, base, ctx));
+  Object.assign(files, await collectPluginFiles(doc, base));
 
   // ------------------------------------------------------- page and graph
   const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');

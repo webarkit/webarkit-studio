@@ -45,7 +45,7 @@ function playerManifest(write: boolean): Plugin {
       if (!write) return;
       const files = (await listFiles(outDir)).map((f) => relative(outDir, f).replaceAll('\\', '/')).filter((f) => f !== 'manifest.json');
       const graph = Object.fromEntries(
-        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || OPTIONAL_PACKAGE_MODULES.some((p) => m.includes(p))) }]),
+        [...chunks].map(([file, c]) => [file, { imports: c.imports, dynamicImports: c.dynamicImports, modules: c.modules.filter((m) => m.startsWith('src/') || m.startsWith('plugins/') || OPTIONAL_PACKAGE_MODULES.some((p) => m.includes(p))) }]),
       );
       await writeFile(join(outDir, 'manifest.json'), JSON.stringify({ entry: 'player.html', files, chunks: graph }, null, 1));
     },
