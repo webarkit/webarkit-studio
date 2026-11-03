@@ -8,8 +8,15 @@
  * datasets), then runs the facade's own worker module unchanged from `facade/`.
  */
 
-/** The folder, relative to the page: the studio, its player and exported apps alike. */
-export const WORKER_DIR = 'jsartoolkit-nft/';
+// Also loaded by vite.config.ts (vite.ts), natively in Node: hence the attribute.
+import pkg from '@webarkit/jsartoolkit-nft/package.json' with { type: 'json' };
+
+/**
+ * The folder, relative to the page: the studio, its player and exported apps alike. The
+ * file names are fixed, so the folder names the package version: after a bump, a cached
+ * worker never meets a newer client (their protocol is versioned).
+ */
+export const WORKER_DIR = `jsartoolkit-nft/${pkg.version}/`;
 
 /** The facade's worker modules, under WORKER_DIR. */
 export const FACADE_DIR = 'facade/';

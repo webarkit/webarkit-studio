@@ -53,6 +53,21 @@ describe('NftSession (fake trackers)', () => {
     expect(await s.process(frame, 2)).toBeNull();
   });
 
+  it('loads datasetSources when given, and names datasetUrls in errors and traces', async () => {
+    const tracker = fakeTracker(() => result);
+    tracker.addNFTTargets = vi.fn(async (sources: string[]) => [
+      loads[0],
+      { status: 'error' as const, url: sources[1], reason: 'network' as const, message: 'HTTP 404' },
+    ]);
+    const err = await NftSession.create(async () => tracker, { ...options, datasetSources: ['a', 'b?iset=blob%3Ax'] }).catch((e: Error) => e);
+    expect(tracker.addNFTTargets).toHaveBeenCalledWith(['a', 'b?iset=blob%3Ax']);
+    expect((err as Error).message).toBe('cannot load NFT dataset b (network): HTTP 404');
+
+    const ok = fakeTracker(() => result);
+    const s = await NftSession.create(async () => ok, { ...options, datasetSources: ['a?x', 'b?y'] });
+    expect(s.traceHeader({ kind: 'camera' }).targets.map((t) => t.url)).toEqual(['a', 'b']);
+  });
+
   it('disposes the tracker, and waits for a worker to stop', async () => {
     let stopped = false;
     const tracker = fakeTracker(() => result);

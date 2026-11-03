@@ -10,8 +10,8 @@
  * URL back from it (virtualFetch). Any other virtual URL (the `.zft` probe) is a 404, as
  * on a plain web server.
  *
- * This file is served to the worker as it is, with its types stripped (vite.ts): it
- * imports types only.
+ * This file is served to the worker as it is, with its types stripped and no bundling
+ * (vite.ts): it must import types only (tests/unit/jsartoolkit-nft-plugin.test.ts checks it).
  */
 import type { VirtualAssetOrigin } from '@webarkit/studio-plugin-api';
 

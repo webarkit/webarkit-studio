@@ -28,7 +28,7 @@ wins on conflict.
 - Reimplementing in this repository what the facade does (a lost timer, a pose filter, a
   lens rebuild, a projection rescale) is **Blocking**: use the facade's setting or method.
 - No worker or protocol of our own: the facade's worker files are served unchanged from
-  `jsartoolkit-nft/` next to the page (`worker-files.ts`, `vite.ts`, the manifest's
+  `jsartoolkit-nft/<version>/` next to the page (`worker-files.ts`, `vite.ts`, the manifest's
   `exportFiles`). The only code of ours in that worker is `virtual-fetch.ts` (uploaded
   datasets). Any state, filtering, event logic or matrix maths added there, or a custom
   worker or message protocol, is **Blocking**: move the logic into `NftSession`.

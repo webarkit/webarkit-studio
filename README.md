@@ -176,7 +176,7 @@ decoders it downloads from its CDN, so prefer uncompressed models.
 pinball-nft-three-js/
   index.html  graph.json  README.txt
   assets/     player, three-adapter, jsartoolkit-nft plugin
-  jsartoolkit-nft/  the tracker worker of the graph's build (SIMD here)
+  jsartoolkit-nft/1.16.0/  the tracker worker of the graph's build (SIMD here)
   data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
 ```
 
@@ -213,8 +213,9 @@ Key decisions:
    async setup and stateful nodes, which the Rete dataflow engine does not model,
    and it would tie the player to Rete.
 4. **Tracking runs in a Web Worker**, one per controller node, as JsartoolkitNFT
-   recommends: the facade's own (`createNFTTrackerWorker`). Frame preparation and projection rescaling follow the upstream
-   `threejs_worker_ES6.js` example.
+   recommends: the facade's own (`createNFTTrackerWorker`). Frame preparation
+   follows the upstream `threejs_worker_ES6.js` example; the facade's
+   `projectionFor()` rescales the projection.
 5. **Rendering with lit-html.** Rete maintains renderers only for React, Vue,
    Angular and Svelte; `src/editor/lit-render-plugin.ts` (~200 lines)
    implements the same render contract with lit-html.
@@ -393,13 +394,13 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 ## Known issues / notes
 
 - Hosting must return **404** for missing files: JsartoolkitNFT's
-  `Utils.checkZFT()` probes `<marker>.zft` with a synchronous XHR and treats any
-  HTTP 200 (such as an SPA `index.html` fallback) as a compressed dataset. The
+  tracker probes `<marker>.zft` before the other files and treats any HTTP 200
+  (such as an SPA `index.html` fallback) as a compressed dataset (upstream #676). The
   Vite config sets `appType: 'mpa'` for this reason.
 - Each tracker worker embeds its WASM (~716 kB); the page loads only the light
   client (a few kB, in the plugin's chunk) and the worker of the selected build
   (SIMD or standard). The worker files are served unchanged from
-  `jsartoolkit-nft/` next to the page, outside the Vite pipeline (the plugin's
+  `jsartoolkit-nft/<version>/` next to the page, outside the Vite pipeline (the plugin's
   `vite.ts`), and exported apps get only their build's. The threaded build
   (`td`) and `build: 'auto'` are not offered: they need COOP / COEP headers.
 - Lazy chunks: Three.js adapter ~530 kB, Babylon.js adapter ~790 kB (deep

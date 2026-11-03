@@ -46,7 +46,10 @@ Node definitions and factories follow the same rules as the built-in nodes (`AGE
 ## Registering it
 
 List the plugin in [`webarkit-studio.config.ts`](../webarkit-studio.config.ts), under its id,
-as a lazy import:
+as a lazy import. A plugin with a build-time part (a Vite plugin that serves files outside the
+module graph, see "Workers and assets") is also added to `plugins` in
+[`vite.config.ts`](../vite.config.ts): the `StudioPlugin` manifest is browser code and cannot
+carry it.
 
 ```ts
 export default {
@@ -105,8 +108,9 @@ these rules for the jsartoolkitNFT plugin.
 
 ## Workers and assets
 
-- **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`.
-  Keep heavy builds (WASM) behind a dynamic `import()` inside the worker.
+- **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`,
+  or use the library's own worker (as the jsartoolkitNFT plugin does, see below). Keep heavy builds
+  (WASM) behind a dynamic `import()` inside the worker.
 - **Asset params**: a `string` param with `asset: 'file' | 'nftDataset' | 'model'` gets uploads and
   is bundled by the exporter. The runtime resolves uploads before the factory runs: files become
   blob: URLs; NFT dataset prefixes become virtual URLs under `VirtualAssetOrigin`, whose files are in

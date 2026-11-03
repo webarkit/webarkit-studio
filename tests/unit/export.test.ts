@@ -6,6 +6,7 @@ import { slugify, type ExportContext } from '../../src/export/exporters';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
+import { WORKER_DIR } from '../../plugins/jsartoolkit-nft/worker-files';
 
 /** A manifest shaped like the real one (see vite.player.config.ts). */
 const manifest: PlayerManifest = {
@@ -64,16 +65,16 @@ describe('selectPlayerFiles', () => {
       const base = new URL('http://localhost:5173/index.html');
       const simd = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'simd' }]]), base);
       expect(Object.keys(simd).sort()).toEqual([
-        'jsartoolkit-nft/NFTTracker_simd.worker.js',
-        'jsartoolkit-nft/facade/NFTTracker_simd.worker.js',
-        'jsartoolkit-nft/virtual-fetch.js',
+        `${WORKER_DIR}NFTTracker_simd.worker.js`,
+        `${WORKER_DIR}facade/NFTTracker_simd.worker.js`,
+        `${WORKER_DIR}virtual-fetch.js`,
       ]);
-      expect(fetched).toContain('http://localhost:5173/jsartoolkit-nft/facade/NFTTracker_simd.worker.js');
+      expect(fetched).toContain(`http://localhost:5173/${WORKER_DIR}facade/NFTTracker_simd.worker.js`);
       const standard = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'default' }]]), base);
       expect(Object.keys(standard).sort()).toEqual([
-        'jsartoolkit-nft/NFTTracker.worker.js',
-        'jsartoolkit-nft/facade/NFTTracker.worker.js',
-        'jsartoolkit-nft/virtual-fetch.js',
+        `${WORKER_DIR}NFTTracker.worker.js`,
+        `${WORKER_DIR}facade/NFTTracker.worker.js`,
+        `${WORKER_DIR}virtual-fetch.js`,
       ]);
       expect(await collectPluginFiles(doc([['three.renderer']]), base)).toEqual({});
     } finally {

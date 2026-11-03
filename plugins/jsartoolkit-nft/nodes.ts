@@ -23,7 +23,13 @@ import type {
 } from '@webarkit/studio-plugin-api';
 import type { ArtkCameraParamsValue, ArtkNftDatasetValue, ArtkSettingsValue } from './types';
 import { NftSession, PLUGIN_ID, type NftFrameResult } from './nft-session';
-import { createNFTTrackerWorker, type FrameGeometry, type NFTTrackerWorkerOptions } from '@webarkit/jsartoolkit-nft/client';
+import {
+  createNFTTrackerWorker,
+  type FrameGeometry,
+  type NFTTrackerConfig,
+  type NFTTrackerWorker,
+  type NFTTrackerWorkerOptions,
+} from '@webarkit/jsartoolkit-nft/client';
 import { virtualSource } from './virtual-fetch';
 import { WORKER_DIR } from './worker-files';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
@@ -118,7 +124,11 @@ export const artkNativeFilter: NodeFactory = () => ({
 const fired = (prev: EventValue, time: number, data?: unknown): EventValue => ({ count: prev.count + 1, time, data });
 const NOT_FIRED: EventValue = { count: 0, time: 0 };
 
-/** How long the tracker's worker may take to start (it compiles the WASM: several seconds on a slow phone). */
+/**
+ * How long the tracker's worker may take to start (it compiles the WASM: several seconds on a
+ * slow phone). It bounds the start only, not the dataset loads that follow; stopping the graph
+ * ends those.
+ */
 export const WORKER_START_TIMEOUT_MS = 30_000;
 
 /**
@@ -132,6 +142,8 @@ export function workerOptions(build: unknown, pageUrl: string, signal?: AbortSig
 /** jsartoolkitNFT.controller */
 export const artkController: NodeFactory = (params, ctx) => {
   let session: NftSession | null = null;
+  // The tracker as soon as its worker runs, so that stopping during the dataset loads terminates it.
+  let tracker: NFTTrackerWorker | null = null;
   // Aborts the worker's start: on timeout, or when the graph stops first.
   const starting = new AbortController();
   let disposed = false;
@@ -151,16 +163,17 @@ export const artkController: NodeFactory = (params, ctx) => {
   // Trace records since the last graph frame (see TrackingTraceValue).
   let trace: TrackingTraceValue | null = null;
   let pendingRecords: TraceRecord[] = [];
-  // A live settings change made while a frame was in flight: recorded after that frame's result, which used the old settings.
-  let heldSettings: TraceRecord | null = null;
+  // Live settings changes made while a frame was in flight: recorded once that frame is done, as it used the old settings.
+  const heldSettings: TraceRecord[] = [];
 
   const canvas = document.createElement('canvas');
   const g2d = canvas.getContext('2d', { willReadFrequently: true })!;
   // Geometry of the processing frame (see letterbox()).
   let geometry: FrameGeometry | null = null;
 
-  /** Logs an error of the tracker, one line per failed dataset (see NftSession.create). */
+  /** Logs an error of the tracker, one line per failed dataset (see NftSession.create); none once stopped. */
   const logError = (err: unknown) => {
+    if (disposed) return;
     for (const line of String((err as Error)?.message ?? err).split('\n')) ctx.log(`✗ ${ctx.nodeId}: ${line}`);
   };
 
@@ -180,10 +193,6 @@ export const artkController: NodeFactory = (params, ctx) => {
     }
     markers = next;
     pendingRecords.push(msg.frame);
-    if (heldSettings) {
-      pendingRecords.push(heldSettings);
-      heldSettings = null;
-    }
 
     const t = performance.now();
     fpsWindowFrames++;
@@ -230,17 +239,19 @@ export const artkController: NodeFactory = (params, ctx) => {
       const options = workerOptions(params.build, document.baseURI, starting.signal);
       let started: NftSession;
       try {
-        started = await NftSession.create((config) => createNFTTrackerWorker(config, options), {
+        const create = async (config: NFTTrackerConfig) => (tracker = await createNFTTrackerWorker(config, options));
+        started = await NftSession.create(create, {
           cameraUrl: camera.url,
+          datasetUrls: datasets.map((d) => d.url),
           // Uploaded datasets carry their files' blob: URLs to the worker (virtual-fetch.ts).
-          datasetUrls: datasets.map((d) => virtualSource(d.url, ctx.virtualFiles ?? {})),
+          datasetSources: datasets.map((d) => virtualSource(d.url, ctx.virtualFiles ?? {})),
           filter,
           settings: appliedSettings,
           geometry,
         });
       } catch (err) {
         // The init fails (shown on the node); the log gets one line per failed dataset.
-        if (!disposed) logError(err);
+        logError(err);
         throw err;
       } finally {
         clearTimeout(timeout);
@@ -251,10 +262,7 @@ export const artkController: NodeFactory = (params, ctx) => {
       }
       session = started;
       setLens(started);
-      const header = started.traceHeader({ kind: 'camera' });
-      // The datasets' own URLs, without the blob: URLs of virtualSource().
-      header.targets = header.targets.map((t, i) => ({ ...t, url: datasets[i].url }));
-      trace = { header, records: [] };
+      trace = { header: started.traceHeader({ kind: 'camera' }), records: [] };
 
       infos = started.markers.map((m, i) => ({ ...m, name: datasets[i].name }));
       markers = infos.map((info, index) => ({
@@ -287,7 +295,7 @@ export const artkController: NodeFactory = (params, ctx) => {
         // frame sent is processed after this configure (unless configure() itself awaits, as a
         // `{ module }` filter can; the graph's filters do not).
         const record: TraceRecord = { type: 'settings', time: performance.now(), settings };
-        if (busy) heldSettings = record;
+        if (busy) heldSettings.push(record);
         else pendingRecords.push(record);
       }
 
@@ -303,10 +311,15 @@ export const artkController: NodeFactory = (params, ctx) => {
         // tracking: it is only logged, and the next one is sent.
         s.process(image, sentAt)
           .then((result) => {
-            // null: skipped by the facade, as another frame was in flight (\`busy\` prevents it).
+            // null: skipped by the facade, as another frame was in flight (`busy` prevents it).
             if (result && session === s) onResult(result);
-          }, logError)
-          .finally(() => (busy = false));
+          })
+          .catch(logError)
+          .finally(() => {
+            busy = false;
+            // After the frame's record (onResult), even when the frame failed.
+            pendingRecords.push(...heldSettings.splice(0));
+          });
       }
       return frameOutputs();
     },
@@ -314,7 +327,9 @@ export const artkController: NodeFactory = (params, ctx) => {
     dispose() {
       disposed = true;
       starting.abort(new Error('the graph stopped'));
-      void session?.dispose();
+      // The facade's dispose() rejects the calls in flight (a dataset load too) and terminates the worker.
+      void tracker?.dispose();
+      tracker = null;
       session = null;
     },
   };

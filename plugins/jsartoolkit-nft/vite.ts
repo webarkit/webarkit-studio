@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { transformWithOxc, type Plugin } from 'vite';
-import { FACADE_DIR, VIRTUAL_FETCH_FILE, WORKER_DIR, WORKER_FILES, workerFiles, workerShim, type WorkerBuild } from './worker-files';
+import { FACADE_DIR, VIRTUAL_FETCH_FILE, WORKER_DIR, WORKER_FILES, workerFiles, workerShim, type WorkerBuild } from './worker-files.ts';
 
 const require = createRequire(import.meta.url);
 const BUILDS = Object.keys(WORKER_FILES) as WorkerBuild[];
@@ -45,7 +45,11 @@ export function jsartoolkitNftWorkerFiles(): Plugin {
     },
     async generateBundle() {
       const paths = new Set(BUILDS.flatMap(workerFiles));
-      for (const path of paths) this.emitFile({ type: 'asset', fileName: WORKER_DIR + path, source: (await workerFile(path))! });
+      for (const path of paths) {
+        const source = await workerFile(path);
+        if (source === null) throw new Error(`jsartoolkit-nft worker files: no source for ${path}`);
+        this.emitFile({ type: 'asset', fileName: WORKER_DIR + path, source });
+      }
     },
   };
 }

@@ -70,6 +70,11 @@ export interface NftSessionOptions {
   cameraUrl: string;
   /** Dataset URL prefixes; marker index = position in this array. */
   datasetUrls: string[];
+  /**
+   * What the tracker loads for each dataset, when it differs from its URL (an uploaded
+   * dataset's virtualSource()). Errors and traces name `datasetUrls`.
+   */
+  datasetSources?: string[];
   filter: PoseFilterConfig | null;
   settings: NftSettings | null;
   /**
@@ -141,6 +146,9 @@ export class NftSession {
   /** Rejects if any dataset fails to load, with one line per failed dataset. */
   static async create(create: NftTrackerFactory, options: NftSessionOptions): Promise<NftSession> {
     if (!options.datasetUrls.length) throw new Error('at least one NFT dataset is required');
+    if (options.datasetSources && options.datasetSources.length !== options.datasetUrls.length) {
+      throw new Error('datasetSources must have one source per dataset URL');
+    }
     if (options.filter?.kind === 'native' && options.filter.library !== PLUGIN_ID) {
       throw new Error(`native filter for "${options.filter.library}" cannot be used with JsartoolkitNFT`);
     }
@@ -152,9 +160,9 @@ export class NftSession {
       ...(options.settings ? settingsPatch(options.settings) : {}),
     });
     try {
-      const loads = await tracker.addNFTTargets(options.datasetUrls);
-      const failed = loads.filter((l) => l.status === 'error');
-      if (failed.length) throw new Error(failed.map(describeLoadError).join('\n'));
+      const loads = await tracker.addNFTTargets(options.datasetSources ?? options.datasetUrls);
+      const failed = loads.flatMap((l, i) => (l.status === 'error' ? [describeLoadError({ ...l, url: options.datasetUrls[i] })] : []));
+      if (failed.length) throw new Error(failed.join('\n'));
       const indexOf = new Map<number, number>();
       const markers = loads.map((load, index) => {
         if (load.status !== 'loaded') throw new Error('unreachable');
