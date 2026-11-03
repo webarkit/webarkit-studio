@@ -20,6 +20,7 @@ export type { CoreSocketType, PluginSocketType, SocketType } from '../core/socke
 export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
 export type {
   CameraValue,
+  ColorValue,
   EventValue,
   FrameInfo,
   MarkerInfoValue,

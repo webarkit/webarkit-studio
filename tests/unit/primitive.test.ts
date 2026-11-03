@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { primitive } from '../../src/runtime/nodes/scene';
+import { light, primitive } from '../../src/runtime/nodes/scene';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { resolveParams, type ParamValue } from '../../src/core/graph';
 import { transformMatrix, type SceneHandle, type SceneObject } from '../../src/runtime/renderers/adapter';
@@ -86,5 +86,56 @@ describe('scene.primitive transform', () => {
   it('position and rotation are live vector3 params', () => {
     const { position, rotation } = NODE_CATALOG['scene.primitive'].params;
     expect([position.kind, position.live, rotation.kind, rotation.live]).toEqual(['vector3', true, 'vector3', true]);
+  });
+});
+
+describe('colour inputs', () => {
+  function colourScene() {
+    const colours: number[][] = [];
+    const object = { scene: null, native: 'o' } as unknown as SceneObject;
+    const scene = {
+      createPrimitive: () => object,
+      createLight: () => object,
+      addRoot: () => {},
+      setMatrix: () => {},
+      setColor: (_o: SceneObject, c: readonly number[]) => void colours.push([...c]),
+    } as unknown as SceneHandle;
+    return { scene, colours };
+  }
+
+  it('Primitive: a connected colour (with alpha) overrides the colour param', () => {
+    const { scene, colours } = colourScene();
+    const p = params({ color: '#ff0000' });
+    const node = primitive(p, ctx);
+    node.init!({ scene, color: [0, 1, 0, 0.5] });
+    expect(colours.at(-1)).toEqual([0, 1, 0, 0.5]);
+    // While driven, a param edit changes nothing on screen.
+    p.color = '#0000ff';
+    node.onParamChange!('color', '#0000ff');
+    expect(colours.at(-1)).toEqual([0, 1, 0, 0.5]);
+    // Unwired (no value any more): back to the param, opaque.
+    node.update!({ scene }, frame(16));
+    expect(colours.at(-1)).toEqual([0, 0, 1, 1]);
+  });
+
+  it('Primitive: without a colour input nothing is re-applied every frame', () => {
+    const { scene, colours } = colourScene();
+    const node = primitive(params({ color: '#ff0000' }), ctx);
+    node.init!({ scene });
+    const count = colours.length;
+    node.update!({ scene }, frame(16));
+    expect(colours).toHaveLength(count);
+  });
+
+  it('Light: its colour param is live, and a connected colour overrides it', () => {
+    const { scene, colours } = colourScene();
+    const p = resolveParams(NODE_CATALOG['scene.light'], { color: '#ffffff' });
+    const node = light(p, ctx);
+    node.init!({ scene });
+    p.color = '#ff0000';
+    node.onParamChange!('color', '#ff0000');
+    expect(colours.at(-1)).toEqual([1, 0, 0, 1]);
+    node.update!({ scene, color: [0, 0, 1, 0.2] }, frame(16));
+    expect(colours.at(-1)).toEqual([0, 0, 1, 0.2]);
   });
 });

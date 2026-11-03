@@ -2,11 +2,14 @@
  * Renderer-agnostic scene nodes. Objects are created in the SceneHandle that
  * arrives on the `scene` input; the renderer is only reached through it.
  */
+import { clampRgba, hexToRgba, isRgba, type Rgba } from '../../core/color';
+import type { ParamValue } from '../../core/graph';
 import { transformMatrix, type LightSpec, type PrimitiveSpec } from '../renderers/adapter';
 import type {
   CameraValue,
   MarkerInfoValue,
   NodeFactory,
+  PortValues,
   PoseValue,
   ProjectionValue,
   RendererValue,
@@ -44,6 +47,7 @@ export const arCamera: NodeFactory = () => {
 export const light: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
   let handle: SceneObjectValue | null = null;
+  const colour = drivenColor(params);
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
@@ -54,10 +58,15 @@ export const light: NodeFactory = (params) => {
       });
       // In the scene root (camera space) until something adopts it, e.g. an anchor.
       scene.addRoot(handle);
+      colour.init(inputs, (c) => scene!.setColor(handle!, c));
       return { object: handle };
+    },
+    update(inputs) {
+      colour.update(inputs);
     },
     onParamChange(key, value) {
       if (key === 'intensity' && scene && handle) scene.setIntensity(handle, Number(value));
+      if (key === 'color') colour.paramChanged();
     },
   };
 };
@@ -71,6 +80,36 @@ const vec3 = (value: unknown): [number, number, number] => vec3OrNull(value) ?? 
 
 const sameVec3 = (a: readonly number[] | null, b: readonly number[] | null) => a === b || (!!a && !!b && a.every((v, i) => v === b[i]));
 
+/**
+ * A node's colour: the `color` input while it carries an rgba value, else the
+ * `color` param (opaque). `apply` runs only when the effective colour changes.
+ */
+function drivenColor(params: Record<string, ParamValue>) {
+  let driven: Rgba | null = null;
+  let applied: Rgba | null = null;
+  let apply: ((c: Rgba) => void) | null = null;
+  const refresh = () => {
+    const c = driven ?? hexToRgba(String(params.color));
+    if (applied && c.every((v, i) => v === applied![i])) return;
+    applied = c;
+    apply?.(c);
+  };
+  return {
+    init(inputs: PortValues, set: (c: Rgba) => void) {
+      apply = set;
+      driven = isRgba(inputs.color) ? clampRgba(inputs.color) : null;
+      // The engine object starts with the param colour: apply only an override.
+      applied = hexToRgba(String(params.color));
+      refresh();
+    },
+    update(inputs: PortValues) {
+      driven = isRgba(inputs.color) ? clampRgba(inputs.color) : null;
+      refresh();
+    },
+    paramChanged: refresh,
+  };
+}
+
 /** scene.primitive — a mesh resting on the marker plane (units: millimetres). */
 export const primitive: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
@@ -80,6 +119,7 @@ export const primitive: NodeFactory = (params) => {
   const size = Number(params.size); // not live: a change restarts the graph
   /** The `position` input while it carries a vector: it overrides the param. */
   let driven: [number, number, number] | null = null;
+  const colour = drivenColor(params);
   // Rests on the marker (lifted by half its size), then moved and rotated by its
   // params; spinning last in Rx · Ry · Rz turns it about its own Z axis.
   const applyTransform = () => {
@@ -98,9 +138,11 @@ export const primitive: NodeFactory = (params) => {
         color: String(params.color),
       });
       applyTransform();
+      colour.init(inputs, (c) => scene!.setColor(mesh!, c));
       return { object: mesh };
     },
     update(inputs, frame) {
+      colour.update(inputs);
       const next = vec3OrNull(inputs.position);
       const moved = !sameVec3(next, driven);
       driven = next;
@@ -108,8 +150,8 @@ export const primitive: NodeFactory = (params) => {
       if (params.spin) spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
       if (params.spin || moved) applyTransform();
     },
-    onParamChange(key, value) {
-      if (key === 'color' && scene && mesh) scene.setColor(mesh, String(value));
+    onParamChange(key) {
+      if (key === 'color') colour.paramChanged();
       if (key === 'position' || key === 'rotation') applyTransform();
     },
   };

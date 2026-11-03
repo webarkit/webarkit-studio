@@ -100,7 +100,8 @@ export interface SceneHandle {
   setPosition(object: SceneObject, x: number, y: number, z: number): void;
   setMatrix(object: SceneObject, matrix: ArrayLike<number>): void;
   setVisible(object: SceneObject, visible: boolean): void;
-  setColor(object: SceneObject, color: string): void;
+  /** [r, g, b, a] in sRGB 0–1; on a mesh, alpha below 1 makes it transparent (a light ignores alpha). */
+  setColor(object: SceneObject, color: readonly number[]): void;
   setIntensity(light: SceneObject, intensity: number): void;
 
   /** Draws the scene with the given projection (column-major 4x4). */

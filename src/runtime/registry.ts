@@ -10,6 +10,7 @@ import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
 import { add, addVector3, multiply, number, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
+import { rgba, split } from './nodes/color';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
@@ -37,6 +38,8 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'math.multiply': multiply,
   'math.sin': sin,
   'math.time': time,
+  'color.rgba': rgba,
+  'color.split': split,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
   'debug.trace': traceNode,

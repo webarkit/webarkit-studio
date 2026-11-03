@@ -12,7 +12,7 @@ import { Scene } from '@babylonjs/core/scene';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
-import type { Light } from '@babylonjs/core/Lights/light';
+import { Light } from '@babylonjs/core/Lights/light';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
@@ -149,9 +149,17 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       n.position.copyFrom(scratch.t);
     },
     setVisible: (o, v) => node(o).setEnabled(v),
-    setColor(o, c) {
-      const material = (node(o) as AbstractMesh).material as StandardMaterial | null;
-      if (material) material.diffuseColor = Color3.FromHexString(c);
+    setColor(o, [r, g, b, a]) {
+      const n = node(o);
+      // sRGB values, as Color3.FromHexString gives them for the params.
+      if (n instanceof Light) {
+        n.diffuse = new Color3(r, g, b);
+        return;
+      }
+      const material = (n as AbstractMesh).material as StandardMaterial | null;
+      if (!material) return;
+      material.diffuseColor = new Color3(r, g, b);
+      material.alpha = a; // below 1, Babylon draws the mesh in its transparent pass
     },
     setIntensity: (o, i) => void ((node(o) as Light).intensity = i * BABYLON_INTENSITY),
 

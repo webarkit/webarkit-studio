@@ -76,9 +76,10 @@ nodes without listing it is invalid.
 
 The core socket types (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and the values they carry
 (`src/plugin-api`: `VideoValue`, `TrackingResultValue` / `TrackedMarkerValue`, `ProjectionValue`,
-`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`, …)
-are the contract between plugins. Changing one is a breaking change of the plugin API, which bumps
-`PLUGIN_API_VERSION`.
+`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`,
+`ColorValue`, …) are the contract between plugins. Changing one is a breaking change of the plugin
+API, which bumps `PLUGIN_API_VERSION`. Adding a socket type (as `number`, `vector3` and `color` were)
+is not: plugins built for the same API version keep working.
 
 A tracker plugin that outputs `trackingResult`, `projection`, `onFound` / `onLost` and `stats`
 works with Select Marker, Marker Anchor, AR Camera, the filters, Inspector and Stats unchanged.

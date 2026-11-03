@@ -135,9 +135,20 @@ function createThreeScene(
       if (n.matrixAutoUpdate) n.matrix.decompose(n.position, n.quaternion, n.scale);
     },
     setVisible: (o, v) => void (obj(o).visible = v),
-    setColor(o, c) {
-      const material = (obj(o) as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      material?.color?.set(c);
+    setColor(o, [r, g, b, a]) {
+      const n = obj(o);
+      if (n instanceof THREE.Light) {
+        n.color.setRGB(r, g, b, THREE.SRGBColorSpace);
+        return;
+      }
+      const material = (n as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (!material?.color) return;
+      material.color.setRGB(r, g, b, THREE.SRGBColorSpace);
+      const transparent = a < 1;
+      if (material.transparent !== transparent) material.needsUpdate = true;
+      material.transparent = transparent;
+      material.opacity = a;
+      material.depthWrite = !transparent;
     },
     setIntensity: (o, i) => void ((obj(o) as THREE.Light).intensity = i),
 

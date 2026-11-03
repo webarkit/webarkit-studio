@@ -31,8 +31,8 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 "pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
 `source.videoFile` plays a recorded video the same way; if you fetched the
 assets before this demo existed, run `npm run assets` again for the photo).
-"pinball · math nodes" animates a cube with `math.time`, `math.sin` and
-`math.vector3` wired into the Primitive's Position. **⟳ Reload** restarts the preview (Stop + Run),
+"pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
+`math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color. **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -337,8 +337,8 @@ Planned split once the format stabilises (npm workspaces):
 | `babylon.renderer` | ✅ | → renderer |
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
-| `scene.light` | ✅ | scene → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ ⚡ | scene, position? → sceneObject (box, sphere, torus knot; position, rotation, spin) |
+| `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
+| `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
@@ -349,6 +349,8 @@ Planned split once the format stabilises (npm workspaces):
 | `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
 | `math.sin` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin(x) |
 | `math.time` | ✅ ⚡ | → seconds since start (× speed) |
+| `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
+| `color.split` | ✅ | color → r, g, b, a |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |

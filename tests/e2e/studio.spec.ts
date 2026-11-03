@@ -400,7 +400,7 @@ test.describe('math nodes', () => {
       await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
       await expect(nodeStatus(page, 'Inspector', 0)).toContainText('● tracked', { timeout: 20_000 });
       // Live: editing the sine applies without a restart.
-      const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input');
+      const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input').first();
       await amplitude.fill('5');
       await amplitude.dispatchEvent('change');
       await expect(page.locator('#log')).not.toContainText('press Reload');
@@ -421,6 +421,21 @@ test.describe('math nodes', () => {
     await expect(x).toBeEnabled();
     await page.click('#btn-undo');
     await expect(x).toBeDisabled();
+  });
+
+  test('a colour node drives the Primitive colour: the param is disabled, the colour applies live', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    const colour = page.locator('.studio-node:has(.title span:text-is("Primitive")) .param:has-text("Color") input[type=color]');
+    await expect(colour).toBeDisabled();
+    await run(page);
+    // Live: editing the RGBA node applies without a restart.
+    const green = page.locator('.studio-node:has(.title span:text-is("RGBA Color")) .param:has-text("G") input');
+    await green.fill('0.5');
+    await green.dispatchEvent('change');
+    await expect(page.locator('#log')).not.toContainText('press Reload');
+    // Without the colour node, the Primitive's own colour param is editable again.
+    await page.locator('.studio-node:has(.title span:text-is("RGBA Color")) .remove').click();
+    await expect(colour).toBeEnabled();
   });
 
   test('changing wires while the preview runs asks for a Reload', async ({ page }) => {
