@@ -378,21 +378,37 @@ test.describe('editor', () => {
 });
 
 test.describe('math nodes', () => {
-  test('pinball-math: time → sin → vector3 drives the Primitive position, the value changes while running', async ({ page }) => {
-    await loadDemo(page, 'pinball-math');
-    await run(page);
-    const lift = nodeStatus(page, 'Inspector', 1); // the second Inspector shows the vector
-    await expect(lift).toContainText(/\[0, 0, \d/);
-    const first = await lift.innerText();
-    await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
-    // Live: editing the sine applies without a restart.
-    const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input');
-    await amplitude.fill('5');
-    await amplitude.dispatchEvent('change');
-    await expect(page.locator('#log')).not.toContainText('press Reload');
-  });
+  for (const renderer of ['three', 'babylon']) {
+    test(`pinball-math on ${renderer}: time → sin → vector3 drives the Primitive position live`, async ({ page }) => {
+      await loadDemo(page, 'pinball-math');
+      if (renderer === 'babylon') {
+        // Same graph on the other renderer: swap the renderer node in the autosave.
+        await page.evaluate(() => {
+          const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
+          const node = doc.nodes.find((n: { type: string }) => n.type === 'three.renderer');
+          Object.assign(node, { type: 'babylon.renderer', params: {} });
+          localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
+        });
+        await page.reload();
+        await expect(page.locator('.studio-node .title span:text-is("Babylon.js Renderer")')).toHaveCount(1);
+      }
+      await run(page);
+      await expect(page.locator('#stage canvas')).toHaveCount(1);
+      const lift = nodeStatus(page, 'Inspector', 1); // the second Inspector shows the vector
+      await expect(lift).toContainText(/\[0, 0, \d/);
+      const first = await lift.innerText();
+      await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
+      await expect(nodeStatus(page, 'Inspector', 0)).toContainText('● tracked', { timeout: 20_000 });
+      // Live: editing the sine applies without a restart.
+      const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input');
+      await amplitude.fill('5');
+      await amplitude.dispatchEvent('change');
+      await expect(page.locator('#log')).not.toContainText('press Reload');
+      expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
+    });
+  }
 
-  test('a param driven by a connected input is shown as such, and editable again once unwired', async ({ page }) => {
+  test('a param driven by a connected input is disabled; removing the wire (and undo) toggles it', async ({ page }) => {
     await loadDemo(page, 'pinball-math');
     const primitive = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
     const x = primitive.locator('input[aria-label="Position x"]');
@@ -400,17 +416,18 @@ test.describe('math nodes', () => {
     await primitive.locator('.title').click();
     await expect(page.locator('#inspector input[aria-label="Position x"]')).toBeDisabled();
     await expect(page.locator('#inspector .param-vector3').first()).toHaveAttribute('title', /connected input/);
-    // Without the wire into Position (edited in the autosave, then reloaded) the param is editable again.
-    const wires = page.locator('svg.connection path');
-    const count = await wires.count();
-    await page.evaluate(() => {
-      const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
-      doc.edges = doc.edges.filter((e: { to: { node: string; port: string } }) => !(e.to.node === 'prim_pinball' && e.to.port === 'position'));
-      localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
-    });
-    await page.reload();
-    await expect(wires).toHaveCount(count - 1);
+    // Removing the Vector3 node removes its wire into Position: the param is editable again.
+    await page.locator('.studio-node:has(.title span:text-is("Vector3")) .remove').click();
     await expect(x).toBeEnabled();
+    await page.click('#btn-undo');
+    await expect(x).toBeDisabled();
+  });
+
+  test('changing wires while the preview runs asks for a Reload', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    await run(page);
+    await page.locator('.studio-node:has(.title span:text-is("Vector3")) .remove').click();
+    await expect(page.locator('#log')).toContainText('wires changed: press Reload to apply them');
   });
 });
 

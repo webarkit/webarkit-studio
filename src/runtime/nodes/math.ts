@@ -17,10 +17,22 @@ const numberOf = (inputs: PortValues, params: Params, key: string): number => {
   return typeof input === 'number' && Number.isFinite(input) ? input : Number(params[key]);
 };
 
+type Vec3 = [number, number, number];
+
+/** The connected vector input if it is three finite numbers, else the param. */
+const vectorOf = (inputs: PortValues, params: Params, key: string): Vec3 => {
+  const valid = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+  const input = inputs[key];
+  if (valid(input)) return [input[0], input[1], input[2]];
+  const param = params[key];
+  return valid(param) ? [param[0], param[1], param[2]] : [0, 0, 0];
+};
+
+// Object.is: a NaN output is "unchanged" too, not re-emitted every frame.
 const sameOutputs = (a: PortValues, b: PortValues) =>
   Object.keys(b).every((k) => {
     const [x, y] = [a[k], b[k]];
-    return Array.isArray(x) && Array.isArray(y) ? x.length === y.length && x.every((v, i) => v === y[i]) : x === y;
+    return Array.isArray(x) && Array.isArray(y) ? x.length === y.length && x.every((v, i) => Object.is(v, y[i])) : Object.is(x, y);
   });
 
 /** A node whose outputs are `compute(inputs)`: on init, every frame and on live param changes, returned when they change. */
@@ -61,6 +73,20 @@ export const splitVector3: NodeFactory = () =>
     return { x: v[0], y: v[1], z: v[2] };
   });
 
+/** math.addVector3 — a + b, component by component. */
+export const addVector3: NodeFactory = (params) =>
+  computed((inputs) => {
+    const [a, b] = [vectorOf(inputs, params, 'a'), vectorOf(inputs, params, 'b')];
+    return { vector: [a[0] + b[0], a[1] + b[1], a[2] + b[2]] };
+  });
+
+/** math.scaleVector3 — vector × factor. */
+export const scaleVector3: NodeFactory = (params) =>
+  computed((inputs) => {
+    const [v, k] = [vectorOf(inputs, params, 'vector'), numberOf(inputs, params, 'factor')];
+    return { vector: [v[0] * k, v[1] * k, v[2] * k] };
+  });
+
 /** math.add — a + b. */
 export const add: NodeFactory = (params) => computed((inputs) => ({ value: numberOf(inputs, params, 'a') + numberOf(inputs, params, 'b') }));
 
@@ -74,14 +100,20 @@ export const sin: NodeFactory = (params) =>
     value: Number(params.offset) + Number(params.amplitude) * Math.sin((numberOf(inputs, params, 'x') * Math.PI) / 180),
   }));
 
-/** math.time — seconds since start (the sum of frame deltas, so tests are deterministic), times speed. */
+/**
+ * math.time — seconds since the first frame (the sum of frame deltas, so tests
+ * are deterministic), each frame counted at the current speed: changing the
+ * speed changes the rate from now on, without a jump.
+ */
 export const time: NodeFactory = (params) => {
   let elapsed = 0;
   return {
     init: () => ({ seconds: 0 }),
     update(_inputs, frame) {
-      elapsed += frame.delta / 1000;
-      return { seconds: elapsed * Number(params.speed) };
+      elapsed += (frame.delta / 1000) * Number(params.speed);
+      return { seconds: elapsed };
     },
+    // Speed is read every frame; the value itself does not change with it.
+    onParamChange: () => ({ seconds: elapsed }),
   };
 };

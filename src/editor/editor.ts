@@ -27,6 +27,8 @@ export interface StudioEditorEvents {
   onParamChange?: (nodeId: string, key: string, value: ParamValue) => void;
   /** The node shown in the Inspector changed: the last one picked, null once none is selected. */
   onInspect?: (node: StudioNode | null) => void;
+  /** A wire was added or removed (a running preview applies it on the next Run). */
+  onWiresChange?: () => void;
   /** Undo or redo became available or unavailable. */
   onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
 }
@@ -309,7 +311,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         if (taken) return;
       }
     }
-    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') updateDriven(context.data.target);
+    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') {
+      updateDriven(context.data.target);
+      events.onWiresChange?.();
+    }
     if (['nodecreated', 'noderemoved', 'connectioncreated', 'connectionremoved'].includes(context.type)) {
       onChange();
       notifyHistory();

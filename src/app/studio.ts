@@ -48,6 +48,13 @@ const studio = await createStudioEditor($('editor'), {
   onParamChange(nodeId, key, value) {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
+  // Wires are read when the preview starts: say so once per run.
+  onWiresChange() {
+    if (runtime && !wiresChangedLogged) {
+      wiresChangedLogged = true;
+      log('⟳ wires changed: press Reload to apply them');
+    }
+  },
   onInspect(node) {
     commitPendingEdit(inspectorEl); // to the node it was typed for
     inspected = node;
@@ -178,6 +185,7 @@ $('btn-player').onclick = () => {
 
 // ------------------------------------------------------------- preview
 let runtime: GraphRuntime | null = null;
+let wiresChangedLogged = false;
 const stage = $('stage');
 const runBtn = $<HTMLButtonElement>('btn-run');
 const stopBtn = $<HTMLButtonElement>('btn-stop');
@@ -213,6 +221,7 @@ async function run(reason = 'run') {
       studio: true,
       assets: (assetId) => assetStore.get(assetId),
     });
+    wiresChangedLogged = false;
     await runtime.start();
     if (id !== runId) return; // superseded while starting
     log('✓ running');

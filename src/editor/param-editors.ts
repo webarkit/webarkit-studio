@@ -26,9 +26,13 @@ export function parseNumber(text: string, previous: number): number {
 /** Where the control is drawn: in a node (compact) or in the Inspector (full size). */
 export type ControlPlace = 'node' | 'inspector';
 
-const numberField = (value: number, set: (v: number) => void, attrs: { step?: number | string; min?: number; max?: number; label?: string }) =>
+const numberField = (
+  value: number,
+  set: (v: number) => void,
+  attrs: { step?: number | string; min?: number; max?: number; label?: string; disabled?: boolean },
+) =>
   html`<input type="number" .value=${String(value)} step=${attrs.step ?? 'any'} min=${attrs.min ?? nothing} max=${attrs.max ?? nothing}
-    aria-label=${attrs.label ?? nothing}
+    aria-label=${attrs.label ?? nothing} ?disabled=${attrs.disabled}
     @change=${(e: Event) => {
       const input = e.target as HTMLInputElement;
       // Empty or invalid text keeps the value; out of range is clamped.
@@ -37,19 +41,27 @@ const numberField = (value: number, set: (v: number) => void, attrs: { step?: nu
       if (next !== value) set(next);
     }} />`;
 
-export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamValue) => void, place: ControlPlace = 'node'): TemplateResult {
+/** `disabled` applies to single-field kinds; multi-field rows are disabled by their fieldset (paramRow). */
+export function paramControl(
+  spec: ParamSpec,
+  value: ParamValue,
+  set: (v: ParamValue) => void,
+  place: ControlPlace = 'node',
+  disabled = false,
+): TemplateResult {
   switch (spec.kind) {
     case 'boolean':
-      return html`<input type="checkbox" .checked=${Boolean(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />`;
+      return html`<input type="checkbox" .checked=${Boolean(value)} ?disabled=${disabled}
+        @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />`;
     case 'number':
-      return numberField(Number(value), set, { step: spec.step, min: spec.min, max: spec.max });
+      return numberField(Number(value), set, { step: spec.step, min: spec.min, max: spec.max, disabled });
     case 'select':
       // .selected (property): the attribute is ignored once the user picked an option.
-      return html`<select @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
+      return html`<select ?disabled=${disabled} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
         ${Object.entries(spec.options).map(([label, v]) => html`<option value=${v} .selected=${v === value}>${label}</option>`)}
       </select>`;
     case 'color':
-      return html`<input type="color" .value=${String(value)} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
+      return html`<input type="color" .value=${String(value)} ?disabled=${disabled} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
     case 'vector3': {
       const v = Array.isArray(value) && value.length === 3 ? value : spec.default;
       return html`<span class="vector" title=${spec.unit ? `x, y, z (${spec.unit})` : 'x, y, z'}>
@@ -69,7 +81,7 @@ export function paramControl(spec: ParamSpec, value: ParamValue, set: (v: ParamV
     }
     default:
       // Asset params suggest the project's uploads of their kind (datalists kept by the assets panel).
-      return html`<input type="text" .value=${String(value)} list=${spec.kind === 'string' && spec.asset ? `assets-${spec.asset}` : nothing}
+      return html`<input type="text" .value=${String(value)} ?disabled=${disabled} list=${spec.kind === 'string' && spec.asset ? `assets-${spec.asset}` : nothing}
         @change=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
   }
 }
@@ -91,12 +103,12 @@ export function paramRow(
 ): TemplateResult {
   const name = html`${spec.label}${spec.kind === 'vector3' && spec.unit ? ` (${spec.unit})` : ''}${spec.live ? html`<i class="live">⚡</i>` : nothing}`;
   const title = driven ? 'Set by the connected input' : spec.live ? 'Live: applied while running' : 'Applied on the next Run';
-  // A disabled fieldset disables every field of the control (vectors, matrices).
-  const control = html`<fieldset class="param-control" ?disabled=${driven}>${paramControl(spec, value, set, place)}</fieldset>`;
   const cls = `param param-${spec.kind} ${driven ? 'driven' : ''}`;
   if (spec.kind !== 'vector3' && spec.kind !== 'matrix4') {
-    return html`<label class=${cls} title=${title}><span>${name}</span>${control}</label>`;
+    return html`<label class=${cls} title=${title}><span>${name}</span>${paramControl(spec, value, set, place, driven)}</label>`;
   }
+  // A disabled fieldset disables every field of a vector or a matrix.
   const id = `param-row-${++rowIds}`;
-  return html`<div class=${cls} title=${title} role="group" aria-labelledby=${id}><span id=${id}>${name}</span>${control}</div>`;
+  return html`<div class=${cls} title=${title} role="group" aria-labelledby=${id}><span id=${id}>${name}</span
+    ><fieldset class="param-control" ?disabled=${driven}>${paramControl(spec, value, set, place)}</fieldset></div>`;
 }

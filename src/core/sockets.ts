@@ -25,9 +25,9 @@ export const SOCKET_TYPES = {
   scene: { label: 'Scene', color: '#f48fb1' },
   sceneObject: { label: 'Scene object', color: '#90a4ae' },
   boolean: { label: 'Boolean', color: '#fff176' },
-  number: { label: 'Number', color: '#b0bec5' },
+  number: { label: 'Number', color: '#a1887f' },
   /** x, y, z in marker space (mm, +Z up). */
-  vector3: { label: 'Vector (x, y, z)', color: '#ffcc80' },
+  vector3: { label: 'Vector (x, y, z)', color: '#7986cb' },
   event: { label: 'Event', color: '#ffffff' },
   /** Inputs only: accepts any socket type (Inspector). */
   any: { label: 'Any', color: '#757575' },

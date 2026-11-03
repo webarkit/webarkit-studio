@@ -30,7 +30,9 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 **▶ Run** and point the camera at the printed markers. No camera? The
 "pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
 `source.videoFile` plays a recorded video the same way; if you fetched the
-assets before this demo existed, run `npm run assets` again for the photo). **⟳ Reload** restarts the preview (Stop + Run),
+assets before this demo existed, run `npm run assets` again for the photo).
+"pinball · math nodes" animates a cube with `math.time`, `math.sin` and
+`math.vector3` wired into the Primitive's Position. **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -332,6 +334,7 @@ Planned split once the format stabilises (npm workspaces):
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |
 | `math.add` / `math.multiply` | ✅ ⚡ | a?, b? → number |
+| `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
 | `math.sin` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin(x) |
 | `math.time` | ✅ ⚡ | → seconds since start (× speed) |
 | `debug.inspector` | ✅ | any → (value shown in the node) |

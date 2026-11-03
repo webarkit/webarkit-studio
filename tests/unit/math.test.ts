@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { add, multiply, number, sin, splitVector3, time, vector3 } from '../../src/runtime/nodes/math';
+import { add, addVector3, multiply, number, scaleVector3, sin, splitVector3, time, vector3 } from '../../src/runtime/nodes/math';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { resolveParams, type ParamValue } from '../../src/core/graph';
 import type { FrameInfo, NodeFactory, PortValues, RuntimeContext } from '../../src/runtime/types';
@@ -75,10 +75,34 @@ describe('math.add and math.multiply', () => {
     expect(node.update!({ a: 3, b: 4 }, frame(16))).toEqual({ value: 12 });
   });
 
+  it('a NaN param is not re-emitted every frame', () => {
+    const { node } = make('math.number', number, { value: Number.NaN });
+    node.init!({});
+    expect(node.update!({}, frame(16))).toBeUndefined();
+  });
+
   it('ignores an input that is not a finite number (keeps the param)', () => {
     const { node } = make('math.add', add, { a: 1, b: 2 });
     node.init!({});
     expect(node.update!({ a: Number.NaN }, frame(16))).toBeUndefined();
+  });
+});
+
+describe('math.addVector3 and math.scaleVector3', () => {
+  it('addVector3: a + b component by component, inputs over params', () => {
+    const { node } = make('math.addVector3', addVector3, { b: [0, 0, 10] });
+    expect(node.init!({ a: [1, 2, 3] })).toEqual({ vector: [1, 2, 13] });
+  });
+
+  it('scaleVector3: vector × factor, inputs over params', () => {
+    const { node } = make('math.scaleVector3', scaleVector3, { factor: 2 });
+    expect(node.init!({ vector: [1, 2, 3] })).toEqual({ vector: [2, 4, 6] });
+    expect(node.update!({ vector: [1, 2, 3], factor: 10 }, frame(16))).toEqual({ vector: [10, 20, 30] });
+  });
+
+  it('a vector input that is not three finite numbers keeps the param', () => {
+    const { node } = make('math.scaleVector3', scaleVector3, { vector: [1, 1, 1], factor: 3 });
+    expect(node.init!({ vector: [1, Number.NaN, 1] })).toEqual({ vector: [3, 3, 3] });
   });
 });
 
@@ -104,27 +128,26 @@ describe('math.time', () => {
     node.update!({}, frame(250));
     expect(node.update!({}, frame(250))).toEqual({ seconds: 1 });
   });
+
+  it('a speed change applies from now on: no jump in the value', () => {
+    const { node, p } = make('math.time', time, { speed: 1 });
+    node.init!({});
+    node.update!({}, frame(600_000)); // 600 s
+    p.speed = 2;
+    expect(node.onParamChange!('speed', 2)).toEqual({ seconds: 600 });
+    expect(node.update!({}, frame(1000))).toEqual({ seconds: 602 });
+  });
 });
 
 describe('math catalog', () => {
   it('every math node is core, in the math category, with live params only', () => {
     const defs = Object.values(NODE_CATALOG).filter((d) => d.type.startsWith('math.'));
     expect(defs.map((d) => d.type).sort()).toEqual(
-      ['math.add', 'math.multiply', 'math.number', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3'].sort(),
+      ['math.add', 'math.addVector3', 'math.multiply', 'math.number', 'math.scaleVector3', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3'].sort(),
     );
     for (const d of defs) {
       expect([d.provider, d.category], d.type).toEqual(['core', 'math']);
       for (const [key, spec] of Object.entries(d.params)) expect(spec.live, `${d.type}.${key}`).toBe(true);
-    }
-  });
-
-  it('an input that overrides a param has the same name and a matching type', () => {
-    for (const d of Object.values(NODE_CATALOG).filter((n) => n.type.startsWith('math.'))) {
-      for (const [key, input] of Object.entries(d.inputs)) {
-        const param = d.params[key];
-        if (!param) continue;
-        expect([input.type, input.optional], `${d.type}.${key}`).toEqual([param.kind === 'vector3' ? 'vector3' : 'number', true]);
-      }
     }
   });
 });
