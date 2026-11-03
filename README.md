@@ -171,6 +171,18 @@ the Z of *Rotation*. It plays no animations. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
+Before you upload a dataset made from a new image, check that it will track:
+
+```bash
+npm run trackability -- path/to/marker        # its .fset3 and .fset: detection points, coverage,
+                                              # repetition, tracking points; exit 1 when poor
+npm run example:marker                        # a generated marker image in generated/
+npm run example:project -- generated/scribbles   # its dataset + a glTF model + a graph, for Import…
+```
+
+[Creative tools](docs/agents/creative-tools.md) sets up Blender, ComfyUI and
+Krita as MCP servers for markers and models, and walks through the example.
+
 ```
 pinball-nft-three-js/
   index.html  graph.json  README.txt

@@ -32,6 +32,7 @@ Pointer files never duplicate a rule, except where a tool cannot follow links (C
 - E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium.
 - Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
 - Agent files: `npm run check:agents`.
+- Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
 - Tracking traces: `npm run trace:record -- --out a.jsonl` records a deterministic trace in Node (`--filter`, `--settings`, `--replay <trace>`, `--golden`); `npm run trace:diff -- a.jsonl b.jsonl` compares two traces and exits non-zero above its thresholds. See "Tracking traces" below.
 
 CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.

@@ -18,6 +18,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Added
 
+- Trackability check for NFT datasets (#10): `npm run trackability -- <dataset>` rates the
+  feature points the NFT generator wrote (detection points, coverage, repetition, tracking
+  points), with hints; the logic is `plugins/jsartoolkit-nft/trackability.ts`, ready for the MCP
+  server (#8). `npm run example:marker` and `npm run example:project` take a generated marker to
+  a project file with a glTF model, and [Creative tools](docs/agents/creative-tools.md) sets up
+  Blender, ComfyUI and Krita.
 - Plugin API (#12): a typed `StudioPlugin` manifest (`src/plugin-api`, types only) that adds
   nodes, sockets, factories and export files; plugins listed in `webarkit-studio.config.ts` are
   checked when loaded and become lazy chunks. See [Writing a plugin](docs/plugins.md).
