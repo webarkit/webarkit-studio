@@ -62,7 +62,7 @@ export interface GraphDocument {
 }
 
 /** Namespace of a node type: "jsartoolkitNFT.controller" → "jsartoolkitNFT". */
-const namespaceOf = (type: unknown) => (typeof type === 'string' ? type.slice(0, Math.max(0, type.indexOf('.'))) : '');
+export const namespaceOf = (type: unknown) => (typeof type === 'string' ? type.slice(0, Math.max(0, type.indexOf('.'))) : '');
 
 /**
  * The `plugins` a document of these nodes must list: every loaded plugin a

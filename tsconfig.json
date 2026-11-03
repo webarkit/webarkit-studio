@@ -17,5 +17,5 @@
     "noUnusedParameters": true,
     "paths": { "@webarkit/studio-plugin-api": ["./src/plugin-api/index.ts"] }
   },
-  "include": ["src", "plugins", "tests", "webarkit-studio.config.ts", "vite.config.ts", "vite.player.config.ts", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["src", "plugins", "tests", "webarkit-studio.config.ts", "webarkit-studio.node.config.ts", "vite.config.ts", "vite.player.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }

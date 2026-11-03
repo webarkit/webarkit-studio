@@ -149,6 +149,45 @@ rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
+## MCP server
+
+An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
+Gemini CLI…) author, check, run and export graphs without the UI. `.mcp.json` declares it; to start it by hand:
+
+```bash
+npm run mcp:studio   # stdio, from the repository root
+```
+
+| Tool | What it does |
+|---|---|
+| `catalog_list` | node types with ports, params, defaults and live flags (core + plugins) |
+| `graph_validate` | the studio's validation, as a list of problems |
+| `graph_create` / `graph_edit` | build or change a graph with ops: add / remove nodes, connect, set params |
+| `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
+| `export_bundle` | the standalone app `.zip` (needs `npm run build:player`) |
+
+### Try it
+
+1. Once: `npm install`, `npm run assets` (camera parameters, datasets and the test photo
+   `tests/fixtures/pinball-demo.jpg`), and `npm run build:player` if you want `export_bundle`.
+2. Open your MCP client in the repository root. Claude Code picks up `.mcp.json` and asks to
+   approve `webarkit-studio`; `/mcp` then shows it connected with its six tools. Other clients:
+   add a stdio server running `node --import tsx src/mcp/main.ts` from the repository root.
+3. Ask, for example:
+
+   > Using catalog_list, build a tracking graph for the pinball dataset, validate it, run it with
+   > tracking_run on tests/fixtures/pinball-demo.jpg for 10 frames then 12 blank frames, and tell me
+   > in which frames the marker is found and lost.
+
+   The marker is found on the photo frames and lost about six blank frames later: the tracker's
+   `lostTimeout` (200 ms) at 33 ms per frame. Then, for instance, "export
+   public/graphs/pinball-three.json with export_bundle to out/app.zip", and serve the unzipped
+   folder with `npx serve`.
+
+Graphs are passed inline or as a path; the tools write nothing except `export_bundle`'s zip.
+The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`) cover every tool, the
+stdio transport and this scenario. See `AGENTS.md`, "MCP server".
+
 ## Assets
 
 **Upload…** in the *assets* panel (under the palette) adds files to the
@@ -410,7 +449,7 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
-- Graph format is `webarkit-studio/graph` v4; older versions are rejected, the
+- Graph format is `webarkit-studio/graph` v5; older versions are rejected, the
   studio falls back to the demo. Graphs saved by the prototype under its former
   name (`webar-studio/graph`) still load, and so does its last autosave.
 - JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light
@@ -459,6 +498,7 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - [x] First math nodes and a Primitive position driven by an input (#25)
 - [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
 - [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
+- [x] MCP server (#8): catalog, graph editing and validation, tracking on images in Node, app export
 - [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
 **Phase 3 — Logic & publishing**

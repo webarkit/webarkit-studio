@@ -171,3 +171,17 @@ jsartoolkitNFT, `NftSession`), so the browser and the Node tests share it:
 
 The test setup (`tests/setup/plugins.ts`) installs every plugin of `webarkit-studio.config.ts`, so
 tests see the same catalog as the studio.
+
+## Running a tracker in Node
+
+The MCP server's `tracking_run` (#8) runs a graph's tracker node in Node, on still images. A tracker
+node's factory needs a browser (a canvas, a worker), so the plugin provides a `HeadlessTracker`
+(`src/plugin-api`) for it: the input ports the frames replace, the processing frame for a video
+size, and `run()`, which gets the node's other input values (evaluated from the graph by the
+registry's factories), its params and the frames already placed in the processing frame, and returns
+trace records. It runs the same session class as the worker (jsartoolkitNFT:
+[`plugins/jsartoolkit-nft/headless.ts`](../plugins/jsartoolkit-nft/headless.ts)).
+
+List it in [`webarkit-studio.node.config.ts`](../webarkit-studio.node.config.ts), under the plugin's id,
+never in the manifest: it imports the library's Node build, which the studio's bundles must not
+contain.

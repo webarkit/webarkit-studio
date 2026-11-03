@@ -20,6 +20,7 @@ import {
   type TraceSource,
 } from '../../src/runtime/trackers/trace';
 import type { PoseFilterConfig } from '../../src/runtime/filters/pose-filter';
+import { withPinnedClock } from '../../src/mcp/headless';
 import { blank, FIXTURE_PHOTO, loadJpeg, resize } from './frames';
 import { FRAME_MS, GOLDEN_PATH, GOLDEN_SETTINGS, GOLDEN_TRACKER_VERSION, readGolden, runSequence, SEQUENCE, START_MS, type GoldenRun } from './golden';
 import { CAMERA, KUVA, nodeTrackerFactory, PINBALL } from './nft-node';
@@ -39,18 +40,6 @@ export interface RecordOptions {
   frame?: { width: number; height: number };
   /** Live settings changes, applied before the first frame whose time is >= theirs. */
   changes?: TraceSettings<NftSettings>[];
-}
-
-/** Pins Date.now to the frame clock while `fn` runs (AR2 seeds rand with time(NULL)). */
-async function withPinnedClock<T>(fn: (setClock: (now: number) => void) => Promise<T>): Promise<T> {
-  const realNow = Date.now;
-  let clock = realNow();
-  Date.now = () => clock;
-  try {
-    return await fn((now) => (clock = now));
-  } finally {
-    Date.now = realNow;
-  }
 }
 
 /** Records a trace of the current build over a sequence (by default the golden run's, with its settings and no filter). */
