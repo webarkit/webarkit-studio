@@ -28,7 +28,7 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 - MCP server (#8, `npm run mcp:studio`, declared in `.mcp.json`): `catalog_list`, `graph_validate`,
   `graph_create`, `graph_edit`, `tracking_run` (the graph's tracker on JPEG images in Node, as trace
-  records) and `export_bundle` (the standalone app). Plugins can run their trackers in Node with a
+  records) and `export_bundle` (the standalone app, from the studio build in `dist/`). Plugins can run their trackers in Node with a
   `HeadlessTracker` (plugin API), listed in `webarkit-studio.node.config.ts`. Traces gain an `images`
   source (several still images, not replayable; additive, `TRACE_VERSION` unchanged).
 - Trackability check for NFT datasets (#10): `npm run trackability -- <dataset>` rates the

@@ -179,12 +179,12 @@ npm run mcp:studio   # stdio, from the repository root
 | `graph_validate` | the studio's validation, as a list of problems |
 | `graph_create` / `graph_edit` | build or change a graph with ops: add / remove nodes, connect, set params |
 | `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
-| `export_bundle` | the standalone app `.zip` (needs `npm run build:player`) |
+| `export_bundle` | the standalone app `.zip`, from the studio build (`npm run build`, in `dist/`) |
 
 ### Try it
 
 1. Once: `npm install`, `npm run assets` (camera parameters, datasets and the test photo
-   `tests/fixtures/pinball-demo.jpg`), and `npm run build:player` if you want `export_bundle`.
+   `tests/fixtures/pinball-demo.jpg`), and `npm run build` if you want `export_bundle` (it exports from `dist/`).
 2. Open your MCP client in the repository root. Claude Code picks up `.mcp.json` and asks to
    approve `webarkit-studio`; `/mcp` then shows it connected with its six tools. Other clients:
    add a stdio server running `node --import tsx src/mcp/main.ts` from the repository root.
@@ -200,7 +200,7 @@ npm run mcp:studio   # stdio, from the repository root
    folder with `npx serve`.
 
 Graphs are passed inline or as a path; the tools write nothing except `export_bundle`'s zip.
-The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`) cover every tool, the
+The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`, and `tests/e2e/mcp-export.spec.ts` on the real build) cover every tool, the
 stdio transport and this scenario. See `AGENTS.md`, "MCP server".
 
 ## Assets
