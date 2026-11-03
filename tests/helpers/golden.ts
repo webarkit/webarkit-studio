@@ -45,7 +45,7 @@ export interface GoldenRun {
 }
 
 /** One step of a tracker under test: process a frame at time `now` (ms, same clock as Date.now). */
-export type GoldenStep = (frame: RgbaFrame, now: number) => Omit<GoldenFrame, 't'>;
+export type GoldenStep = (frame: RgbaFrame, now: number) => Omit<GoldenFrame, 't'> | Promise<Omit<GoldenFrame, 't'>>;
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
 
@@ -78,8 +78,8 @@ export async function runGolden(
 ): Promise<GoldenFrame[]> {
   return runSequence(
     frames,
-    (frame, now) => {
-      const r = step(frame, now);
+    async (frame, now) => {
+      const r = await step(frame, now);
       return { t: now - START_MS, ...r, poses: r.poses.map((p) => (p ? p.map(round) : null)) };
     },
     setClock,

@@ -82,14 +82,14 @@ export async function recordTrace(options: RecordOptions = {}): Promise<Trace<Nf
             await session.configure(change.settings);
             records.push(change);
           }
-          records.push(session.process(image, now).frame);
+          records.push((await session.process(image, now))!.frame);
         },
         setClock,
         source,
       );
       return { header, records };
     } finally {
-      session.dispose();
+      await session.dispose();
     }
   });
 }
