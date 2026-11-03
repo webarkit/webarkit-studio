@@ -7,6 +7,7 @@ for (const [demo, engine, absent] of [
   ['pinball-babylon', 'babylon-adapter', 'three-adapter'],
   ['pinball-image', 'three-adapter', 'babylon-adapter'],
   ['pinball-math', 'three-adapter', 'babylon-adapter'],
+  ['pinball-expression', 'three-adapter', 'babylon-adapter'],
 ] as const) {
   test(`export ${demo}: standalone app runs from a plain static server`, async ({ page, browser }) => {
     await loadDemo(page, demo);

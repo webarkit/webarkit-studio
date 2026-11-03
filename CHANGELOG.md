@@ -52,6 +52,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Primitive and Light take a `color` input that overrides their Color param; alpha below 1 makes a
   Primitive transparent on both renderers. Light's Color applies live. The math demo also fades the cube. The `color` namespace is
   reserved for built-in nodes (a plugin cannot use `color` as its id).
+- `math.expression` (#34), a formula node and the first step of the script nodes: `40 + 30 * sin(t * 180)`
+  with variables a–d (params or inputs) and t (its own seconds, or an input), operators, comparisons,
+  `? :`, and functions (trigonometry in degrees). Parsed by the studio itself, without `eval`; the editor
+  shows a formula error under its field. Demo: *pinball · one formula*.
 
 ## [0.1.0] - 2026-10-31
 

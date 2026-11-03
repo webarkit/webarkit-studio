@@ -32,7 +32,9 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 `source.videoFile` plays a recorded video the same way; if you fetched the
 assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
-`math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color. **⟳ Reload** restarts the preview (Stop + Run),
+`math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
+"pinball · one formula" moves it the same way with a single `math.expression`
+(`40 + 30 * sin(t * 180)`). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -346,6 +348,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
+| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`; degrees; no `eval`) |
 | `math.number` | ✅ ⚡ | → number |
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |

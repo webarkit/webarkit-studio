@@ -143,7 +143,7 @@ describe('math catalog', () => {
   it('every math node is core, in the math category, with live params only', () => {
     const defs = Object.values(NODE_CATALOG).filter((d) => d.type.startsWith('math.'));
     expect(defs.map((d) => d.type).sort()).toEqual(
-      ['math.add', 'math.addVector3', 'math.multiply', 'math.number', 'math.scaleVector3', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3'].sort(),
+      ['math.add', 'math.addVector3', 'math.expression', 'math.multiply', 'math.number', 'math.scaleVector3', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3'].sort(),
     );
     for (const d of defs) {
       expect([d.provider, d.category], d.type).toEqual(['core', 'math']);
