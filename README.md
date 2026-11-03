@@ -149,6 +149,18 @@ rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
+```
+pinball-nft-three-js/
+  index.html  graph.json  README.txt
+  assets/     player, three-adapter, jsartoolkit-nft worker, ARToolkitNFT_simd
+  data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
+```
+
+Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
+404 for missing files (see Known issues).
+Camera access requires a secure context: `localhost` works; on a phone use
+HTTPS or `adb reverse tcp:5173 tcp:5173`.
+
 ## Assets
 
 **Upload…** in the *assets* panel (under the palette) adds files to the
@@ -182,18 +194,6 @@ npm run example:project -- generated/scribbles   # its dataset + a glTF model + 
 
 [Creative tools](docs/agents/creative-tools.md) sets up Blender, ComfyUI and
 Krita as MCP servers for markers and models, and walks through the example.
-
-```
-pinball-nft-three-js/
-  index.html  graph.json  README.txt
-  assets/     player, three-adapter, jsartoolkit-nft worker, ARToolkitNFT_simd
-  data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
-```
-
-Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
-404 for missing files (see Known issues).
-Camera access requires a secure context: `localhost` works; on a phone use
-HTTPS or `adb reverse tcp:5173 tcp:5173`.
 
 ## Architecture
 
