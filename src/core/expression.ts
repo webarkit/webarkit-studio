@@ -3,13 +3,18 @@
  * and evaluated on plain numbers. No eval, no new Function: a graph with
  * expressions is safe to open from anyone and needs no `unsafe-eval`.
  *
- *   numbers, + - * / % ^ (right-associative), unary - + !, parentheses,
+ *   numbers, + - * / % ^ (right-associative), unary - + ! (not), parentheses,
  *   < <= > >= == != (1 or 0), && ||, cond ? a : b, the constant pi,
  *   the functions below (trigonometry in degrees, like the graph's rotations)
  *   and the variables the caller allows.
  *
  * Shared by the runtime (evaluation) and the editor (error display).
  */
+
+/** Longer formulas are refused: a graph can come from anyone, and the editor parses on every render. */
+export const MAX_EXPRESSION_LENGTH = 500;
+/** Parentheses, function calls and unary operators deeper than this are refused (the parser is recursive). */
+export const MAX_EXPRESSION_DEPTH = 64;
 
 /** The variables of math.expression: a–d (params or inputs) and t (time, or its input). */
 export const EXPRESSION_VARIABLES = ['a', 'b', 'c', 'd', 't'] as const;
@@ -78,6 +83,10 @@ function tokenize(source: string): Token[] {
       continue;
     }
     const num = /^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(source.slice(i));
+    if (num && /^[eE]/.test(source.slice(i + num[0].length))) {
+      // "1e" or "1e+" without exponent digits.
+      throw new ExpressionError(`malformed number "${num[0]}${source[i + num[0].length]}"`, i);
+    }
     if (num) {
       tokens.push({ type: 'number', text: num[0], value: Number(num[0]), position: i });
       i += num[0].length;
@@ -100,9 +109,22 @@ function tokenize(source: string): Token[] {
 
 /** Compiles `source`; variables outside `allowed` are errors. Throws ExpressionError. */
 export function compileExpression(source: string, allowed: readonly string[]): CompiledExpression {
+  if (source.length > MAX_EXPRESSION_LENGTH) {
+    throw new ExpressionError(`formula too long (more than ${MAX_EXPRESSION_LENGTH} characters)`, MAX_EXPRESSION_LENGTH);
+  }
   const tokens = tokenize(source);
   if (tokens[0].type === 'end') throw new ExpressionError('empty expression', 0);
   let at = 0;
+  let depth = 0;
+  /** Runs `parse` one nesting level deeper (a parenthesis, a call, a unary operator), within the limit. */
+  const nested = <T>(t: Token, parse: () => T): T => {
+    if (++depth > MAX_EXPRESSION_DEPTH) throw new ExpressionError(`nested too deeply (more than ${MAX_EXPRESSION_DEPTH} levels)`, t.position);
+    try {
+      return parse();
+    } finally {
+      depth--;
+    }
+  };
   const peek = () => tokens[at];
   const next = () => tokens[at++];
   const isOp = (text: string) => peek().type === 'op' && peek().text === text;
@@ -133,8 +155,9 @@ export function compileExpression(source: string, allowed: readonly string[]): C
   };
   const unary = (): Node => {
     if (isOp('-') || isOp('+') || isOp('!')) {
-      const op = next().text;
-      const operand = unary();
+      const t = next();
+      const op = t.text;
+      const operand = nested(t, unary);
       return op === '-' ? (v) => -operand(v) : op === '!' ? (v) => (operand(v) ? 0 : 1) : operand;
     }
     return power();
@@ -153,9 +176,11 @@ export function compileExpression(source: string, allowed: readonly string[]): C
       return () => value;
     }
     if (t.type === 'op' && t.text === '(') {
-      const inner = ternary();
-      expect(')');
-      return inner;
+      return nested(t, () => {
+        const inner = ternary();
+        expect(')');
+        return inner;
+      });
     }
     if (t.type === 'name') return name(t);
     throw unexpected(t);
@@ -166,14 +191,16 @@ export function compileExpression(source: string, allowed: readonly string[]): C
       if (!call) throw new ExpressionError(`${t.text} is a function: ${t.text}(…)`, t.position);
       next();
       const args: Node[] = [];
-      if (!isOp(')')) {
-        args.push(ternary());
-        while (isOp(',')) {
-          next();
+      nested(t, () => {
+        if (!isOp(')')) {
           args.push(ternary());
+          while (isOp(',')) {
+            next();
+            args.push(ternary());
+          }
         }
-      }
-      expect(')');
+        expect(')');
+      });
       const [min, max, fn] = FUNCTIONS[t.text];
       if (args.length < min || args.length > max) {
         const message =
@@ -187,7 +214,8 @@ export function compileExpression(source: string, allowed: readonly string[]): C
     const isVariable = allowed.includes(t.text);
     if (isVariable || Object.hasOwn(CONSTANTS, t.text)) {
       if (call) throw new ExpressionError(`"${t.text}" is not a function`, t.position);
-      if (isVariable) return (v) => v[t.text] ?? 0;
+      // Own properties only: a variable named like an Object property reads 0, never the property.
+      if (isVariable) return (v) => (Object.hasOwn(v, t.text) ? v[t.text] : 0);
       const value = CONSTANTS[t.text];
       return () => value;
     }
@@ -219,6 +247,7 @@ export function checkExpression(source: string, allowed: readonly string[]): { m
     return null;
   } catch (err) {
     if (err instanceof ExpressionError) return { message: err.message, position: err.position };
-    throw err;
+    // Never throws: the editor calls this while rendering.
+    return { message: `cannot read the formula (${(err as Error).message})`, position: 0 };
   }
 }

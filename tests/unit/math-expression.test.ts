@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expression, EXPRESSION_VARIABLES } from '../../src/runtime/nodes/expression';
+import { expression } from '../../src/runtime/nodes/expression';
+import { EXPRESSION_VARIABLES } from '../../src/core/expression';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { resolveParams, type ParamValue } from '../../src/core/graph';
 import type { FrameInfo, RuntimeContext } from '../../src/runtime/types';

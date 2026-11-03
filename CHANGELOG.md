@@ -55,7 +55,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - `math.expression` (#34), a formula node and the first step of the script nodes: `40 + 30 * sin(t * 180)`
   with variables a–d (params or inputs) and t (its own seconds, or an input), operators, comparisons,
   `? :`, and functions (trigonometry in degrees). Parsed by the studio itself, without `eval`; the editor
-  shows a formula error under its field. Demo: *pinball · one formula*.
+  shows a formula error under its field; formulas are limited to 500 characters and 64 nesting levels.
+  `ParamSpec` (plugin API) gains an optional `syntax: 'expression'` for such fields. Demo: *pinball · one formula*.
 
 ## [0.1.0] - 2026-10-31
 

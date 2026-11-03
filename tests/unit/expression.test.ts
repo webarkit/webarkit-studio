@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkExpression, compileExpression, ExpressionError } from '../../src/core/expression';
+import { checkExpression, compileExpression, ExpressionError, MAX_EXPRESSION_DEPTH, MAX_EXPRESSION_LENGTH } from '../../src/core/expression';
 
 const VARS = ['a', 'b', 'c', 'd', 't'] as const;
 const run = (source: string, vars: Partial<Record<(typeof VARS)[number], number>> = {}) =>
@@ -97,6 +97,24 @@ describe('expression: errors', () => {
 
   it('accepts a valid expression', () => {
     expect(error('a + b')).toBeNull();
+  });
+
+  it('refuses formulas that are too long or nested too deeply, instead of overflowing the stack', () => {
+    expect(error('1+'.repeat(5000) + '1')).toEqual({ message: `formula too long (more than ${MAX_EXPRESSION_LENGTH} characters)`, position: MAX_EXPRESSION_LENGTH });
+    const nested = '('.repeat(200) + '1' + ')'.repeat(200);
+    expect(error(nested)).toEqual({ message: `nested too deeply (more than ${MAX_EXPRESSION_DEPTH} levels)`, position: MAX_EXPRESSION_DEPTH });
+    expect(error('-'.repeat(200) + '1')?.message).toMatch(/nested too deeply/);
+    // Within the limits, still fine.
+    expect(run('('.repeat(20) + '1' + ')'.repeat(20))).toBe(1);
+  });
+
+  it('reports a malformed number', () => {
+    expect(error('1e + 2')).toEqual({ message: 'malformed number "1e"', position: 0 });
+  });
+
+  it('a variable named like an Object property reads 0, never the property', () => {
+    const f = compileExpression('constructor', ['constructor']);
+    expect(f.evaluate({})).toBe(0);
   });
 
   it('never evaluates JavaScript', () => {

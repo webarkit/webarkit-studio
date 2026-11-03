@@ -348,7 +348,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
-| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`; degrees; no `eval`) |
+| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`) |
 | `math.number` | ✅ ⚡ | → number |
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |

@@ -440,32 +440,32 @@ test.describe('math nodes', () => {
     await expect(colour).toBeEnabled();
   });
   for (const renderer of ['three', 'babylon']) {
-  test(`pinball-expression on ${renderer}: a formula error shows under the field, a valid formula applies live`, async ({ page }) => {
-    await loadDemo(page, 'pinball-expression');
-    if (renderer === 'babylon') {
-      await page.evaluate(() => {
-        const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
-        Object.assign(doc.nodes.find((n: { type: string }) => n.type === 'three.renderer'), { type: 'babylon.renderer', params: {} });
-        localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
-      });
-      await page.reload();
-      await expect(page.locator('.studio-node .title span:text-is("Babylon.js Renderer")')).toHaveCount(1);
-    }
-    await run(page);
-    const node = page.locator('.studio-node:has(.title span:text-is("Expression"))');
-    const formula = node.locator('.param:has-text("Formula") input');
-    await formula.fill('40 + 30 * sin(t * 180');
-    await formula.dispatchEvent('change');
-    await expect(node.locator('.param-error')).toContainText('expected ")" (character 22)');
-    await formula.fill('40 + 30 * sin(t * 180)');
-    await formula.dispatchEvent('change');
-    await expect(node.locator('.param-error')).toHaveCount(0);
-    await expect(page.locator('#log')).not.toContainText('press Reload');
-    // Its value drives the cube: the second Inspector shows the vector it feeds.
-    const lift = nodeStatus(page, 'Inspector', 1);
-    const first = await lift.innerText();
-    await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
-  });
+    test(`pinball-expression on ${renderer}: a formula error shows under the field, a valid formula applies live`, async ({ page }) => {
+      await loadDemo(page, 'pinball-expression');
+      if (renderer === 'babylon') {
+        await page.evaluate(() => {
+          const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
+          Object.assign(doc.nodes.find((n: { type: string }) => n.type === 'three.renderer'), { type: 'babylon.renderer', params: {} });
+          localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
+        });
+        await page.reload();
+        await expect(page.locator('.studio-node .title span:text-is("Babylon.js Renderer")')).toHaveCount(1);
+      }
+      await run(page);
+      const node = page.locator('.studio-node:has(.title span:text-is("Expression"))');
+      const formula = node.locator('.param:has-text("Formula") input');
+      await formula.fill('40 + 30 * sin(t * 180');
+      await formula.dispatchEvent('change');
+      await expect(node.locator('.param-error')).toContainText('expected ")" (character 22)');
+      await formula.fill('40 + 30 * sin(t * 180)');
+      await formula.dispatchEvent('change');
+      await expect(node.locator('.param-error')).toHaveCount(0);
+      await expect(page.locator('#log')).not.toContainText('press Reload');
+      // Its value drives the cube: the second Inspector shows the vector it feeds.
+      const lift = nodeStatus(page, 'Inspector', 1);
+      const first = await lift.innerText();
+      await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
+    });
   }
 
   test('changing wires while the preview runs asks for a Reload', async ({ page }) => {

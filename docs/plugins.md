@@ -75,6 +75,9 @@ The editor writes `plugins` when it saves. Opening a graph whose plugin is missi
 name ("requires plugin acme ≥ 0.1.0, which is not loaded"), and a graph that uses a plugin's
 nodes without listing it is invalid.
 
+A string param may set `syntax: 'expression'` only for a `math.expression`-style formula: the
+editor checks it against that node's variables (a–d, t).
+
 ## The sockets contract
 
 The core socket types (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and the values they carry

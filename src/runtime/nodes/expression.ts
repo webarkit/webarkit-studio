@@ -7,8 +7,6 @@
 import { compileExpression, EXPRESSION_VARIABLES, ExpressionError, type CompiledExpression } from '../../core/expression';
 import type { NodeFactory, PortValues } from '../types';
 
-export { EXPRESSION_VARIABLES };
-
 /** "message (character n)", counting from 1 as an editor shows it. */
 const describe = (err: ExpressionError) => `${err.message} (character ${err.position + 1})`;
 
@@ -17,6 +15,7 @@ export const expression: NodeFactory = (params, ctx) => {
   let inputs: PortValues = {};
   let seconds = 0;
   let last: number | undefined;
+  let reported = false;
 
   const variables = () => {
     const vars: Record<string, number> = {};
@@ -55,11 +54,13 @@ export const expression: NodeFactory = (params, ctx) => {
       if (key === 'expression') {
         try {
           compiled = compileExpression(String(params.expression), EXPRESSION_VARIABLES);
-          ctx.report('');
+          if (reported) ctx.report(''); // clear the earlier error
+          reported = false;
         } catch (err) {
           // Typing: keep running the last valid expression, show what is wrong.
           if (err instanceof ExpressionError) ctx.report(`✗ ${describe(err)}`);
           else throw err;
+          reported = true;
           return;
         }
       }

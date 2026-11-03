@@ -39,7 +39,10 @@ export type AssetKind = 'file' | 'nftDataset' | 'model';
 
 export type ParamSpec = ParamBase &
   (
-    /** `syntax: 'expression'`: a math.expression formula; the editor shows its errors (src/core/expression.ts). */
+    /**
+     * `syntax: 'expression'`: a math.expression formula (src/core/expression.ts) with the variables a–d and t;
+     * the editor shows its errors under the field. Meant for math.expression's own variables only.
+     */
     | { kind: 'string'; default: string; asset?: AssetKind; syntax?: 'expression' }
     | { kind: 'number'; default: number; min?: number; max?: number; step?: number }
     | { kind: 'boolean'; default: boolean }
@@ -409,7 +412,7 @@ export const CORE_NODES: NodeDefinition[] = [
     provider: 'core',
     description:
       'A number from a formula, e.g. 40 + 30 * sin(t * 180). Variables a, b, c, d (params, or their inputs) and t ' +
-      '(seconds since the first frame, or its input). Operators + - * / % ^, comparisons, && ||, ? :, pi; functions ' +
+      '(seconds since the first frame, or its input). Operators + - * / % ^, unary - and ! (not), comparisons, && ||, ? :, pi; functions ' +
       'sin cos tan asin acos atan atan2 (degrees), sqrt abs min max clamp lerp pow log exp floor ceil round mod.',
     inputs: {
       a: { type: 'number', label: 'A', optional: true },
