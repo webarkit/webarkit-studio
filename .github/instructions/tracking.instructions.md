@@ -6,7 +6,7 @@ applyTo: "src/runtime/trackers/**,plugins/**,src/runtime/nodes/tracking.ts,src/r
 
 Canonical source: [`AGENTS.md`](../../AGENTS.md) and the checklist [`docs/agents/checklists/tracking-review.md`](../../docs/agents/checklists/tracking-review.md). They win on conflict.
 
-- The jsartoolkitNFT tracker facade (`createNFTTracker`) does the tracking. `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto it (settings → `configure()`, filter slot → `filter`, target ids → dataset indices) and depends only on the facade's public API. The worker only picks the build and relays messages: flag any state, filtering or event logic added to it, and any reimplementation of what the facade does.
+- The jsartoolkitNFT tracker facade does the tracking, in its own worker (`createNFTTrackerWorker`, light client). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto it (settings → `configure()`, filter slot → `filter`, target ids → dataset indices) and depends only on the facade's public API. The only code of ours in the facade's worker is `virtual-fetch.ts` (uploaded datasets): flag any state, filtering or event logic added there, and any reimplementation of what the facade does (its worker and protocol included).
 - Found is the facade's `found` transition; lost fires once after `lostTimeout`; `markers[].found` is the raw per-frame tracking. Filters and state are per marker, inside the facade.
 - No filter node means `filter: 'none'`. Near / far are in mm; the facade rebuilds the lens itself.
 - The processing frame is a ~320 px 4:3 letterbox of the video with integer sizes (`letterbox()`, which calls `@webarkit/camera-view`); the projection comes from `projectionFor()` with that `FrameGeometry`.
