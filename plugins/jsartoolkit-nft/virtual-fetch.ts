@@ -1,11 +1,14 @@
 /**
  * fetch() for the tracker worker that also serves the files of uploaded NFT
- * datasets (src/runtime/assets.ts). The tracker facade loads a dataset from a
+ * datasets (RuntimeContext.virtualFiles). The tracker facade loads a dataset from a
  * URL prefix it completes with each extension; for an uploaded dataset that
  * prefix is virtual, and this maps its files onto their blob: URLs. Any other
  * virtual URL (the facade's `.zft` probe) is a 404, as on a plain web server.
  */
-import { VIRTUAL_ASSET_ORIGIN } from '../assets';
+import type { VirtualAssetOrigin } from '@webarkit/studio-plugin-api';
+
+/** The studio's origin of virtual asset URLs; the type checks it against the studio's. */
+export const VIRTUAL_ASSET_ORIGIN: VirtualAssetOrigin = 'https://assets.webarkit.invalid';
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 

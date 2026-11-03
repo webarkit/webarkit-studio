@@ -2,6 +2,7 @@
   "format": "webarkit-studio/graph",
   "version": 5,
   "name": "Pinball NFT · math: a bobbing cube (Three.js)",
+  "plugins": [{ "id": "jsartoolkitNFT", "version": "0.1.0" }],
   "nodes": [
     {
       "id": "camera",

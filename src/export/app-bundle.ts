@@ -36,19 +36,13 @@ const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => 
   // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
   { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
-  {
-    module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js',
-    needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === 'simd'),
-  },
-  {
-    module: 'jsartoolkit-nft/dist/ARToolkitNFT.js',
-    needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && n.params.build === 'default'),
-  },
+  // Plugins add theirs (tracker builds, their own chunk): `kind: 'module'` exportFiles.
 ];
-/** Workers are referenced by URL (new Worker(new URL(…))), not imported: started from these roots. */
-const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
-  { module: 'src/runtime/workers/jsartoolkit-nft.worker.ts', needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
-];
+/**
+ * Workers are referenced by URL (new Worker(new URL(…))), not imported: started from these roots.
+ * The core has none; plugins add theirs (`kind: 'worker'` exportFiles).
+ */
+const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [];
 
 /** The plugins' export files, each with whether this graph needs it (it uses the plugin, and `needed` agrees). */
 function pluginExportFiles(doc: GraphDocument, plugins: Iterable<StudioPlugin>): Array<{ file: ExportFile; needed: boolean }> {
@@ -293,8 +287,9 @@ Serve this folder with any static web server and open index.html, e.g.:
 Requirements:
 - Camera access needs a secure context: http://localhost works; on a phone use HTTPS
   (or "adb reverse tcp:8080 tcp:8080" on Android).
-- The server must answer 404 for missing files. JsartoolkitNFT probes <dataset>.zft and
-  treats any HTTP 200 (e.g. an SPA fallback page) as a compressed dataset.
+- The server must answer 404 for missing files. Trackers probe for optional files (the
+  jsartoolkitNFT tracker: <dataset>.zft) and treat any HTTP 200 (e.g. an SPA fallback
+  page) as that file.
 
 Contents
 --------

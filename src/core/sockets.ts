@@ -11,9 +11,6 @@
  */
 export const CORE_SOCKET_TYPES = {
   video: { label: 'Video', color: '#4fc3f7' },
-  artkCameraParams: { label: 'ARToolKit camera params', color: '#ffb74d' },
-  artkNftDataset: { label: 'ARToolKit NFT dataset', color: '#f06292' },
-  artkSettings: { label: 'ARToolKit controller settings', color: '#ff8a65' },
   poseFilter: { label: 'Pose filter', color: '#4db6ac' },
   trackingResult: { label: 'Tracking result (markers)', color: '#66bb6a' },
   trackingStats: { label: 'Tracking stats', color: '#26c6da' },

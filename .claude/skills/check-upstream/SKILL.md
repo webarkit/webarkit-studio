@@ -22,8 +22,8 @@ Also read `docs/proposals/jsartoolkitNFT-data-oriented-api.md`, issue #5 (`gh is
 
 Compare what upstream proposes or ships with:
 
-- `src/runtime/trackers/nft-session.ts`: how the graph maps onto `createNFTTracker` (settings, filter, ids, load errors, projection);
-- `src/runtime/workers/nft-protocol.ts`: the custom worker protocol `createNFTTrackerWorker` could replace;
+- `plugins/jsartoolkit-nft/nft-session.ts`: how the graph maps onto `createNFTTracker` (settings, filter, ids, load errors, projection);
+- `plugins/jsartoolkit-nft/protocol.ts`: the custom worker protocol `createNFTTrackerWorker` could replace;
 - the version of `@webarkit/jsartoolkit-nft` in `package.json`.
 
 ## 3. Draft the report

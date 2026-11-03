@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { filterConfig, settingsPatch } from '../../src/runtime/trackers/nft-session';
+import { filterConfig, settingsPatch } from '../../plugins/jsartoolkit-nft/nft-session';
 import { selectMarker } from '../../src/runtime/nodes/tracking';
 import { formatValue } from '../../src/runtime/nodes/debug';
-import { artkNftDataset, artkSettings, letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { artkNftDataset, artkSettings, letterbox } from '../../plugins/jsartoolkit-nft/nodes';
 import type { RuntimeContext } from '../../src/runtime/types';
 import type { TrackedMarkerValue } from '../../src/runtime/types';
 

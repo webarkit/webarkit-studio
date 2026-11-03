@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { parseTrace, serializeTrace, traceFrames } from '../../src/runtime/trackers/trace';
+import type { NftSettings } from '../../plugins/jsartoolkit-nft/nft-session';
 import { FIXTURE_PHOTO } from '../helpers/frames';
 import { KUVA, PINBALL } from '../helpers/nft-node';
 import { DEFAULT_SOURCE, goldenToTrace, recordTrace, replayTrace } from '../helpers/trace-recorder';
@@ -42,7 +43,7 @@ describe.skipIf(!haveAssets)('tracking traces', () => {
   });
 
   it('replays a trace: same frames, settings and filter, the same result', async () => {
-    const recorded = parseTrace(serializeTrace(await recordTrace({ filter: { kind: 'native', library: 'jsartoolkitNFT' } })));
+    const recorded = parseTrace<NftSettings>(serializeTrace(await recordTrace({ filter: { kind: 'native', library: 'jsartoolkitNFT' } })));
     const replayed = await replayTrace(recorded);
     expect(diffTraces(recorded, replayed).identical).toBe(true);
   });

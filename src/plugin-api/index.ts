@@ -13,6 +13,7 @@ import type { GraphNode } from '../core/graph';
 import type { PluginSocketType } from '../core/sockets';
 import type { NodeDefinition } from '../nodes/catalog';
 import type { NodeFactory } from '../runtime/types';
+import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
 export type { CoreSocketType, PluginSocketType, SocketType } from '../core/sockets';
@@ -38,6 +39,9 @@ export type {
 } from '../runtime/types';
 export type { PoseFilterConfig } from '../runtime/filters/pose-filter';
 export type { TraceFrame, TraceHeader, TraceRecord, TraceSettings, TraceSource } from '../runtime/trackers/trace';
+
+/** Origin of the virtual URLs of uploaded NFT datasets (RuntimeContext.virtualFiles keys), for a worker that serves them. */
+export type VirtualAssetOrigin = typeof VIRTUAL_ASSET_ORIGIN;
 
 /** A socket type of the plugin's own, for data only its nodes exchange. */
 export interface SocketDefinition {

@@ -4,12 +4,12 @@
  * more NFT datasets). The mapping onto the facade lives in NftSession, shared
  * with the Node tests; this file only picks the build and relays messages.
  */
-import { NftSession, type NftTrackerFactory } from '../trackers/nft-session';
-import type { WorkerRequest, WorkerResponse } from './nft-protocol';
+import { NftSession, type NftTrackerFactory } from './nft-session';
+import type { WorkerRequest, WorkerResponse } from './protocol';
 import { virtualFetch } from './virtual-fetch';
 
 declare const self: DedicatedWorkerGlobalScope;
-/** Uploaded NFT dataset files, virtual URL → blob: URL, as each load sends them (src/runtime/assets.ts). */
+/** Uploaded NFT dataset files, virtual URL → blob: URL, as each load sends them (RuntimeContext.virtualFiles). */
 const virtualFiles: Record<string, string> = {};
 self.fetch = virtualFetch(virtualFiles, self.fetch.bind(self));
 

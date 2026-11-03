@@ -5,8 +5,8 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
-import { NftSession, type NftFrameResult, type NftSessionOptions } from '../../src/runtime/trackers/nft-session';
-import { letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { NftSession, type NftFrameResult, type NftSessionOptions } from '../../plugins/jsartoolkit-nft/nft-session';
+import { letterbox } from '../../plugins/jsartoolkit-nft/nodes';
 import { CAMERA, KUVA, nodeTrackerFactory, PINBALL } from '../helpers/nft-node';
 import { blank, FIXTURE_PHOTO, loadJpeg, resize, type RgbaFrame } from '../helpers/frames';
 

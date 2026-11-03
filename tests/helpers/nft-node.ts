@@ -4,7 +4,7 @@
  * working directory (NODEFS), so paths are repo-relative: run tests from the root.
  */
 import { createNFTTracker } from '@webarkit/jsartoolkit-nft/node';
-import type { NftTrackerFactory } from '../../src/runtime/trackers/nft-session';
+import type { NftTrackerFactory } from '../../plugins/jsartoolkit-nft/nft-session';
 
 export const nodeTrackerFactory: NftTrackerFactory = createNFTTracker;
 

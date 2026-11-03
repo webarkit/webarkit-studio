@@ -33,7 +33,7 @@ const manifest: PlayerManifest = {
     'assets/worker.js': {
       imports: [],
       dynamicImports: ['assets/ARToolkitNFT_simd.js', 'assets/ARToolkitNFT.js'],
-      modules: ['src/runtime/workers/jsartoolkit-nft.worker.ts'],
+      modules: ['plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts'],
     },
     'assets/ARToolkitNFT.js': { imports: [], dynamicImports: [], modules: ['node_modules/@webarkit/jsartoolkit-nft/dist/ARToolkitNFT.js'] },
     'assets/ARToolkitNFT_simd.js': { imports: [], dynamicImports: [], modules: ['node_modules/@webarkit/jsartoolkit-nft/dist/ARToolkitNFT_simd.js'] },

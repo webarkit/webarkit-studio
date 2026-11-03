@@ -1,6 +1,6 @@
 ---
 name: graph-reviewer
-description: Read-only reviewer for changes to the graph format, the node catalog, the registry, node implementations and the demo graphs (src/core, src/nodes, src/runtime/registry.ts, src/runtime/nodes, public/graphs). Checks a diff against docs/agents/checklists/graph-review.md and AGENTS.md. Use after implementing a task, before committing.
+description: Read-only reviewer for changes to the graph format, the node catalog, the registry, node implementations and the demo graphs (src/core, src/nodes, src/plugin-api, src/plugins, src/runtime/registry.ts, src/runtime/nodes, the plugins' catalogs and manifests, public/graphs). Checks a diff against docs/agents/checklists/graph-review.md and AGENTS.md. Use after implementing a task, before committing.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---

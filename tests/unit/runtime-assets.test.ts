@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GraphRuntime, NodeRuntimeError } from '../../src/runtime/runtime';
 import { VIRTUAL_ASSET_ORIGIN } from '../../src/runtime/assets';
-import { virtualFetch } from '../../src/runtime/workers/virtual-fetch';
+import { virtualFetch } from '../../plugins/jsartoolkit-nft/virtual-fetch';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
 import type { NodeDefinition } from '../../src/nodes/catalog';

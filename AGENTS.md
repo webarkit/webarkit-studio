@@ -57,7 +57,11 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 ## Architecture rules
 
 - **The JSON graph is the source of truth.** The editor and the runtime both depend on `src/core`, and never on each other.
-- **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` and are mapped by the registry. A node type must exist in both.
+- **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both.
+- **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
+  - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.
+  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
+  - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`).
 - **Renamed or removed node types, ports or params are a format change**: bump `GRAPH_VERSION`, update `public/graphs/` and add a `CHANGELOG.md` line.
 - **Naming:**
   - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
@@ -67,7 +71,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
   - The camera looks down −Z.
-- **Tracking is the jsartoolkitNFT tracker facade** (`createNFTTracker`, #5). `NftSession` (`src/runtime/trackers/`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the worker and the Node tests share it. Keep the worker a thin relay, and do not reimplement in this repository what the facade does (found / lost, filters, lens, projection).
+- **Tracking is the jsartoolkitNFT tracker facade** (`createNFTTracker`, #5). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the worker and the Node tests share it. Keep the worker a thin relay, and do not reimplement in this repository what the facade does (found / lost, filters, lens, projection).
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 - **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired.
 - **Math nodes** (`math.*`) compute on plain numbers and arrays in marker space, never on renderer types; only the renderer adapters convert.
@@ -81,14 +85,16 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 5. Add the node to the README node table (⚡ for live params).
 6. A new node is not a format change. Renaming or removing an existing one is (see above).
 
+A plugin's node goes into the plugin instead of steps 1 to 3: its catalog (for jsartoolkitNFT, `plugins/jsartoolkit-nft/catalog.ts`) and the `factories` of its manifest (`plugins/jsartoolkit-nft/index.ts`). Steps 4 to 6 are the same.
+
 In Claude Code, the `new-node` skill (`.claude/skills/new-node/`) walks through these steps.
 
 ## Review checklists
 
 Before committing, review the diff against the matching checklist:
 
-- [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets. For changes to `src/core/`, `src/nodes/`, `src/runtime/registry.ts`, `src/runtime/nodes/` and `public/graphs/`.
-- [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, readiness for the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `src/runtime/workers/`, the tracker nodes and `src/runtime/filters/`.
+- [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets. For changes to `src/core/`, `src/nodes/`, `src/plugin-api/`, `src/plugins/`, `src/runtime/registry.ts`, `src/runtime/nodes/`, a plugin's catalog and manifest, and `public/graphs/`.
+- [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, readiness for the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `plugins/`, the tracker nodes and `src/runtime/filters/`.
 
 In Claude Code, the `graph-reviewer` and `tracking-reviewer` agents run them. In other tools, ask for a review of `git diff dev...HEAD` against the checklist.
 

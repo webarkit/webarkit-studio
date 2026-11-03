@@ -1,5 +1,5 @@
-import type { NftMarkerData, NftSessionOptions, NftSettings } from '../trackers/nft-session';
-import type { TraceFrame, TraceHeader } from '../trackers/trace';
+import type { TraceFrame, TraceHeader } from '@webarkit/studio-plugin-api';
+import type { NftMarkerData, NftSessionOptions, NftSettings } from './nft-session';
 
 /** Messages between the jsartoolkitNFT.controller node and jsartoolkit-nft.worker.ts. */
 export type WorkerRequest =
@@ -20,7 +20,7 @@ export type WorkerResponse =
       /** Every dataset, in input order. */
       markers: NftMarkerData[];
       /** Header of a trace of this session (debug.trace). */
-      header: TraceHeader;
+      header: TraceHeader<NftSettings>;
     }
   /** near / far changed by a live configure: the rebuilt lens, and the planes it was built with. */
   | { type: 'lens'; cameraMatrix: number[]; projection: number[]; near: number; far: number }

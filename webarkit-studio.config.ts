@@ -8,5 +8,7 @@
 import type { StudioConfig } from './src/plugins/host';
 
 export default {
-  plugins: {},
+  plugins: {
+    jsartoolkitNFT: () => import('./plugins/jsartoolkit-nft'),
+  },
 } satisfies StudioConfig;

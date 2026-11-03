@@ -1,31 +1,28 @@
 /**
- * JsartoolkitNFT nodes.
+ * Factories of the jsartoolkitNFT plugin's nodes (definitions: catalog.ts).
  *
  * jsartoolkitNFT.controller runs the jsartoolkitNFT tracker facade
  * (createNFTTracker) in a Web Worker (as recommended by JsartoolkitNFT: never
- * process on the main thread). The worker runs an NftSession
- * (src/runtime/trackers/nft-session.ts).
+ * process on the main thread). The worker runs an NftSession (nft-session.ts).
  *
  * Frame preparation follows the official threejs_worker_ES6.js example: the
  * video is letterboxed into a 4:3 processing canvas of ~320px. The tracker's
  * projectionFor() undoes the letterbox for the projection.
  */
 import type {
-  ArtkCameraParamsValue,
-  ArtkNftDatasetValue,
-  ArtkSettingsValue,
   EventValue,
   MarkerInfoValue,
   NodeFactory,
   PoseFilterValue,
+  TraceRecord,
   TrackedMarkerValue,
   TrackingResultValue,
   TrackingStatsValue,
   TrackingTraceValue,
   VideoValue,
-} from '../types';
-import type { TraceRecord } from '../trackers/trace';
-import type { WorkerRequest, WorkerResponse } from '../workers/nft-protocol';
+} from '@webarkit/studio-plugin-api';
+import type { ArtkCameraParamsValue, ArtkNftDatasetValue, ArtkSettingsValue } from './types';
+import type { WorkerRequest, WorkerResponse } from './protocol';
 import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
 
@@ -108,6 +105,13 @@ export const artkSettings: NodeFactory = (params) => {
     onParamChange: () => ({ settings: current() }),
   };
 };
+
+/** jsartoolkitNFT.nativeFilter — ARToolKit's built-in filtering. */
+export const artkNativeFilter: NodeFactory = () => ({
+  init(): { filter: PoseFilterValue } {
+    return { filter: { kind: 'native', library: 'jsartoolkitNFT' } };
+  },
+});
 
 const fired = (prev: EventValue, time: number, data?: unknown): EventValue => ({ count: prev.count + 1, time, data });
 const NOT_FIRED: EventValue = { count: 0, time: 0 };
@@ -203,7 +207,7 @@ export const artkController: NodeFactory = (params, ctx) => {
       canvas.width = geometry.frameWidth;
       canvas.height = geometry.frameHeight;
 
-      worker = new Worker(new URL('../workers/jsartoolkit-nft.worker.ts', import.meta.url), { type: 'module' });
+      worker = new Worker(new URL('./jsartoolkit-nft.worker.ts', import.meta.url), { type: 'module' });
 
       const ready = new Promise<Extract<WorkerResponse, { type: 'ready' }>>((resolve, reject) => {
         worker!.onmessage = (ev: MessageEvent<WorkerResponse>) => {

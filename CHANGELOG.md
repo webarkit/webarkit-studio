@@ -6,7 +6,21 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Changed
+
+- **Graph format v5** (#12): `plugins: [{ id, version }]` lists the plugins a graph's nodes
+  come from, with the minimum version. Version 4 graphs are rejected; add
+  `"plugins": [{ "id": "jsartoolkitNFT", "version": "0.1.0" }]` to those with `jsartoolkitNFT.*` nodes
+  and set `"version": 5`. A missing plugin is reported by name.
+- The jsartoolkitNFT nodes are now a plugin (`plugins/jsartoolkit-nft/`), with unchanged node
+  types, ports, params and tracking (same trace before and after). Its socket types are
+  `jsartoolkitNFT.cameraParams`, `jsartoolkitNFT.dataset` and `jsartoolkitNFT.settings` (were `artk*`).
+
 ### Added
+
+- Plugin API (#12): a typed `StudioPlugin` manifest (`src/plugin-api`, types only) that adds
+  nodes, sockets, factories and export files; plugins listed in `webarkit-studio.config.ts` are
+  checked when loaded and become lazy chunks. See [Writing a plugin](docs/plugins.md).
 
 - Image and Video File sources (`source.image`, `source.videoFile`): a still
   image or a recorded video instead of the camera, and the
