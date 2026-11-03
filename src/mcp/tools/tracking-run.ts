@@ -81,10 +81,17 @@ export const trackingRun = defineTool({
     }
     const tracker = HEADLESS_TRACKERS[node.type];
 
-    const images = new Map<string, RgbaFrame>();
+    // Before any image is read: the cap also bounds the distinct images a run decodes.
+    const total = input.frames.reduce((n, f) => n + f.count, 0);
+    if (total > MAX_FRAMES) throw new Error(`${total} frames: a run has at most ${MAX_FRAMES} frames`);
+
+    // Each image placed once in the processing frame, as the controller draws the video, as it is
+    // read: only the placed frame is kept, not the full-size decoded image.
+    const placed = new Map<string, RgbaFrame>();
     let size: { width: number; height: number; path: string } | null = null;
+    let geometry: ReturnType<typeof tracker.geometry> | null = null;
     for (const { image } of input.frames) {
-      if (image === 'blank' || images.has(image)) continue;
+      if (image === 'blank' || placed.has(image)) continue;
       let decoded: RgbaFrame;
       try {
         decoded = loadJpeg(resolve(env.root, image));
@@ -95,19 +102,15 @@ export const trackingRun = defineTool({
       if (decoded.width !== size.width || decoded.height !== size.height) {
         throw new Error(`${image} is ${decoded.width} × ${decoded.height}, ${size.path} is ${size.width} × ${size.height}: every image of a run must have the same size`);
       }
-      images.set(image, decoded);
+      geometry ??= tracker.geometry({ width: size.width, height: size.height });
+      placed.set(image, letterboxFrame(decoded, geometry));
     }
-    if (!size) throw new Error('frames need at least one image (all are "blank")');
-    const total = input.frames.reduce((n, f) => n + f.count, 0);
-    if (total > MAX_FRAMES) throw new Error(`${total} frames: a run has at most ${MAX_FRAMES} frames`);
+    if (!size || !geometry) throw new Error('frames need at least one image (all are "blank")');
 
-    // Each image placed once in the processing frame, as the controller draws the video.
     const video = { width: size.width, height: size.height };
-    const geometry = tracker.geometry(video);
     const fills = geometry.x === 0 && geometry.y === 0 && geometry.width === geometry.frameWidth && geometry.height === geometry.frameHeight;
     // A blank frame is a gray video: letterboxed like the images.
     const empty = letterboxFrame(blank(1, 1), geometry);
-    const placed = new Map([...images].map(([path, image]) => [path, letterboxFrame(image, geometry)]));
     const frames: Array<{ image: RgbaFrame; time: number }> = [];
     for (const { image, count } of input.frames) {
       for (let k = 0; k < count; k++) frames.push({ image: image === 'blank' ? empty : placed.get(image)!, time: input.startMs + frames.length * input.frameMs });
@@ -115,7 +118,7 @@ export const trackingRun = defineTool({
     // One image (and blanks) that fills the frame is a `sequence`, which `npm run trace:record -- --replay`
     // re-runs (it scales the photo to the frame size, without letterbox).
     const repoPath = (p: string) => relative(env.root, resolve(env.root, p)).split(sep).join('/');
-    const distinct = [...images.keys()];
+    const distinct = [...placed.keys()];
     const { startMs, frameMs } = input;
     const source: TraceSource =
       distinct.length === 1 && fills

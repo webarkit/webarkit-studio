@@ -119,6 +119,11 @@ describe('tracking_run', () => {
     expect(result).toEqual({ ok: false, error: expect.stringContaining('at most 2000 frames') });
   });
 
+  it('caps the frames before it reads any image', async () => {
+    const result = await call(client, 'tracking_run', { graphPath: 'public/graphs/pinball-image.json', frames: [{ image: 'missing.jpg', count: 1000 }, { image: 'blank', count: 1000 }, { image: 'blank', count: 1 }] });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('at most 2000 frames') });
+  });
+
   it('needs a frame that is an image', async () => {
     const result = await call(client, 'tracking_run', { graph: await agentGraph(), frames: [{ image: 'blank', count: 3 }] });
     expect(result).toEqual({ ok: false, error: expect.stringContaining('at least one image') });

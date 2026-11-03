@@ -4,7 +4,7 @@
  * applied, so an agent learns at once what it got wrong; whether the whole
  * graph is complete is validateGraph()'s job.
  */
-import { ARRAY_PARAM_LENGTH, graphPlugins, type GraphDocument, type ParamValue, type PortRef } from '../core/graph';
+import { ARRAY_PARAM_LENGTH, graphPlugins, namespaceOf, type GraphDocument, type ParamValue, type PortRef } from '../core/graph';
 import { LOADED_PLUGINS } from '../core/plugins';
 import { socketsCompatible } from '../core/sockets';
 import { NODE_CATALOG, type NodeDefinition, type ParamSpec } from '../nodes/catalog';
@@ -122,8 +122,8 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
 /**
  * Applies `ops` in order to a copy of `doc` and returns it, with `plugins`
  * recomputed from its nodes as the editor saves them (loaded plugins at their
- * version); refs to plugins that are not loaded are kept, so validation
- * reports them by name. All or nothing: the first failing op throws
+ * version); refs to plugins that are not loaded are kept while one of their
+ * nodes remains, so validation reports them by name. All or nothing: the first failing op throws
  * "op <n> (<kind>): …" and `doc` is left as it was.
  */
 export function applyOps(doc: GraphDocument, ops: readonly GraphOp[], catalog: Record<string, NodeDefinition> = NODE_CATALOG): GraphDocument {
@@ -136,7 +136,8 @@ export function applyOps(doc: GraphDocument, ops: readonly GraphOp[], catalog: R
       throw new Error(`op ${i + 1} (${op.op}): ${(err as Error).message}`);
     }
   });
-  const absent = Array.isArray(doc.plugins) ? doc.plugins.filter((p) => !Object.hasOwn(LOADED_PLUGINS, String(p?.id))) : [];
+  const used = new Set(out.nodes.map((n) => namespaceOf(n.type)));
+  const absent = Array.isArray(doc.plugins) ? doc.plugins.filter((p) => !Object.hasOwn(LOADED_PLUGINS, String(p?.id)) && used.has(String(p?.id))) : [];
   const plugins = [...graphPlugins(out.nodes), ...absent];
   if (plugins.length) out.plugins = plugins;
   else delete out.plugins;

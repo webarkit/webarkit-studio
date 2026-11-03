@@ -100,6 +100,13 @@ describe('applyOps', () => {
     expect(() => validateGraph(out)).toThrow(/requires plugin acme ≥ 1\.2\.0, which is not loaded/);
   });
 
+  it('drops the ref of a plugin that is not loaded once its last node is removed', () => {
+    const doc: GraphDocument = { ...emptyGraph(), plugins: [{ id: 'acme', version: '1.2.0' }], nodes: [{ id: 'a', type: 'acme.tracker', params: {} }] };
+    const out = applyOps(doc, [{ op: 'removeNode', id: 'a' }]);
+    expect(out.plugins).toBeUndefined();
+    expect(() => validateGraph(out)).not.toThrow();
+  });
+
   it('names the failing op by its position', () => {
     expect(() => applyOps(emptyGraph(), [{ op: 'addNode', type: 'math.number' }, { op: 'removeNode', id: 'x' }])).toThrow(/^op 2 \(removeNode\)/);
   });
