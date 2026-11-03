@@ -189,7 +189,7 @@ describe('socketsCompatible', () => {
 
 describe('catalog', () => {
   it('an input that overrides a param (same name) is optional and has the socket type of the param kind', () => {
-    const socketOf = { number: 'number', vector3: 'vector3' } as Record<string, string>;
+    const socketOf = { number: 'number', vector3: 'vector3', color: 'color' } as Record<string, string>;
     for (const def of Object.values(NODE_CATALOG)) {
       for (const [key, input] of Object.entries(def.inputs)) {
         const param = def.params[key];

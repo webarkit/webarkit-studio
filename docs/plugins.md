@@ -31,7 +31,7 @@ When the plugin is installed, the studio checks it (`validatePlugin`, `src/core/
 and refuses it with the list of problems if:
 
 - `id` is not a plain identifier (letters and digits), is one of the built-in namespaces
-  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `debug`), is
+  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `debug`), is
   `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT is taken by the
   bundled plugin);
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
@@ -79,9 +79,14 @@ nodes without listing it is invalid.
 
 The core socket types (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and the values they carry
 (`src/plugin-api`: `VideoValue`, `TrackingResultValue` / `TrackedMarkerValue`, `ProjectionValue`,
-`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`, …)
-are the contract between plugins. Changing one is a breaking change of the plugin API, which bumps
-`PLUGIN_API_VERSION`.
+`MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`,
+`ColorValue`, …) are the contract between plugins. Changing one is a breaking change of the plugin
+API, which bumps `PLUGIN_API_VERSION`. Adding a socket type (as `number`, `vector3` and `color` were)
+is not: plugins built for the same API version keep working.
+
+The values of the `renderer`, `scene` and `sceneObject` sockets are studio internals, not part of
+plugin API v1: a plugin may pass them through (wire them from one port to another) but must not
+call methods on them. The plugin API exports no type for them.
 
 A tracker plugin that outputs `trackingResult`, `projection`, `onFound` / `onLost` and `stats`
 works with Select Marker, Marker Anchor, AR Camera, the filters, Inspector and Stats unchanged.
