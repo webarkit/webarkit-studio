@@ -166,7 +166,27 @@ npm run mcp:studio   # stdio, from the repository root
 | `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
 | `export_bundle` | the standalone app `.zip` (needs `npm run build:player`) |
 
-See `AGENTS.md`, "MCP server".
+### Try it
+
+1. Once: `npm install`, `npm run assets` (camera parameters, datasets and the test photo
+   `tests/fixtures/pinball-demo.jpg`), and `npm run build:player` if you want `export_bundle`.
+2. Open your MCP client in the repository root. Claude Code picks up `.mcp.json` and asks to
+   approve `webarkit-studio`; `/mcp` then shows it connected with its six tools. Other clients:
+   add a stdio server running `node --import tsx src/mcp/main.ts` from the repository root.
+3. Ask, for example:
+
+   > Using catalog_list, build a tracking graph for the pinball dataset, validate it, run it with
+   > tracking_run on tests/fixtures/pinball-demo.jpg for 10 frames then 12 blank frames, and tell me
+   > in which frames the marker is found and lost.
+
+   The marker is found on the photo frames and lost about six blank frames later: the tracker's
+   `lostTimeout` (200 ms) at 33 ms per frame. Then, for instance, "export
+   public/graphs/pinball-three.json with export_bundle to out/app.zip", and serve the unzipped
+   folder with `npx serve`.
+
+Graphs are passed inline or as a path; the tools write nothing except `export_bundle`'s zip.
+The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`) cover every tool, the
+stdio transport and this scenario. See `AGENTS.md`, "MCP server".
 
 ## Assets
 
