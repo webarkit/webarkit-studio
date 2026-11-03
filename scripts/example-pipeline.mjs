@@ -42,11 +42,11 @@ try {
   fail(err.message);
 }
 
-function integer(flag, fallback, min = 1) {
+function integer(flag, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
   const raw = args.values[flag];
   if (raw === undefined) return fallback;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < min) fail(`--${flag} must be an integer >= ${min}`);
+  if (!Number.isInteger(value) || value < min || value > max) fail(`--${flag} must be an integer from ${min} to ${max}`);
   return value;
 }
 
@@ -63,23 +63,28 @@ if (command === 'marker') {
   const d = pipeline.DEFAULT_MARKER;
   const options = {
     seed: integer('seed', d.seed, 0),
-    width: integer('width', d.width),
-    height: integer('height', d.height),
-    dpi: integer('dpi', d.dpi),
+    // A marker over 16384 px gains nothing and takes gigabytes; JFIF stores the dpi in 16 bits.
+    width: integer('width', d.width, 1, 16384),
+    height: integer('height', d.height, 1, 16384),
+    dpi: integer('dpi', d.dpi, 1, 65535),
     strokes: integer('strokes', d.strokes, 0),
   };
   const out = args.values.out ?? 'generated/scribbles.jpg';
   write(out, pipeline.scribbleMarker(options));
   const provenance = join(dirname(out), `${basename(out, extname(out))}.provenance.json`);
-  write(provenance, `${JSON.stringify(pipeline.markerProvenance(options), null, 2)}\n`);
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const record = { ...pipeline.markerProvenance(options), version, created: new Date().toISOString() };
+  write(provenance, `${JSON.stringify(record, null, 2)}\n`);
 } else {
   if (args.positionals.length !== 1) fail(USAGE);
   const dataset = args.positionals[0].replace(/\.(iset|fset3?)$/i, '');
   const modelPath = args.values.model ?? 'public/models/cube.glb';
+  if (!/\.(glb|gltf)$/i.test(modelPath)) fail('--model must be a .glb or .gltf (self-contained) file');
   let scale = 60;
   if (args.values.scale !== undefined) {
     scale = Number(args.values.scale);
-    if (!Number.isFinite(scale) || scale <= 0) fail('--scale must be a number > 0');
+    // The range of scene.gltf's Scale param (src/nodes/catalog.ts).
+    if (!Number.isFinite(scale) || scale < 0.001 || scale > 100000) fail('--scale must be a number from 0.001 to 100000');
   }
   const read = (file) => {
     try {

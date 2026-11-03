@@ -78,6 +78,8 @@ describe('example project', () => {
       expect.objectContaining({ from: { node: modelNode.id, port: 'object' }, to: { node: anchor.id, port: 'children' } }),
     );
     expect(byType('scene.primitive')).toEqual([]);
+    // No node id still names pinball.
+    expect(g.nodes.map((n) => n.id).filter((id) => id.includes('pinball'))).toEqual([]);
   });
 
   it('round-trips through a project file', async () => {

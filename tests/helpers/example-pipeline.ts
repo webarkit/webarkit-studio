@@ -81,7 +81,7 @@ export function scribbleMarker({ seed, width: W, height: H, dpi, strokes }: Mark
   return bytes;
 }
 
-/** What to record next to a generated asset (the docs ask for provenance and licence). */
+/** What to record next to a generated asset (the docs ask for provenance and licence); the script adds the version and date. */
 export function markerProvenance(options: MarkerOptions) {
   return {
     generator: 'webarkit-studio scripts/example-pipeline.mjs',
@@ -119,12 +119,14 @@ export function buildExampleProject({ dataset, model, scale = 60 }: ExampleInput
   node('dataset').params = { url: assetRef(datasetId, dataset.name), name: dataset.name };
   node('select_pinball').params = { marker: dataset.name };
   const prim = node('prim_pinball');
-  prim.id = 'model';
   prim.type = 'scene.gltf';
   prim.params = { url: assetRef(modelId, model.name), scale };
+  // Ids that named pinball, and the edges that use them.
+  const renamed: Record<string, string> = { select_pinball: 'select', anchor_pinball: 'anchor', prim_pinball: 'model' };
+  for (const n of graph.nodes) n.id = renamed[n.id] ?? n.id;
   for (const e of graph.edges) {
-    if (e.from.node === 'prim_pinball') e.from.node = 'model';
-    if (e.to.node === 'prim_pinball') e.to.node = 'model';
+    e.from.node = renamed[e.from.node] ?? e.from.node;
+    e.to.node = renamed[e.to.node] ?? e.to.node;
   }
   const blob = (bytes: Uint8Array) => new Blob([bytes as BlobPart]);
   return {

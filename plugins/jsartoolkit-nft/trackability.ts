@@ -318,15 +318,15 @@ export function checkTrackability(
   const t = thresholds;
   const base = fset3.images[0];
   // Points the generator could not place (non-finite) are not features.
-  fset3.points = fset3.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.mmX));
-  const largest = fset3.points.filter((p) => p.image === 0);
+  const points = fset3.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.mmX));
+  const largest = points.filter((p) => p.image === 0);
   const tracking = fset.scales.find((s) => s.scale === 0)?.points ?? [];
 
   const values: Record<CheckId, number> = {
     'detection.points': largest.length,
     'detection.coverage': round(
       coverage(
-        fset3.points.map((p) => ({ u: p.x / fset3.images[p.image].width, v: p.y / fset3.images[p.image].height })),
+        points.map((p) => ({ u: p.x / fset3.images[p.image].width, v: p.y / fset3.images[p.image].height })),
         t.grid,
       ),
       3,

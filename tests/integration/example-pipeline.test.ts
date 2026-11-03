@@ -40,11 +40,16 @@ describe('npm run example:marker', () => {
       expect([image.width, image.height]).toEqual([200, 100]);
       const provenance = JSON.parse(readFileSync(join(dir, 'm.provenance.json'), 'utf8'));
       expect(provenance).toMatchObject({ license: 'CC0-1.0', seed: 2, width: 200, height: 100, dpi: 150, strokes: 30 });
+      expect(Date.parse(provenance.created)).not.toBeNaN();
+      expect(provenance.version).toBe(JSON.parse(readFileSync('package.json', 'utf8')).version);
     }),
   );
 
   it('exits 2 on a bad option or command', () => {
     expect(cli('marker', '--seed', 'x').code).toBe(2);
+    // JFIF stores the density in 16 bits.
+    expect(cli('marker', '--dpi', '70000').code).toBe(2);
+    expect(cli('marker', '--width', '70000').code).toBe(2);
     expect(cli('paint').code).toBe(2);
     expect(cli().code).toBe(2);
   });
@@ -70,5 +75,9 @@ describe.skipIf(!existsSync(`${PINBALL}.fset3`))('npm run example:project', () =
 
   it('exits 2 when a dataset file is missing', () => {
     expect(cli('project', 'does/not/exist').code).toBe(2);
+    expect(cli('project', PINBALL, '--scale', '0.0001').code).toBe(2);
+    const obj = cli('project', PINBALL, '--model', 'package.json');
+    expect(obj.code).toBe(2);
+    expect(obj.err).toMatch(/\.glb or \.gltf/);
   });
 });

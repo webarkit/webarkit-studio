@@ -128,7 +128,7 @@ gives the marker's size as the tracker computes it (pixels / dpi × 25.4).
 
 The NFT generator prints its own "confidence level". That is the entropy of the grey-level
 histogram. It says nothing about where the features are, or whether they repeat. The scribble
-marker below scores 0.44 / 5 there and tracks well. A checkerboard can score high and be useless.
+marker below scored 0.44 / 5 there (Node app 0.4.0) and tracks well. A checkerboard can score high and be useless.
 
 ### Calibration
 
@@ -167,7 +167,7 @@ ComfyUI or Krita, and step 4's model with a Blender export.
 1. **Marker image.** `npm run example:marker` draws random-walk scribbles (seed 7, 900 × 1200 px at
    150 dpi, so 152.4 × 203.2 mm printed). It writes `generated/scribbles.jpg` and
    `generated/scribbles.provenance.json`: CC0-1.0, made by `scripts/example-pipeline.mjs`, with the
-   seed and the size. `--seed`, `--width`, `--height`, `--dpi`, `--strokes` and `--out` change them.
+   seed, the size, the studio version and the date. `--seed`, `--width`, `--height`, `--dpi`, `--strokes` and `--out` change them.
 2. **Dataset.** `nft-marker-creator -i generated/scribbles.jpg -o generated` (or the Node app, then
    copy its `src/output/scribbles.*` into `generated/`). This takes about a minute.
 3. **Check.** `npm run trackability -- generated/scribbles` should report *good*:
@@ -175,10 +175,13 @@ ComfyUI or Krita, and step 4's model with a Blender export.
 4. **Project.** `npm run example:project -- generated/scribbles` writes `generated/scribbles.zip`.
    It holds the Pinball · Three.js demo graph, with the dataset and a `scene.gltf` node in place of
    pinball and its primitive, and both files as uploaded assets. The model is `public/models/cube.glb`
-   at 60 mm per unit. Use `--model my.glb` for your own and `--scale` to size it.
+   at 60 mm per unit. Use `--model my.glb` (a `.glb`, or a self-contained `.gltf`) for your own and
+   `--scale` to size it.
 5. **Studio.** `npm run dev`, then *Import…* the `.zip`, print the marker at 100 %, and point the
-   camera at it. With the Node tracker, the marker letterboxed in a 320 × 240 frame is found on the
-   first frame.
+   camera at it. Importing a project **replaces the current graph and all uploaded assets**:
+   export your work first (*Export → Project (.zip)*). In a one-off run when this example was written,
+   the Node tracker (as in `tests/integration/nft-session.test.ts`) found the marker on the first
+   frame, letterboxed in a 320 × 240 frame.
 
 ### A model from Blender
 
