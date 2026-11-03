@@ -16,3 +16,11 @@ describe('MCP server over stdio', () => {
     expect((result.structuredContent as { nodes: Array<{ type: string }> }).nodes.map((n) => n.type)).toEqual(['jsartoolkitNFT.controller']);
   });
 });
+
+describe('tracking_run over stdio', () => {
+  it('keeps the tracker logs out of the JSON-RPC stream', async () => {
+    const result = await client.callTool({ name: 'tracking_run', arguments: { graphPath: 'public/graphs/pinball-image.json', frames: [{ image: 'tests/fixtures/pinball-demo.jpg', count: 3 }] } });
+    expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as { frames: unknown[] }).frames).toHaveLength(3);
+  });
+});

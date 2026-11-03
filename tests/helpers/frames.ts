@@ -2,58 +2,12 @@
  * Test frames without a browser: decode the fixture photo, scale it to the
  * processing size, or make a blank frame (marker out of view).
  */
-import { readFileSync } from 'node:fs';
-import jpeg from 'jpeg-js';
+import type { RgbaFrame } from '../../src/mcp/frames';
 
-export interface RgbaFrame {
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
-}
+// Shared with the MCP server's tracking_run (src/mcp/frames.ts).
+export { blank, loadJpeg, resize, type RgbaFrame } from '../../src/mcp/frames';
 
 export const FIXTURE_PHOTO = 'tests/fixtures/pinball-demo.jpg';
-
-export function loadJpeg(path: string): RgbaFrame {
-  const img = jpeg.decode(readFileSync(path), { useTArray: true, formatAsRGBA: true });
-  return { data: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength), width: img.width, height: img.height };
-}
-
-/** Box-filter downscale (each output pixel averages the source pixels it covers). */
-export function resize(src: RgbaFrame, width: number, height: number): RgbaFrame {
-  const out = new Uint8ClampedArray(width * height * 4);
-  const sx = src.width / width;
-  const sy = src.height / height;
-  for (let y = 0; y < height; y++) {
-    const y0 = Math.floor(y * sy);
-    const y1 = Math.max(y0 + 1, Math.floor((y + 1) * sy));
-    for (let x = 0; x < width; x++) {
-      const x0 = Math.floor(x * sx);
-      const x1 = Math.max(x0 + 1, Math.floor((x + 1) * sx));
-      let r = 0, g = 0, b = 0, n = 0;
-      for (let yy = y0; yy < y1; yy++) {
-        let i = (yy * src.width + x0) * 4;
-        for (let xx = x0; xx < x1; xx++, i += 4) {
-          r += src.data[i];
-          g += src.data[i + 1];
-          b += src.data[i + 2];
-          n++;
-        }
-      }
-      const o = (y * width + x) * 4;
-      out[o] = r / n;
-      out[o + 1] = g / n;
-      out[o + 2] = b / n;
-      out[o + 3] = 255;
-    }
-  }
-  return { data: out, width, height };
-}
-
-export function blank(width: number, height: number, gray = 128): RgbaFrame {
-  const data = new Uint8ClampedArray(width * height * 4).fill(gray);
-  for (let i = 3; i < data.length; i += 4) data[i] = 255;
-  return { data, width, height };
-}
 
 /**
  * Separable bicubic downscale (Keys kernel, a = -0.5, widened by the scale

@@ -3,5 +3,6 @@ import type { StudioTool } from '../tool';
 import { catalogList } from './catalog-list';
 import { graphCreate, graphEdit } from './graph-edit';
 import { graphValidate } from './graph-validate';
+import { trackingRun } from './tracking-run';
 
-export const TOOLS: StudioTool[] = [catalogList, graphValidate, graphCreate, graphEdit];
+export const TOOLS: StudioTool[] = [catalogList, graphValidate, graphCreate, graphEdit, trackingRun];

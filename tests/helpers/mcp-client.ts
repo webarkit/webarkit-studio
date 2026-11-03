@@ -4,11 +4,14 @@
  */
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
+import nodeConfig from '../../webarkit-studio.node.config';
 import { createStudioServer } from '../../src/mcp/server';
 import { REPO_ROOT, type StudioTool, type ToolEnv } from '../../src/mcp/tool';
 import { TOOLS } from '../../src/mcp/tools';
+import { loadHeadlessTrackers } from '../../src/mcp/trackers';
 
 export async function connectStudio(tools: StudioTool[] = TOOLS, env: ToolEnv = { root: REPO_ROOT }): Promise<Client> {
+  await loadHeadlessTrackers(nodeConfig); // the plugins themselves: tests/setup/plugins.ts
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await createStudioServer(tools, env).connect(serverSide);
   const client = new Client({ name: 'webarkit-studio-tests', version: '0.0.0' });
