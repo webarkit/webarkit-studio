@@ -46,7 +46,10 @@ Node definitions and factories follow the same rules as the built-in nodes (`AGE
 ## Registering it
 
 List the plugin in [`webarkit-studio.config.ts`](../webarkit-studio.config.ts), under its id,
-as a lazy import:
+as a lazy import. A plugin with a build-time part (a Vite plugin that serves files outside the
+module graph, see "Workers and assets") is also added to `plugins` in
+[`vite.config.ts`](../vite.config.ts): the `StudioPlugin` manifest is browser code and cannot
+carry it.
 
 ```ts
 export default {
@@ -105,14 +108,20 @@ these rules for the jsartoolkitNFT plugin.
 
 ## Workers and assets
 
-- **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`.
-  Keep heavy builds (WASM) behind a dynamic `import()` inside the worker.
+- **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`,
+  or use the library's own worker (as the jsartoolkitNFT plugin does, see below). Keep heavy builds
+  (WASM) behind a dynamic `import()` inside the worker.
 - **Asset params**: a `string` param with `asset: 'file' | 'nftDataset' | 'model'` gets uploads and
   is bundled by the exporter. The runtime resolves uploads before the factory runs: files become
   blob: URLs; NFT dataset prefixes become virtual URLs under `VirtualAssetOrigin`, whose files are in
   `RuntimeContext.virtualFiles` (virtual URL → blob: URL). A worker that loads them must serve them
-  to its library's `fetch()` (see `plugins/jsartoolkit-nft/virtual-fetch.ts`), and answer 404 for
-  other virtual URLs.
+  to its library's `fetch()`, and answer 404 for other virtual URLs. A library that runs its own
+  worker cannot be handed that map: `plugins/jsartoolkit-nft/virtual-fetch.ts` puts the files in the
+  dataset URL's query string and installs a `fetch()` in the library's worker that reads them back.
+- **A library's own worker files** that it starts by name from a folder (as `createNFTTrackerWorker`
+  does) cannot go through the bundler: serve them from a fixed folder next to the page with a Vite
+  plugin listed in `vite.config.ts` (`plugins/jsartoolkit-nft/vite.ts`), and copy them into exported
+  apps with `kind: 'file'` export files.
 - **Resolve relative URLs** against `RuntimeContext.baseUrl`: workers resolve them against their own location.
 - **Traces**: a tracker that outputs `trackingTrace` writes the studio's trace format
   (`TraceHeader`, `TraceRecord`, see `src/runtime/trackers/trace.ts`), so the Trace Recorder and
@@ -147,7 +156,7 @@ module, when a needed `module` or `worker` is not in the build.
 ## Testing with the Node build
 
 Keep the tracking logic in a class that depends only on the tracking library and plain values (for
-jsartoolkitNFT, `NftSession`), so the worker and the Node tests share it:
+jsartoolkitNFT, `NftSession`), so the browser and the Node tests share it:
 
 - unit tests (`tests/unit/`) for the factories' logic and the mapping onto the library;
 - integration tests (`tests/integration/`) with the library's Node build, on the fixture photo

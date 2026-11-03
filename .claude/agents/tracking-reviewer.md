@@ -11,11 +11,11 @@ Before reviewing, read:
 
 - `AGENTS.md`
 - `docs/agents/checklists/tracking-review.md`
-- `plugins/jsartoolkit-nft/nft-session.ts` and `plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts` as they are after the change
+- `plugins/jsartoolkit-nft/nft-session.ts`, `plugins/jsartoolkit-nft/nodes.ts` (the controller) and `plugins/jsartoolkit-nft/virtual-fetch.ts` as they are after the change
 
 Then inspect the diff you are given (default: `git diff dev...HEAD`, plus uncommitted changes from `git diff HEAD`) and go through the checklist in order.
 
-Pay most attention to where logic lands. The worker only picks the build and relays messages. State, per-marker bookkeeping, filtering, found / lost logic or matrix maths added to the worker or to the protocol is **Blocking**, with the suggestion to move it into `NftSession`, where the Node integration tests cover it. Reimplementing what the facade already does (lost timer, filter, lens, projection) is **Blocking** too.
+Pay most attention to where logic lands. The tracker runs in the facade's own worker (`createNFTTrackerWorker`); the only code of ours there is `virtual-fetch.ts`. State, per-marker bookkeeping, filtering, found / lost logic or matrix maths added to it, or a custom worker or protocol, is **Blocking**, with the suggestion to move it into `NftSession`, where the Node integration tests cover it. Reimplementing what the facade already does (lost timer, filter, lens, projection) is **Blocking** too.
 
 Do not rely on memory for the facade's API: read the installed package (`node_modules/@webarkit/jsartoolkit-nft/types/src/tracker/` and its README section "Tracker facade"), and webarkit/jsartoolkitNFT#720 with `gh issue view 720 -R webarkit/jsartoolkitNFT` for what is still open. Say so if `gh` is not available.
 

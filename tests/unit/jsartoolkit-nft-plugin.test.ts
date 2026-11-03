@@ -6,6 +6,9 @@ import { LOADED_PLUGINS } from '../../src/core/plugins';
 import { CORE_NODES, NODE_CATALOG } from '../../src/nodes/catalog';
 import config from '../../webarkit-studio.config';
 import plugin from '../../plugins/jsartoolkit-nft';
+import { workerOptions } from '../../plugins/jsartoolkit-nft/nodes';
+import { workerShim } from '../../plugins/jsartoolkit-nft/worker-files';
+import { version } from '@webarkit/jsartoolkit-nft/package.json';
 
 const files = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
@@ -54,5 +57,24 @@ describe('jsartoolkitNFT plugin (#12)', () => {
         expect(doc.plugins, name).toEqual([{ id: 'jsartoolkitNFT', version: plugin.version }]);
       }
     }
+  });
+
+  it("maps the controller's build onto createNFTTrackerWorker, with the worker files next to the page (#14)", () => {
+    const signal = new AbortController().signal;
+    expect(workerOptions('simd', 'http://localhost/app/player.html?graph=x.json', signal)).toEqual({
+      build: 'simd',
+      workerBase: `http://localhost/app/jsartoolkit-nft/${version}/`,
+      signal,
+    });
+    expect(workerOptions('default', 'http://localhost/').build).toBe('default');
+  });
+
+  it('serves virtual-fetch.ts unbundled: it imports types only', () => {
+    expect(imports('plugins/jsartoolkit-nft/virtual-fetch.ts').every((i) => i.type)).toBe(true);
+  });
+
+  it("installs the virtual fetch before the facade's worker runs", () => {
+    const imports = [...workerShim('simd').matchAll(/^import '([^']+)';$/gm)].map((m) => m[1]);
+    expect(imports).toEqual(['./virtual-fetch.js', './facade/NFTTracker_simd.worker.js']);
   });
 });

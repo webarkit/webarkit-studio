@@ -66,7 +66,7 @@ npm run test:all     # typecheck + unit + integration + e2e
 | Level | What | Where |
 |---|---|---|
 | Unit | graph validation and topological order, socket types, catalog consistency, runtime scheduler (order, live params, init failures, stop during init) with fake nodes, the mapping onto the tracker facade (filter, settings), the letterbox geometry, Select Marker, Inspector formatting, the trace format, trace diff and Trace Recorder buffering, export file selection and asset paths | `tests/unit` |
-| Integration | the tracker session (`NftSession` on `createNFTTracker`, the code the worker runs) against the **Node build** of JsartoolkitNFT on a photo holding both markers: marker sizes, two independent poses, found / lost once per marker, `lostTimeout` and AR2 settings, per-marker filtering, lens and projection, odd video sizes, per-dataset load errors; a **golden run** recorded with the former ARControllerNFT code (found and transitions exact; poses within the recorded range plus a margin, near the recorded mean, and near the recorded frame); **traces**: two recordings identical, a filter change reported, replay, live settings changes, the golden run's found / lost timing kept by the facade | `tests/integration` |
+| Integration | the tracker session (`NftSession` on `createNFTTracker`, the code the controller runs over the facade's worker) against the **Node build** of JsartoolkitNFT on a photo holding both markers: marker sizes, two independent poses, found / lost once per marker, `lostTimeout` and AR2 settings, per-marker filtering, lens and projection, odd video sizes, per-dataset load errors; a **golden run** recorded with the former ARControllerNFT code (found and transitions exact; poses within the recorded range plus a margin, near the recorded mean, and near the recorded frame); **traces**: two recordings identical, a filter change reported, replay, live settings changes, the golden run's found / lost timing kept by the facade | `tests/integration` |
 | End-to-end | the studio in Chromium with a fake camera: three demos tracking, onFound after loss, tracking a still image and a video file with no camera, multi NFT, live settings, Reload, init error on the failing node, incompatible wires rejected, a trace downloaded by the Trace Recorder; **exported apps** unzipped and run from a plain static server | `tests/e2e` |
 
 The fake camera is a Y4M video generated in pure JS from the test photo
@@ -162,8 +162,9 @@ suggests the matching uploads, as `asset://<id>/<name>` references. The graph
 format is unchanged, but a graph with such references needs the project's
 assets (and a studio or player from this version on) to run. While the graph
 runs, uploads are served as `blob:` URLs; an uploaded NFT dataset is served to
-the tracker worker under a virtual `https://assets.webarkit.invalid/` prefix,
-which also appears in its tracking traces.
+the tracker's worker under a virtual `https://assets.webarkit.invalid/` prefix
+(with its files' `blob:` URLs in the query string), and the prefix appears in
+its tracking traces.
 
 glTF Model (`scene.gltf`) stands models up on the marker with their front
 (glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
@@ -174,7 +175,8 @@ decoders it downloads from its CDN, so prefer uncompressed models.
 ```
 pinball-nft-three-js/
   index.html  graph.json  README.txt
-  assets/     player, three-adapter, jsartoolkit-nft worker, ARToolkitNFT_simd
+  assets/     player, three-adapter, jsartoolkit-nft plugin
+  jsartoolkit-nft/1.16.0/  the tracker worker of the graph's build (SIMD here)
   data/       camera_para.dat, DataNFT/pinball.{iset,fset,fset3}
 ```
 
@@ -211,8 +213,9 @@ Key decisions:
    async setup and stateful nodes, which the Rete dataflow engine does not model,
    and it would tie the player to Rete.
 4. **Tracking runs in a Web Worker**, one per controller node, as JsartoolkitNFT
-   recommends. Frame preparation and projection rescaling follow the upstream
-   `threejs_worker_ES6.js` example.
+   recommends: the facade's own (`createNFTTrackerWorker`). Frame preparation
+   follows the upstream `threejs_worker_ES6.js` example; the facade's
+   `projectionFor()` rescales the projection.
 5. **Rendering with lit-html.** Rete maintains renderers only for React, Vue,
    Angular and Svelte; `src/editor/lit-render-plugin.ts` (~200 lines)
    implements the same render contract with lit-html.
@@ -226,11 +229,11 @@ Key decisions:
    `AR View.objects`) are separate wires, which keeps the graph acyclic.
 7. **Slots on the controller.** Optional `filter` and `settings` inputs.
    Their nodes output serialisable values that the controller forwards to its
-   worker; an empty slot means library defaults / raw poses.
+   tracker; an empty slot means library defaults / raw poses.
 8. **Live params.** Params marked ⚡ (`live` in the catalog) reach the running
    graph without restarting; the others apply on the next Run. A live change on
    the Settings node becomes a new settings value, the controller sees it and
-   sends a `configure` message to its worker.
+   calls its tracker's `configure()`.
 9. **Events are values.** An event output carries `{count, time, data}` and a
    new object each time it fires; consumers detect it by reference. `onFound` /
    `onLost` come from the tracker's per-frame `transitions` (`found` on the
@@ -307,7 +310,8 @@ src/
   export/      exporters (graph JSON, standalone app bundle)
 plugins/
   jsartoolkit-nft/  the jsartoolkitNFT plugin: catalog, factories, NftSession (the graph mapped onto
-                    the tracker facade, shared by worker and tests), worker and its protocol
+                    the tracker facade, shared by the browser and the tests), the tracker's
+                    worker files (served by its Vite plugin, vite.ts) and virtual-fetch.ts
 webarkit-studio.config.ts  the plugins this build loads
 public/graphs/ pinball-three.json, pinball-babylon.json, multi-three.json
 scripts/       fetch-assets.mjs, trace-record.mjs / trace-diff.mjs (tracking traces), check-agent-docs.mjs
@@ -370,12 +374,14 @@ Required inputs are checked before running.
 
 ### Tracker facade API coverage
 
-The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
-`@webarkit/jsartoolkit-nft` ≥ 1.15.0) in its own worker.
+The controller node runs the jsartoolkitNFT tracker facade in the facade's own
+worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
+≥ 1.16.0).
 
 | Tracker facade | In the graph |
 |---|---|
-| `createNFTTracker({ width, height, cameraParam })`, `process(frame, timestampMs)` | inside the controller node (one tracker, in a worker) |
+| `createNFTTrackerWorker({ width, height, cameraParam }, { build, workerBase, signal })`, `process(frame, timestampMs)` | inside the controller node (one tracker, in its worker); `build` is the controller's *Build*, the start times out after 30 s |
+| `process()` → `{ skipped: true }` | ignored: the controller sends a frame only when the previous one is done |
 | `addNFTTargets(sources)` → `TargetLoad[]` | the Datasets input, in order; a failed dataset is reported on the node, one line per dataset |
 | `configure({ continuousDetection, detectionInterval, logLevel, near, far, lostTimeout, ar2 })` | Controller Settings (live) |
 | `filter: 'none' \| 'native' \| { type: 'oneEuro' }` | the `filter` slot: nothing, Native Filter, One Euro Filter |
@@ -383,21 +389,20 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 | `cameraMatrix` | `cameraMatrix` output (raw), rebuilt live when near / far change |
 | `projectionFor(viewport, geometry)` | `projection` (letterbox undone), rebuilt with the lens |
 | `FrameResult.targets` / `transitions` | `markers` (pose, found, onFound, onLost per marker), controller `onFound` / `onLost` for any marker |
-| `createNFTTrackerWorker` | not used yet: see the notes |
 | `addNFTTargets` `origin: 'center'` | not exposed: Marker Anchor's *center* does it in the scene |
 
 ## Known issues / notes
 
 - Hosting must return **404** for missing files: JsartoolkitNFT's
-  `Utils.checkZFT()` probes `<marker>.zft` with a synchronous XHR and treats any
-  HTTP 200 (such as an SPA `index.html` fallback) as a compressed dataset. The
+  tracker probes `<marker>.zft` before the other files and treats any HTTP 200
+  (such as an SPA `index.html` fallback) as a compressed dataset (upstream #676). The
   Vite config sets `appType: 'mpa'` for this reason.
-- Each JsartoolkitNFT build embeds its WASM (~730 kB); the worker loads only the
-  selected one (SIMD or standard) through a dynamic import.
-- The controller node runs `createNFTTracker` in its own worker rather than the
-  facade's `createNFTTrackerWorker`: in 1.15.0 that function ships only inside
-  the full builds, so the page would download a whole build (~720 kB) on top of
-  the worker's, and its worker files must be served outside the Vite pipeline.
+- Each tracker worker embeds its WASM (~716 kB); the page loads only the light
+  client (a few kB, in the plugin's chunk) and the worker of the selected build
+  (SIMD or standard). The worker files are served unchanged from
+  `jsartoolkit-nft/<version>/` next to the page, outside the Vite pipeline (the plugin's
+  `vite.ts`), and exported apps get only their build's. The threaded build
+  (`td`) and `build: 'auto'` are not offered: they need COOP / COEP headers.
 - Lazy chunks: Three.js adapter ~530 kB, Babylon.js adapter ~790 kB (deep
   imports from `@babylonjs/core`; the barrel import would be ~5 MB).
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
@@ -406,7 +411,9 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - Graph format is `webarkit-studio/graph` v4; older versions are rejected, the
   studio falls back to the demo. Graphs saved by the prototype under its former
   name (`webar-studio/graph`) still load, and so does its last autosave.
-- JsartoolkitNFT ≥ 1.15.0 is required (the tracker facade). Its lens follows
+- JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light
+  client). Since 1.16.0 the One Euro filter keeps poses rigid, so filtered poses
+  differ slightly from 1.15.0. Its lens follows
   the planes from the start: the near 0.0001 init lens of 1.14.0 is gone.
 - The processing frame has integer sizes (`letterbox()`, which calls
   `@webarkit/camera-view`): the facade rejects a frame whose size differs from
@@ -416,7 +423,8 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
   so content farther than 1 m from the camera is clipped.
 - The data-oriented API proposal,
   [jsartoolkitNFT#720](https://github.com/webarkit/jsartoolkitNFT/issues/720)
-  (`docs/proposals/`), is still open upstream; 1.15.0 ships its tracker facade.
+  (`docs/proposals/`), is still open upstream; 1.15.0 ships its tracker facade,
+  1.16.0 the light client for its worker.
 
 ## Roadmap
 
@@ -448,6 +456,7 @@ The controller node runs the jsartoolkitNFT tracker facade (`createNFTTracker`,
 - [ ] Asset manager: upload images and datasets, glTF models
 - [x] First math nodes and a Primitive position driven by an input (#25)
 - [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
+- [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
 - [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
 **Phase 3 — Logic & publishing**

@@ -36,7 +36,7 @@ const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => 
   // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
   { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
-  // Plugins add theirs (tracker builds, their own chunk): `kind: 'module'` exportFiles.
+  // Plugins add theirs (on-demand builds, their own chunk): `kind: 'module'` exportFiles.
 ];
 /**
  * Workers are referenced by URL (new Worker(new URL(…))), not imported: started from these roots.
