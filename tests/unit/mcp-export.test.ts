@@ -71,6 +71,7 @@ describe('export_bundle', () => {
     const out = join(mkdtempSync(join(tmpdir(), 'webarkit-mcp-out-')), 'app.zip');
     const result = await call(client, 'export_bundle', { graphPath: GRAPH, out, baseDir: fakePublic(false) });
     expect(result).toEqual({ ok: false, error: expect.stringContaining('npm run build:player') });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('must hold the studio build: run "npm run build"') });
   });
 
   it('reports a data file the graph needs and baseDir does not have', async () => {

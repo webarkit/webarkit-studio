@@ -66,7 +66,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - `graph_validate`: `validateGraph()`, as a list of problems.
 - `graph_create`, `graph_edit`: ops (add / remove nodes, connect / disconnect, set params), checked against the catalog, all or nothing.
 - `tracking_run`: the graph's tracker on JPEG frames in Node; returns trace records (`TraceFrame`, the facade's `FrameResult`) and a per-marker summary. Needs `npm run assets` for the demo data.
-- `export_bundle`: the standalone app `.zip`; needs `npm run build:player`.
+- `export_bundle`: the standalone app `.zip`, from the studio build (`baseDir` defaults to `dist/`: run `npm run build`). `public/` is not enough: plugin files such as the tracker's workers are only served by Vite or written into the build (#47).
 
 Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
 JSON or as a path; nothing is written except `export_bundle`'s zip (an existing file is overwritten). A tool is one module in `src/mcp/tools/` (a
