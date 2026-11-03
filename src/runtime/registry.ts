@@ -9,6 +9,7 @@ import { jsartoolkitNativeFilter, oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
+import { add, multiply, number, sin, splitVector3, time, vector3 } from './nodes/math';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
@@ -32,6 +33,13 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,
+  'math.number': number,
+  'math.vector3': vector3,
+  'math.splitVector3': splitVector3,
+  'math.add': add,
+  'math.multiply': multiply,
+  'math.sin': sin,
+  'math.time': time,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
   'debug.trace': traceNode,

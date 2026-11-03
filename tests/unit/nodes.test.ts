@@ -98,6 +98,11 @@ describe('Inspector formatValue', () => {
     expect(formatValue({ count: 3, time: Date.now() })).toMatch(/^event fired 3×/);
   });
 
+  it('shows short number arrays (vector3) as a list', () => {
+    expect(formatValue([0, 0, 40])).toBe('[0, 0, 40]');
+    expect(formatValue([1.5, -2, 0.25])).toBe('[1.500, -2, 0.250]');
+  });
+
   it('shows one line per marker for a tracking result', () => {
     const text = formatValue([marker(0, 'pinball', true), marker(1, 'kuva')]);
     expect(text.split('\n')).toHaveLength(2);

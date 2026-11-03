@@ -31,6 +31,8 @@ export function formatValue(value: unknown): string {
     return rows.join('\n');
   }
   if (Array.isArray(value)) {
+    // Vectors (vector3, vector2): the numbers themselves.
+    if (value.length && value.length <= 4 && value.every((v) => typeof v === 'number')) return `[${value.map(num).join(', ')}]`;
     // Tracking result: one line per marker.
     if (value.length && value.every((m) => m && typeof m === 'object' && 'found' in m && 'name' in m)) {
       return (value as Array<{ index: number; name: string; found: boolean; onFound: { count: number } }>)

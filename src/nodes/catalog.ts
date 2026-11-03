@@ -49,7 +49,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -299,7 +299,11 @@ const defs: NodeDefinition[] = [
     description:
       'A simple mesh created in the connected scene, resting on the marker. Position (mm) and rotation (degrees, X then Y then Z) ' +
       'move it from there; Spin turns it about its own Z axis.',
-    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      // Overrides the position param while connected (e.g. from math nodes).
+      position: { type: 'vector3', label: 'Position', optional: true },
+    },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
       shape: { kind: 'select', label: 'Shape', default: 'box', options: { Box: 'box', Sphere: 'sphere', 'Torus knot': 'torusKnot' } },
@@ -360,6 +364,102 @@ const defs: NodeDefinition[] = [
     },
     outputs: {},
     params: { stats: { kind: 'boolean', label: 'Show FPS', default: true, live: true } },
+  },
+
+  // ---------------------------------------------------------------- math
+  // Plain numbers and vectors, no renderer types. An input with the same name
+  // as a param overrides it while connected (the param applies otherwise).
+  {
+    type: 'math.number',
+    label: 'Number',
+    category: 'math',
+    provider: 'core',
+    description: 'A constant number.',
+    inputs: {},
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: { value: { kind: 'number', label: 'Value', default: 0, step: 0.1, live: true } },
+  },
+  {
+    type: 'math.vector3',
+    label: 'Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'A vector from x, y, z (marker space: mm, +Z up). Connected inputs override the params.',
+    inputs: {
+      x: { type: 'number', label: 'X', optional: true },
+      y: { type: 'number', label: 'Y', optional: true },
+      z: { type: 'number', label: 'Z', optional: true },
+    },
+    outputs: { vector: { type: 'vector3', label: 'Vector' } },
+    params: {
+      x: { kind: 'number', label: 'X', default: 0, step: 1, live: true },
+      y: { kind: 'number', label: 'Y', default: 0, step: 1, live: true },
+      z: { kind: 'number', label: 'Z', default: 0, step: 1, live: true },
+    },
+  },
+  {
+    type: 'math.splitVector3',
+    label: 'Split Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'The x, y, z of a vector.',
+    inputs: { vector: { type: 'vector3', label: 'Vector' } },
+    outputs: {
+      x: { type: 'number', label: 'X' },
+      y: { type: 'number', label: 'Y' },
+      z: { type: 'number', label: 'Z' },
+    },
+    params: {},
+  },
+  {
+    type: 'math.add',
+    label: 'Add',
+    category: 'math',
+    provider: 'core',
+    description: 'a + b. Connected inputs override the params.',
+    inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
+    outputs: { value: { type: 'number', label: 'A + B' } },
+    params: {
+      a: { kind: 'number', label: 'A', default: 0, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 0, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.multiply',
+    label: 'Multiply',
+    category: 'math',
+    provider: 'core',
+    description: 'a × b. Connected inputs override the params.',
+    inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
+    outputs: { value: { type: 'number', label: 'A × B' } },
+    params: {
+      a: { kind: 'number', label: 'A', default: 1, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 1, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.sin',
+    label: 'Sine',
+    category: 'math',
+    provider: 'core',
+    description: 'offset + amplitude × sin(x), x in degrees (like the rotations). A connected x overrides the param.',
+    inputs: { x: { type: 'number', label: 'X (°)', optional: true } },
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: {
+      x: { kind: 'number', label: 'X (°)', default: 0, step: 1, live: true },
+      amplitude: { kind: 'number', label: 'Amplitude', default: 1, step: 0.1, live: true },
+      offset: { kind: 'number', label: 'Offset', default: 0, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.time',
+    label: 'Time',
+    category: 'math',
+    provider: 'core',
+    description: 'Seconds since the graph started, times Speed. With Multiply and Sine, it animates.',
+    inputs: {},
+    outputs: { seconds: { type: 'number', label: 'Seconds' } },
+    params: { speed: { kind: 'number', label: 'Speed', default: 1, step: 0.1, live: true } },
   },
 
   // --------------------------------------------------------------- debug
