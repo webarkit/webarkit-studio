@@ -3,16 +3,17 @@
  * Transport-agnostic: src/mcp/main.ts serves it over stdio, tests in memory.
  */
 import { McpServer } from '@modelcontextprotocol/server';
-import type { StudioTool, ToolEnv } from './tool';
+import { version } from '../../package.json';
+import { REPO_ROOT, type StudioTool, type ToolEnv } from './tool';
 import { TOOLS } from './tools';
 
-export const SERVER_INFO = { name: 'webarkit-studio', version: '0.1.0' };
+export const SERVER_INFO = { name: 'webarkit-studio', version };
 
-export function createStudioServer(tools: StudioTool[] = TOOLS, env: ToolEnv = { root: process.cwd() }): McpServer {
+export function createStudioServer(tools: StudioTool[] = TOOLS, env: ToolEnv = { root: REPO_ROOT }): McpServer {
   const server = new McpServer(SERVER_INFO, {
     instructions:
-      'WebARKit Studio: node graphs for WebAR. Start with catalog.list (node types, ports, params), build a graph with ' +
-      'graph.create / graph.edit, check it with graph.validate, run its tracker on images with tracking.run and export the app with export.bundle.',
+      'WebARKit Studio: node graphs for WebAR, as JSON documents. Learn the node types with catalog_list, then build, check, run ' +
+      `and export graphs. Tools: ${tools.map((t) => t.name).join(', ')}.`,
   });
   for (const tool of tools) {
     server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.inputSchema }, async (input) => {

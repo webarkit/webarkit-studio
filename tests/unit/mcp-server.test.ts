@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 const failing = (error: Error): StudioTool => ({
-  name: 'test.fail',
+  name: 'test_fail',
   title: 'Fail',
   description: 'Always throws.',
   inputSchema: z.object({}),
@@ -25,25 +25,25 @@ describe('studio MCP server', () => {
   it('lists the tools of the issue', async () => {
     client = await connectStudio();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['catalog.list', 'graph.validate']));
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['catalog_list', 'graph_validate']));
     for (const tool of tools) expect(tool.description).toBeTruthy();
   });
 
   it('returns a thrown error as a tool error with its message', async () => {
     client = await connectStudio([failing(new Error('boom'))]);
-    expect(await call(client, 'test.fail')).toEqual({ ok: false, error: 'boom' });
+    expect(await call(client, 'test_fail')).toEqual({ ok: false, error: 'boom' });
   });
 
   it('lists every problem of a GraphValidationError', async () => {
     client = await connectStudio([failing(new GraphValidationError(['first', 'second']))]);
-    const result = await call(client, 'test.fail');
+    const result = await call(client, 'test_fail');
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toContain('- first\n- second');
   });
 
   it('rejects arguments that do not match the input schema', async () => {
     client = await connectStudio();
-    const result = await call(client, 'catalog.list', { category: 42 });
+    const result = await call(client, 'catalog_list', { category: 42 });
     expect(result.ok).toBe(false);
   });
 });

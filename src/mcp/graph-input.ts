@@ -6,7 +6,7 @@ import type { ToolEnv } from './tool';
 
 export const graphInput = {
   graph: z.record(z.string(), z.unknown()).optional().describe('The graph document (JSON). Give this or graphPath.'),
-  graphPath: z.string().optional().describe('Path of a graph .json file, relative to the repository root. Give this or graph.'),
+  graphPath: z.string().optional().describe('Path of a graph .json file, absolute or relative to the repository root. Give this or graph.'),
 };
 
 /** The graph of a tool call, not validated yet. */

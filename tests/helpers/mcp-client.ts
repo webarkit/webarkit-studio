@@ -5,10 +5,10 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { createStudioServer } from '../../src/mcp/server';
-import type { StudioTool, ToolEnv } from '../../src/mcp/tool';
+import { REPO_ROOT, type StudioTool, type ToolEnv } from '../../src/mcp/tool';
 import { TOOLS } from '../../src/mcp/tools';
 
-export async function connectStudio(tools: StudioTool[] = TOOLS, env: ToolEnv = { root: process.cwd() }): Promise<Client> {
+export async function connectStudio(tools: StudioTool[] = TOOLS, env: ToolEnv = { root: REPO_ROOT }): Promise<Client> {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await createStudioServer(tools, env).connect(serverSide);
   const client = new Client({ name: 'webarkit-studio-tests', version: '0.0.0' });

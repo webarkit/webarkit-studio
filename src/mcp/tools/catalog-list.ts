@@ -1,4 +1,4 @@
-/** catalog.list: the node types this studio can run, from the core catalog and the loaded plugins. */
+/** catalog_list: the node types this studio can run, from the core catalog and the loaded plugins. */
 import * as z from 'zod';
 import { GRAPH_VERSION } from '../../core/graph';
 import { LOADED_PLUGINS } from '../../core/plugins';
@@ -6,7 +6,7 @@ import { NODE_CATALOG } from '../../nodes/catalog';
 import { defineTool } from '../tool';
 
 export const catalogList = defineTool({
-  name: 'catalog.list',
+  name: 'catalog_list',
   title: 'List node types',
   description:
     'Node types of the catalog (core nodes and loaded plugins): category, provider, description, input and output ports ' +

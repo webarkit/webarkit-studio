@@ -1,4 +1,4 @@
-/** graph.validate: the studio's own validation (validateGraph), as a list of problems. */
+/** graph_validate: the studio's own validation (validateGraph), as a list of problems. */
 import * as z from 'zod';
 import { GraphValidationError, validateGraph } from '../../core/graph';
 import { graphInput, readGraphInput } from '../graph-input';
@@ -16,7 +16,7 @@ export function checkGraph(doc: unknown): { valid: boolean; problems: string[] }
 }
 
 export const graphValidate = defineTool({
-  name: 'graph.validate',
+  name: 'graph_validate',
   title: 'Validate a graph',
   description:
     'Checks a graph document as the studio does before running it: format and version, plugins, node types, ports, socket types, ' +
