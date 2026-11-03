@@ -81,13 +81,22 @@ let rowIds = 0;
  * with several fields (vector3, matrix4) are a group named by the label, not
  * a <label>, which would only label the first field.
  */
-export function paramRow(spec: ParamSpec, value: ParamValue, set: (v: ParamValue) => void, place: ControlPlace = 'node'): TemplateResult {
+export function paramRow(
+  spec: ParamSpec,
+  value: ParamValue,
+  set: (v: ParamValue) => void,
+  place: ControlPlace = 'node',
+  /** Set by a connected input of the same name: shown, not editable. */
+  driven = false,
+): TemplateResult {
   const name = html`${spec.label}${spec.kind === 'vector3' && spec.unit ? ` (${spec.unit})` : ''}${spec.live ? html`<i class="live">⚡</i>` : nothing}`;
-  const title = spec.live ? 'Live: applied while running' : 'Applied on the next Run';
-  const control = paramControl(spec, value, set, place);
+  const title = driven ? 'Set by the connected input' : spec.live ? 'Live: applied while running' : 'Applied on the next Run';
+  // A disabled fieldset disables every field of the control (vectors, matrices).
+  const control = html`<fieldset class="param-control" ?disabled=${driven}>${paramControl(spec, value, set, place)}</fieldset>`;
+  const cls = `param param-${spec.kind} ${driven ? 'driven' : ''}`;
   if (spec.kind !== 'vector3' && spec.kind !== 'matrix4') {
-    return html`<label class="param param-${spec.kind}"><span title=${title}>${name}</span>${control}</label>`;
+    return html`<label class=${cls} title=${title}><span>${name}</span>${control}</label>`;
   }
   const id = `param-row-${++rowIds}`;
-  return html`<div class="param param-${spec.kind}" role="group" aria-labelledby=${id}><span id=${id} title=${title}>${name}</span>${control}</div>`;
+  return html`<div class=${cls} title=${title} role="group" aria-labelledby=${id}><span id=${id}>${name}</span>${control}</div>`;
 }

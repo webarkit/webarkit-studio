@@ -12,6 +12,7 @@
   --cat-renderer: #e57373;
   --cat-scene: #81c784;
   --cat-output: #ba68c8;
+  --cat-math: #ffcc80;
   --cat-debug: #bdbdbd;
   color-scheme: dark;
 }
@@ -55,6 +56,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-renderer { --c: var(--cat-renderer); }
 .cat-scene { --c: var(--cat-scene); }
 .cat-output { --c: var(--cat-output); }
+.cat-math { --c: var(--cat-math); }
 .cat-debug { --c: var(--cat-debug); }
 
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */
@@ -131,3 +133,8 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .matrix { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
 .matrix-reset { grid-column: 2; justify-self: start; margin-top: 4px; padding: 2px 8px; font-size: 11px; }
 .matrix-summary { color: var(--muted); font-style: italic; }
+
+/* A param control; disabled while a connected input of the same name sets the param. */
+.param-control { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
+.param.driven > span { font-style: italic; opacity: 0.7; }
+.param.driven input, .param.driven select { opacity: 0.5; }

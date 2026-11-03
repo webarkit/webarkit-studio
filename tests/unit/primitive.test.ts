@@ -58,6 +58,31 @@ describe('scene.primitive transform', () => {
     expect(matrices.at(-1)).toEqual(round(transformMatrix({ position: [0, 0, 40], rotation: [90, 0, 90], scale: 1 })));
   });
 
+  it('a connected position input overrides the position param, frame by frame', () => {
+    const { scene, matrices } = fakeScene();
+    const node = primitive(params({ size: 80, position: [10, 0, 0] }), ctx);
+    node.init!({ scene, position: [0, 0, 20] });
+    expect(matrices.at(-1)).toEqual(round(transformMatrix({ position: [0, 0, 60], rotation: [0, 0, 0], scale: 1 })));
+    node.update!({ scene, position: [0, 0, 30] }, frame(16));
+    expect(matrices.at(-1)).toEqual(round(transformMatrix({ position: [0, 0, 70], rotation: [0, 0, 0], scale: 1 })));
+    // Unchanged input, no spin: nothing to redraw.
+    const count = matrices.length;
+    node.update!({ scene, position: [0, 0, 30] }, frame(16));
+    expect(matrices).toHaveLength(count);
+  });
+
+  it('without a position input (or with an invalid one) the param applies', () => {
+    const { scene, matrices } = fakeScene();
+    const node = primitive(params({ size: 80, position: [10, 0, 0] }), ctx);
+    node.init!({ scene });
+    node.update!({ scene, position: 'nope' }, frame(16));
+    expect(matrices.at(-1)).toEqual(round(transformMatrix({ position: [10, 0, 40], rotation: [0, 0, 0], scale: 1 })));
+  });
+
+  it('the position input has the same name and type as the param it overrides', () => {
+    expect(NODE_CATALOG['scene.primitive'].inputs.position).toMatchObject({ type: 'vector3', optional: true });
+  });
+
   it('position and rotation are live vector3 params', () => {
     const { position, rotation } = NODE_CATALOG['scene.primitive'].params;
     expect([position.kind, position.live, rotation.kind, rotation.live]).toEqual(['vector3', true, 'vector3', true]);

@@ -377,6 +377,43 @@ test.describe('editor', () => {
   });
 });
 
+test.describe('math nodes', () => {
+  test('pinball-math: time → sin → vector3 drives the Primitive position, the value changes while running', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    await run(page);
+    const lift = nodeStatus(page, 'Inspector', 1); // the second Inspector shows the vector
+    await expect(lift).toContainText(/\[0, 0, \d/);
+    const first = await lift.innerText();
+    await expect.poll(() => lift.innerText(), { timeout: 10_000 }).not.toBe(first);
+    // Live: editing the sine applies without a restart.
+    const amplitude = page.locator('.studio-node:has(.title span:text-is("Sine")) .param:has-text("Amplitude") input');
+    await amplitude.fill('5');
+    await amplitude.dispatchEvent('change');
+    await expect(page.locator('#log')).not.toContainText('press Reload');
+  });
+
+  test('a param driven by a connected input is shown as such, and editable again once unwired', async ({ page }) => {
+    await loadDemo(page, 'pinball-math');
+    const primitive = page.locator('.studio-node:has(.title span:text-is("Primitive"))');
+    const x = primitive.locator('input[aria-label="Position x"]');
+    await expect(x).toBeDisabled();
+    await primitive.locator('.title').click();
+    await expect(page.locator('#inspector input[aria-label="Position x"]')).toBeDisabled();
+    await expect(page.locator('#inspector .param-vector3').first()).toHaveAttribute('title', /connected input/);
+    // Without the wire into Position (edited in the autosave, then reloaded) the param is editable again.
+    const wires = page.locator('svg.connection path');
+    const count = await wires.count();
+    await page.evaluate(() => {
+      const doc = JSON.parse(localStorage.getItem('webarkit-studio:autosave')!);
+      doc.edges = doc.edges.filter((e: { to: { node: string; port: string } }) => !(e.to.node === 'prim_pinball' && e.to.port === 'position'));
+      localStorage.setItem('webarkit-studio:autosave', JSON.stringify(doc));
+    });
+    await page.reload();
+    await expect(wires).toHaveCount(count - 1);
+    await expect(x).toBeEnabled();
+  });
+});
+
 test.describe('tracking traces', () => {
   test('Trace Recorder downloads a JSONL trace of the running tracker', async ({ page }) => {
     // pinball-three plus a Trace Recorder on the controller's trace output, recording from the start.

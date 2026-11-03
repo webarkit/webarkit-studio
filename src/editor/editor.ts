@@ -309,6 +309,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         if (taken) return;
       }
     }
+    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') updateDriven(context.data.target);
     if (['nodecreated', 'noderemoved', 'connectioncreated', 'connectionremoved'].includes(context.type)) {
       onChange();
       notifyHistory();
@@ -355,6 +356,17 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     recordParamEdit(node, key, value);
     applyParam(nodeId, key, value);
     notifyHistory();
+  }
+
+  /** A param is driven while an input of the same name is wired: its control is disabled. */
+  function updateDriven(nodeId: string) {
+    const node = editor.getNode(nodeId);
+    if (!node) return;
+    const wired = new Set(editor.getConnections().filter((c) => c.target === nodeId).map((c) => c.targetInput));
+    const driven = new Set(Object.keys(node.def.params).filter((key) => key in node.def.inputs && wired.has(key)));
+    if (driven.size === node.driven.size && [...driven].every((k) => node.driven.has(k))) return;
+    node.driven = driven;
+    void area.update('node', nodeId);
   }
 
   async function addNode(type: string, position = { x: 0, y: 0 }, id?: string, params?: Record<string, ParamValue>) {

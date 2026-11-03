@@ -62,6 +62,15 @@ export const light: NodeFactory = (params) => {
   };
 };
 
+/** A vector3 value (param or input), or null when it is not three finite numbers. */
+const vec3OrNull = (value: unknown): [number, number, number] | null =>
+  Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? [value[0], value[1], value[2]] : null;
+
+/** A vector3 param as numbers (a hand-edited graph may hold something else: zeros then). */
+const vec3 = (value: unknown): [number, number, number] => vec3OrNull(value) ?? [0, 0, 0];
+
+const sameVec3 = (a: readonly number[] | null, b: readonly number[] | null) => a === b || (!!a && !!b && a.every((v, i) => v === b[i]));
+
 /** scene.primitive — a mesh resting on the marker plane (units: millimetres). */
 export const primitive: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
@@ -69,17 +78,20 @@ export const primitive: NodeFactory = (params) => {
   /** Spin angle so far (degrees), about the mesh's own Z axis. */
   let spun = 0;
   const size = Number(params.size); // not live: a change restarts the graph
+  /** The `position` input while it carries a vector: it overrides the param. */
+  let driven: [number, number, number] | null = null;
   // Rests on the marker (lifted by half its size), then moved and rotated by its
   // params; spinning last in Rx · Ry · Rz turns it about its own Z axis.
   const applyTransform = () => {
     if (!scene || !mesh) return;
-    const [x, y, z] = vec3(params.position);
+    const [x, y, z] = driven ?? vec3(params.position);
     const [rx, ry, rz] = vec3(params.rotation);
     scene.setMatrix(mesh, transformMatrix({ position: [x, y, z + size / 2], rotation: [rx, ry, rz + spun], scale: 1 }));
   };
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
+      driven = vec3OrNull(inputs.position);
       mesh = scene.createPrimitive({
         shape: String(params.shape) as PrimitiveSpec['shape'],
         size,
@@ -88,11 +100,13 @@ export const primitive: NodeFactory = (params) => {
       applyTransform();
       return { object: mesh };
     },
-    update(_inputs, frame) {
+    update(inputs, frame) {
+      const next = vec3OrNull(inputs.position);
+      const moved = !sameVec3(next, driven);
+      driven = next;
       // `params` is updated in place by live changes, so `spin` is read each frame.
-      if (!params.spin) return;
-      spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
-      applyTransform();
+      if (params.spin) spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
+      if (params.spin || moved) applyTransform();
     },
     onParamChange(key, value) {
       if (key === 'color' && scene && mesh) scene.setColor(mesh, String(value));
@@ -145,10 +159,6 @@ export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView
 
 /** The live params of scene.gltf, all applied as its transform (checked against the catalog in tests). */
 export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'position', 'rotation'];
-
-/** A vector3 param as numbers (a hand-edited graph may hold something else: zeros then). */
-const vec3 = (value: unknown): [number, number, number] =>
-  Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? [value[0], value[1], value[2]] : [0, 0, 0];
 
 /** scene.gltf — a glTF / GLB model, placed in marker space (millimetres, Z-up). */
 export const gltf: NodeFactory = (params, ctx) => {
