@@ -1,9 +1,9 @@
 /**
  * Factories of the jsartoolkitNFT plugin's nodes (definitions: catalog.ts).
  *
- * jsartoolkitNFT.controller runs the jsartoolkitNFT tracker facade
- * (createNFTTracker) in a Web Worker (as recommended by JsartoolkitNFT: never
- * process on the main thread). The worker runs an NftSession (nft-session.ts).
+ * jsartoolkitNFT.controller runs the jsartoolkitNFT tracker facade in its own
+ * Web Worker (createNFTTrackerWorker, from the package's light client: never
+ * process on the main thread), through an NftSession (nft-session.ts).
  *
  * Frame preparation follows the official threejs_worker_ES6.js example: the
  * video is letterboxed into a 4:3 processing canvas of ~320px. The tracker's
@@ -22,9 +22,10 @@ import type {
   VideoValue,
 } from '@webarkit/studio-plugin-api';
 import type { ArtkCameraParamsValue, ArtkNftDatasetValue, ArtkSettingsValue } from './types';
-import type { WorkerRequest, WorkerResponse } from './protocol';
-import { PLUGIN_ID } from './nft-session';
-import type { FrameGeometry } from '@webarkit/jsartoolkit-nft';
+import { NftSession, PLUGIN_ID, type NftFrameResult } from './nft-session';
+import { createNFTTrackerWorker, type FrameGeometry, type NFTTrackerWorkerOptions } from '@webarkit/jsartoolkit-nft/client';
+import { virtualSource } from './virtual-fetch';
+import { WORKER_DIR } from './worker-files';
 import { getProcessGeometry, toFrameGeometry } from '@webarkit/camera-view';
 
 /**
@@ -117,9 +118,23 @@ export const artkNativeFilter: NodeFactory = () => ({
 const fired = (prev: EventValue, time: number, data?: unknown): EventValue => ({ count: prev.count + 1, time, data });
 const NOT_FIRED: EventValue = { count: 0, time: 0 };
 
+/** How long the tracker's worker may take to start (it compiles the WASM: several seconds on a slow phone). */
+export const WORKER_START_TIMEOUT_MS = 30_000;
+
+/**
+ * createNFTTrackerWorker's options for the controller's `build` param: the worker files
+ * are served from WORKER_DIR next to the page (see worker-files.ts).
+ */
+export function workerOptions(build: unknown, pageUrl: string, signal?: AbortSignal): NFTTrackerWorkerOptions {
+  return { build: build === 'simd' ? 'simd' : 'default', workerBase: new URL(WORKER_DIR, pageUrl).href, signal };
+}
+
 /** jsartoolkitNFT.controller */
 export const artkController: NodeFactory = (params, ctx) => {
-  let worker: Worker | null = null;
+  let session: NftSession | null = null;
+  // Aborts the worker's start: on timeout, or when the graph stops first.
+  const starting = new AbortController();
+  let disposed = false;
   let video: VideoValue | null = null;
   let busy = false;
   let sentAt = 0;
@@ -144,11 +159,12 @@ export const artkController: NodeFactory = (params, ctx) => {
   // Geometry of the processing frame (see letterbox()).
   let geometry: FrameGeometry | null = null;
 
-  function request(msg: WorkerRequest, transfer: Transferable[] = []) {
-    worker!.postMessage(msg, transfer);
-  }
+  /** Logs an error of the tracker, one line per failed dataset (see NftSession.create). */
+  const logError = (err: unknown) => {
+    for (const line of String((err as Error)?.message ?? err).split('\n')) ctx.log(`✗ ${ctx.nodeId}: ${line}`);
+  };
 
-  function onResult(msg: Extract<WorkerResponse, { type: 'result' }>) {
+  function onResult(msg: NftFrameResult) {
     const now = Date.now();
     const next: TrackedMarkerValue[] = markers.map((m, i) => ({ ...m, found: msg.poses[i] !== null, pose: msg.poses[i] }));
     for (const e of msg.events) {
@@ -177,15 +193,14 @@ export const artkController: NodeFactory = (params, ctx) => {
       fpsWindowFrames = 0;
     }
     stats = { ...stats, processMs: msg.processMs, latencyMs: t - sentAt, frames: stats.frames + 1 };
-    busy = false;
   }
 
   // Rebuilt when near / far change: new references, so AR Camera picks them up live.
   let cameraMatrix: number[] = [];
   let projection: number[] = [];
-  function setLens(msg: { cameraMatrix: number[]; projection: number[] }) {
-    cameraMatrix = msg.cameraMatrix;
-    projection = msg.projection;
+  function setLens(s: NftSession) {
+    cameraMatrix = s.cameraMatrix;
+    projection = s.projection;
   }
 
   const frameOutputs = () => {
@@ -208,44 +223,40 @@ export const artkController: NodeFactory = (params, ctx) => {
       canvas.width = geometry.frameWidth;
       canvas.height = geometry.frameHeight;
 
-      worker = new Worker(new URL('./jsartoolkit-nft.worker.ts', import.meta.url), { type: 'module' });
+      const timeout = setTimeout(
+        () => starting.abort(new Error(`the tracker's worker did not start within ${WORKER_START_TIMEOUT_MS / 1000} s`)),
+        WORKER_START_TIMEOUT_MS,
+      );
+      const options = workerOptions(params.build, document.baseURI, starting.signal);
+      let started: NftSession;
+      try {
+        started = await NftSession.create((config) => createNFTTrackerWorker(config, options), {
+          cameraUrl: camera.url,
+          // Uploaded datasets carry their files' blob: URLs to the worker (virtual-fetch.ts).
+          datasetUrls: datasets.map((d) => virtualSource(d.url, ctx.virtualFiles ?? {})),
+          filter,
+          settings: appliedSettings,
+          geometry,
+        });
+      } catch (err) {
+        // The init fails (shown on the node); the log gets one line per failed dataset.
+        if (!disposed) logError(err);
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (disposed) {
+        void started.dispose();
+        throw new Error('the graph stopped while the tracker was starting');
+      }
+      session = started;
+      setLens(started);
+      const header = started.traceHeader({ kind: 'camera' });
+      // The datasets' own URLs, without the blob: URLs of virtualSource().
+      header.targets = header.targets.map((t, i) => ({ ...t, url: datasets[i].url }));
+      trace = { header, records: [] };
 
-      const ready = new Promise<Extract<WorkerResponse, { type: 'ready' }>>((resolve, reject) => {
-        worker!.onmessage = (ev: MessageEvent<WorkerResponse>) => {
-          const msg = ev.data;
-          if (msg.type === 'ready') resolve(msg);
-          else if (msg.type === 'result') onResult(msg);
-          else if (msg.type === 'lens') {
-            setLens(msg);
-            ctx.log(`${ctx.nodeId}: camera lens rebuilt (near ${msg.near}, far ${msg.far})`);
-          } else if (msg.type === 'error') {
-            // One line per failed dataset (see NftSession.create).
-            for (const line of msg.message.split('\n')) ctx.log(`✗ ${ctx.nodeId}: ${line}`);
-            // A failed frame must not stop tracking: the next one is sent.
-            if (msg.request === 'process') busy = false;
-            // Before ready, this fails the init (shown on the node); afterwards it is only logged.
-            reject(new Error(msg.message));
-          }
-        };
-        worker!.onerror = (e) => reject(new Error(e.message || 'worker error'));
-      });
-
-      request({
-        type: 'load',
-        cameraUrl: camera.url,
-        datasetUrls: datasets.map((d) => d.url),
-        build: params.build === 'simd' ? 'simd' : 'default',
-        filter,
-        settings: appliedSettings,
-        geometry,
-        files: { ...ctx.virtualFiles },
-      });
-
-      const msg = await ready;
-      setLens(msg);
-      trace = { header: msg.header, records: [] };
-
-      infos = msg.markers.map((m, i) => ({ ...m, name: datasets[i].name }));
+      infos = started.markers.map((m, i) => ({ ...m, name: datasets[i].name }));
       markers = infos.map((info, index) => ({
         index,
         name: info.name,
@@ -260,13 +271,18 @@ export const artkController: NodeFactory = (params, ctx) => {
     },
 
     update(inputs) {
-      if (!worker || !video || !geometry) return;
+      const s = session;
+      if (!s || !video || !geometry) return;
 
-      // Settings slot changed while running (live param): forward to the worker.
+      // Settings slot changed while running (live param): forward to the tracker.
       const settings = (inputs.settings as ArtkSettingsValue | undefined) ?? null;
       if (settings && settings !== appliedSettings) {
         appliedSettings = settings;
-        request({ type: 'configure', settings });
+        s.configure(settings).then((lensChanged) => {
+          if (!lensChanged || session !== s) return;
+          setLens(s);
+          ctx.log(`${ctx.nodeId}: camera lens rebuilt (near ${settings.near}, far ${settings.far})`);
+        }, logError);
         // Same clock as the frames' `time`. The worker handles messages in order, so the next
         // frame sent is processed after this configure (unless configure() itself awaits, as a
         // `{ module }` filter can; the graph's filters do not).
@@ -283,14 +299,23 @@ export const artkController: NodeFactory = (params, ctx) => {
         const image = g2d.getImageData(0, 0, frameWidth, frameHeight);
         busy = true;
         sentAt = performance.now();
-        request({ type: 'process', image, time: sentAt }, [image.data.buffer]);
+        // The frame's buffer is transferred to the worker. A failed frame must not stop
+        // tracking: it is only logged, and the next one is sent.
+        s.process(image, sentAt)
+          .then((result) => {
+            // null: skipped by the facade, as another frame was in flight (\`busy\` prevents it).
+            if (result && session === s) onResult(result);
+          }, logError)
+          .finally(() => (busy = false));
       }
       return frameOutputs();
     },
 
     dispose() {
-      worker?.terminate();
-      worker = null;
+      disposed = true;
+      starting.abort(new Error('the graph stopped'));
+      void session?.dispose();
+      session = null;
     },
   };
 };

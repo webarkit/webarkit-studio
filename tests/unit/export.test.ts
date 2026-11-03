@@ -19,9 +19,6 @@ const manifest: PlayerManifest = {
     'assets/babylon-adapter.js',
     'assets/babylon-dep.js',
     'assets/jsartoolkit-nft.js',
-    'assets/worker.js',
-    'assets/ARToolkitNFT.js',
-    'assets/ARToolkitNFT_simd.js',
     'assets/style.css',
   ],
   chunks: {
@@ -32,13 +29,6 @@ const manifest: PlayerManifest = {
     'assets/three-dep.js': { imports: [], dynamicImports: [], modules: [] },
     'assets/babylon-adapter.js': { imports: ['assets/babylon-dep.js'], dynamicImports: [], modules: ['src/runtime/renderers/babylon-adapter.ts'] },
     'assets/babylon-dep.js': { imports: [], dynamicImports: [], modules: [] },
-    'assets/worker.js': {
-      imports: [],
-      dynamicImports: ['assets/ARToolkitNFT_simd.js', 'assets/ARToolkitNFT.js'],
-      modules: ['plugins/jsartoolkit-nft/jsartoolkit-nft.worker.ts'],
-    },
-    'assets/ARToolkitNFT.js': { imports: [], dynamicImports: [], modules: ['node_modules/@webarkit/jsartoolkit-nft/dist/ARToolkitNFT.js'] },
-    'assets/ARToolkitNFT_simd.js': { imports: [], dynamicImports: [], modules: ['node_modules/@webarkit/jsartoolkit-nft/dist/ARToolkitNFT_simd.js'] },
   },
 };
 const html = '<script type="module" src="./assets/player.js"></script><link rel="stylesheet" href="./assets/style.css">';
@@ -51,19 +41,44 @@ const doc = (types: Array<[string, Record<string, string>?]>): GraphDocument => 
 });
 
 describe('selectPlayerFiles', () => {
-  it('keeps only Three.js and the SIMD build for a Three.js + SIMD graph', () => {
+  it('keeps only Three.js and the jsartoolkitNFT plugin for a Three.js + jsartoolkitNFT graph', () => {
     const files = selectPlayerFiles(manifest, html, doc([['three.renderer'], ['jsartoolkitNFT.controller', { build: 'simd' }]]));
     expect([...files].sort()).toEqual(
-      ['player.html', 'assets/player.js', 'assets/shared.js', 'assets/three-adapter.js', 'assets/three-dep.js', 'assets/jsartoolkit-nft.js', 'assets/worker.js', 'assets/ARToolkitNFT_simd.js', 'assets/style.css'].sort(),
+      ['player.html', 'assets/player.js', 'assets/shared.js', 'assets/three-adapter.js', 'assets/three-dep.js', 'assets/jsartoolkit-nft.js', 'assets/style.css'].sort(),
     );
   });
 
-  it('keeps Babylon.js and the standard build when the graph asks for them', () => {
+  it('keeps Babylon.js when the graph asks for it', () => {
     const files = selectPlayerFiles(manifest, html, doc([['babylon.renderer'], ['jsartoolkitNFT.controller', { build: 'default' }]]));
     expect(files.has('assets/babylon-dep.js')).toBe(true);
     expect(files.has('assets/three-adapter.js')).toBe(false);
-    expect(files.has('assets/ARToolkitNFT.js')).toBe(true);
-    expect(files.has('assets/ARToolkitNFT_simd.js')).toBe(false);
+  });
+
+  it("copies only the tracker worker of the controllers' build (jsartoolkitNFT plugin)", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url);
+      return new Response('JS');
+    });
+    try {
+      const base = new URL('http://localhost:5173/index.html');
+      const simd = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'simd' }]]), base);
+      expect(Object.keys(simd).sort()).toEqual([
+        'jsartoolkit-nft/NFTTracker_simd.worker.js',
+        'jsartoolkit-nft/facade/NFTTracker_simd.worker.js',
+        'jsartoolkit-nft/virtual-fetch.js',
+      ]);
+      expect(fetched).toContain('http://localhost:5173/jsartoolkit-nft/facade/NFTTracker_simd.worker.js');
+      const standard = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'default' }]]), base);
+      expect(Object.keys(standard).sort()).toEqual([
+        'jsartoolkit-nft/NFTTracker.worker.js',
+        'jsartoolkit-nft/facade/NFTTracker.worker.js',
+        'jsartoolkit-nft/virtual-fetch.js',
+      ]);
+      expect(await collectPluginFiles(doc([['three.renderer']]), base)).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('bundles the glTF loaders only for graphs with a glTF Model', () => {
@@ -81,9 +96,8 @@ describe('selectPlayerFiles', () => {
     expect(selectPlayerFiles(withLoaders, html, doc([['babylon.renderer'], ['scene.gltf']])).has('assets/ext.js')).toBe(true);
   });
 
-  it('leaves the tracker worker out of a graph without a controller, and the plugin out of a graph without its nodes', () => {
+  it('leaves the plugin out of a graph without its nodes', () => {
     const files = selectPlayerFiles(manifest, html, doc([['three.renderer']]));
-    expect(files.has('assets/worker.js')).toBe(false);
     expect(files.has('assets/jsartoolkit-nft.js')).toBe(false);
   });
 
@@ -98,7 +112,8 @@ describe('selectPlayerFiles', () => {
     const files = selectPlayerFiles(real, entry, JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')));
     expect([...files].some((f) => f.includes('three-adapter'))).toBe(true);
     expect([...files].some((f) => f.includes('babylon-adapter'))).toBe(false);
-    expect([...files].some((f) => f.includes('jsartoolkit-nft.worker'))).toBe(true);
+    // The tracker's builds are worker files (plugin exportFiles), never player chunks.
+    expect([...files].some((f) => f.includes('ARToolkitNFT'))).toBe(false);
   });
 });
 
