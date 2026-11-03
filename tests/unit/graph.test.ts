@@ -23,7 +23,7 @@ describe('validateGraph', () => {
 
   it('rejects wrong format and version', () => {
     const doc = { ...graph([], []), format: 'other', version: 1 };
-    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1']);
+    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 5)']);
   });
 
   it('still accepts the format id of the WebAR-Studio prototype', () => {
@@ -99,7 +99,12 @@ describe('validateGraph: plugins (v5)', () => {
 
   it('is version 5, and rejects version 4 documents', () => {
     expect(GRAPH_VERSION).toBe(5);
-    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4']);
+    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+  });
+
+  it('reports only the version of a document in another version, not what that version lacks', () => {
+    // A v4 graph cannot list plugins: its plugin nodes are not errors of their own.
+    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 5)']);
   });
 
   it('accepts a graph that lists the plugins of its nodes', () => {

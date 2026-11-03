@@ -110,7 +110,10 @@ export function validateGraph(
 
   if (!g || typeof g !== 'object') throw new GraphValidationError(['document is not an object']);
   if (g.format !== GRAPH_FORMAT && !LEGACY_GRAPH_FORMATS.includes(String(g.format))) problems.push(`format must be "${GRAPH_FORMAT}"`);
-  if (g.version !== GRAPH_VERSION) problems.push(`unsupported version ${String(g.version)}`);
+  // Another version's nodes and fields follow other rules: checking them against this one only adds noise.
+  if (g.version !== GRAPH_VERSION) {
+    throw new GraphValidationError([...problems, `unsupported version ${String(g.version)} (this studio reads version ${GRAPH_VERSION})`]);
+  }
   if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) {
     throw new GraphValidationError([...problems, 'nodes and edges must be arrays']);
   }
