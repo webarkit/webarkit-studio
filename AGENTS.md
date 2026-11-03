@@ -29,7 +29,7 @@ Pointer files never duplicate a rule, except where a tool cannot follow links (C
 - Typecheck: `npm run typecheck`
 - Unit + integration tests: `npm test`. Integration tests use the Node build of `@webarkit/jsartoolkit-nft` and read the assets with paths relative to the repository root, so run them from the root.
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
-- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Each checkout serves its build on its own port, derived from its path, so worktrees can run the suite at the same time; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
+- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock (`PW_NO_LOCK=1` skips it too). Each checkout serves its build on its own port, derived from its path; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
 - Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
 - Agent files: `npm run check:agents`.
 - Tracking traces: `npm run trace:record -- --out a.jsonl` records a deterministic trace in Node (`--filter`, `--settings`, `--replay <trace>`, `--golden`); `npm run trace:diff -- a.jsonl b.jsonl` compares two traces and exits non-zero above its thresholds. See "Tracking traces" below.
