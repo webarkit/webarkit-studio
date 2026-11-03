@@ -95,9 +95,19 @@ pip install nft-marker-creator
 nft-marker-creator -i marker.jpg -o generated --threads 4
 ```
 
+If `pip` or `nft-marker-creator` is not found (on Windows, Python's `Scripts` folder is often not
+on the `PATH`), go through Python instead:
+
+```bash
+python -m pip install nft-marker-creator
+python -c "import nft_marker_creator as nmc; print(nmc.create('marker.jpg', output_dir='generated', threads=4))"
+```
+
 Or clone the Node app, run `npm install`, then `cd src` and `node NFTMarkerCreator.js -i marker.jpg -noConf`.
 The Node app writes to its `src/output/`. Both read the print resolution from the JPEG header,
-and the Python package falls back to 150 dpi when there is none. `--dpi` overrides it.
+and the Python package falls back to 150 dpi when there is none. `--dpi` overrides it. They share
+the same core: on the example marker both wrote datasets with the same check results, and the Python
+package took about 20 s against about 60 s for the single-threaded Node app.
 
 ## Trackability check
 
@@ -168,8 +178,8 @@ ComfyUI or Krita, and step 4's model with a Blender export.
    150 dpi, so 152.4 × 203.2 mm printed). It writes `generated/scribbles.jpg` and
    `generated/scribbles.provenance.json`: CC0-1.0, made by `scripts/example-pipeline.mjs`, with the
    seed, the size, the studio version and the date. `--seed`, `--width`, `--height`, `--dpi`, `--strokes` and `--out` change them.
-2. **Dataset.** `nft-marker-creator -i generated/scribbles.jpg -o generated` (or the Node app, then
-   copy its `src/output/scribbles.*` into `generated/`). This takes about a minute.
+2. **Dataset.** `nft-marker-creator -i generated/scribbles.jpg -o generated --threads 4` (or the
+   Node app, then copy its `src/output/scribbles.*` into `generated/`). This takes 20 s to a minute.
 3. **Check.** `npm run trackability -- generated/scribbles` should report *good*:
    742 detection points, coverage 1, repetition 0.187, 398 tracking points.
 4. **Project.** `npm run example:project -- generated/scribbles` writes `generated/scribbles.zip`.
@@ -179,9 +189,10 @@ ComfyUI or Krita, and step 4's model with a Blender export.
    `--scale` to size it.
 5. **Studio.** `npm run dev`, then *Import…* the `.zip`, print the marker at 100 %, and point the
    camera at it. Importing a project **replaces the current graph and all uploaded assets**:
-   export your work first (*Export → Project (.zip)*). In a one-off run when this example was written,
-   the Node tracker (as in `tests/integration/nft-session.test.ts`) found the marker on the first
-   frame, letterboxed in a 320 × 240 frame.
+   export your work first (*Export → Project (.zip)*). When this example was written, the marker
+   tracked in the player with a real camera, and the Node tracker (as in
+   `tests/integration/nft-session.test.ts`) found it on the first frame, letterboxed in a
+   320 × 240 frame. Both were one-off checks: CI cannot run the generator.
 
 ### A model from Blender
 
