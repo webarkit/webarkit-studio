@@ -6,9 +6,10 @@
  * in src/runtime/registry.ts under the same `type` key.
  *
  * Naming: `<namespace>.<name>`. Library-specific nodes use the library as
- * namespace (`jsartoolkitNFT.*`, `three.*`, `babylon.*`), so names never clash
- * with other providers. `webarkit.*` is reserved for the webarkit/webarkit
- * packages (@webarkit/nft-tracker, @webarkit/cv-backend-*).
+ * namespace (`three.*`, `babylon.*`; plugins use their id, e.g. `jsartoolkitNFT.*`
+ * from plugins/jsartoolkit-nft), so names never clash with other providers.
+ * `webarkit.*` is reserved for the webarkit/webarkit packages
+ * (@webarkit/nft-tracker, @webarkit/cv-backend-*).
  */
 import type { SocketType } from '../core/sockets';
 
@@ -30,20 +31,30 @@ interface ParamBase {
 /**
  * Marks a string param as a URL of files the graph needs at runtime, so the
  * app exporter can bundle them: `file` = the URL itself, `nftDataset` = an
- * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft).
+ * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft), `model` = a
+ * glTF / GLB file. The value may also reference an uploaded asset of that
+ * kind (`asset://<id>/<name>`, see src/core/assets.ts).
  */
-export type AssetKind = 'file' | 'nftDataset';
+export type AssetKind = 'file' | 'nftDataset' | 'model';
 
 export type ParamSpec = ParamBase &
   (
-    | { kind: 'string'; default: string; asset?: AssetKind }
+    /**
+     * `syntax: 'expression'`: a math.expression formula (src/core/expression.ts) with the variables a–d and t;
+     * the editor shows its errors under the field. Meant for math.expression's own variables only.
+     */
+    | { kind: 'string'; default: string; asset?: AssetKind; syntax?: 'expression' }
     | { kind: 'number'; default: number; min?: number; max?: number; step?: number }
     | { kind: 'boolean'; default: boolean }
     | { kind: 'select'; default: string; options: Record<string, string> }
     | { kind: 'color'; default: string }
+    /** x, y, z; `unit` is shown in the editor (e.g. "mm", "°"). */
+    | { kind: 'vector3'; default: [number, number, number]; step?: number; unit?: string }
+    /** A 4x4 matrix, column-major (like every matrix in the studio). */
+    | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -57,7 +68,8 @@ export interface NodeDefinition {
   params: Record<string, ParamSpec>;
 }
 
-const defs: NodeDefinition[] = [
+/** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
+export const CORE_NODES: NodeDefinition[] = [
   // ------------------------------------------------------------ sources
   {
     type: 'source.camera',
@@ -73,92 +85,31 @@ const defs: NodeDefinition[] = [
       height: { kind: 'number', label: 'Height', default: 480, min: 240, max: 1080, step: 1 },
     },
   },
-
-  // ----------------------------------------------- tracking: JsartoolkitNFT
   {
-    type: 'jsartoolkitNFT.cameraParams',
-    label: 'Camera Params',
-    category: 'tracking',
-    provider: 'JsartoolkitNFT',
-    description: 'ARToolKit camera calibration file (camera_para.dat).',
+    type: 'source.image',
+    label: 'Image',
+    category: 'source',
+    provider: 'core',
+    description: 'A still image as the video, for testing without a camera.',
     inputs: {},
-    outputs: { params: { type: 'artkCameraParams', label: 'Params' } },
-    params: { url: { kind: 'string', label: 'URL', default: 'data/camera_para.dat', asset: 'file' } },
+    outputs: { video: { type: 'video', label: 'Video' } },
+    params: { url: { kind: 'string', label: 'URL', default: 'data/pinball-demo.jpg', asset: 'file' } },
   },
   {
-    type: 'jsartoolkitNFT.dataset',
-    label: 'NFT Dataset',
-    category: 'tracking',
-    provider: 'JsartoolkitNFT',
-    description: 'ARToolKit NFT dataset prefix: loads <url>.iset / .fset / .fset3. Name: how Select Marker finds it (default: last URL segment).',
+    type: 'source.videoFile',
+    label: 'Video File',
+    category: 'source',
+    provider: 'core',
+    description: 'A recorded video as the video, for testing without a camera.',
     inputs: {},
-    outputs: { dataset: { type: 'artkNftDataset', label: 'Dataset' } },
+    outputs: { video: { type: 'video', label: 'Video' } },
     params: {
-      url: { kind: 'string', label: 'URL prefix', default: 'data/DataNFT/pinball', asset: 'nftDataset' },
-      name: { kind: 'string', label: 'Name', default: '' },
-    },
-  },
-  {
-    type: 'jsartoolkitNFT.settings',
-    label: 'Controller Settings',
-    category: 'tracking',
-    provider: 'JsartoolkitNFT',
-    description:
-      "Tracker settings that affect NFT tracking, applied live with the tracker's configure(): detection, " +
-      'log level, near / far (which also update the projection), the lost grace period and the AR2 tracking parameters ' +
-      '(search size 0 = the build default).',
-    inputs: {},
-    outputs: { settings: { type: 'artkSettings', label: 'Settings' } },
-    params: {
-      continuousDetection: { kind: 'boolean', label: 'Continuous detection', default: true, live: true },
-      detectionInterval: { kind: 'number', label: 'Detection interval (ms)', default: 300, min: 0, max: 5000, step: 10, live: true },
-      logLevel: {
-        kind: 'select',
-        label: 'Log level',
-        default: '2',
-        options: { Debug: '0', Info: '1', Warn: '2', Error: '3' },
-        live: true,
-      },
-      near: { kind: 'number', label: 'Near plane (mm)', default: 10, min: 0.1, max: 1000, step: 1, live: true },
-      far: { kind: 'number', label: 'Far plane (mm)', default: 10000, min: 100, max: 100000, step: 100, live: true },
-      lostTimeout: { kind: 'number', label: 'Lost after ms', default: 200, min: 0, max: 5000, step: 10, live: true },
-      trackingThresh: { kind: 'number', label: 'Track thresh', default: 5, min: 0.1, max: 100, step: 0.1, live: true },
-      simThresh: { kind: 'number', label: 'Sim thresh', default: 0.5, min: 0.01, max: 1, step: 0.01, live: true },
-      searchFeatureNum: { kind: 'number', label: 'Features', default: 16, min: 3, max: 40, step: 1, live: true },
-      templateSize1: { kind: 'number', label: 'Template W', default: 6, min: 1, max: 32, step: 1, live: true },
-      templateSize2: { kind: 'number', label: 'Template H', default: 6, min: 1, max: 32, step: 1, live: true },
-      searchSize: { kind: 'number', label: 'Search size', default: 0, min: 0, max: 64, step: 1, live: true },
-    },
-  },
-  {
-    type: 'jsartoolkitNFT.controller',
-    label: 'ARControllerNFT',
-    category: 'tracking',
-    provider: 'JsartoolkitNFT',
-    description:
-      'JsartoolkitNFT tracker (createNFTTracker) in a Web Worker, tracking one or more NFT datasets. ' +
-      'Markers → Select Marker to get one marker\'s pose. onFound / onLost fire for any marker. Optional slots: settings, pose filter (one filter per marker).',
-    inputs: {
-      video: { type: 'video', label: 'Video' },
-      cameraParams: { type: 'artkCameraParams', label: 'Camera params' },
-      dataset: { type: 'artkNftDataset', label: 'Datasets', multiple: true },
-      settings: { type: 'artkSettings', label: 'Settings', optional: true },
-      filter: { type: 'poseFilter', label: 'Filter', optional: true },
-    },
-    outputs: {
-      markers: { type: 'trackingResult', label: 'Markers' },
-      onFound: { type: 'event', label: 'onFound (any)' },
-      onLost: { type: 'event', label: 'onLost (any)' },
-      projection: { type: 'projection', label: 'Projection' },
-      cameraMatrix: { type: 'matrix4', label: 'Camera matrix (raw)' },
-      stats: { type: 'trackingStats', label: 'Stats' },
-      trace: { type: 'trackingTrace', label: 'Trace' },
-    },
-    params: {
-      build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default' } },
+      url: { kind: 'string', label: 'URL', default: '', asset: 'file' },
+      loop: { kind: 'boolean', label: 'Loop', default: true, live: true },
     },
   },
 
+  // ---------------------------------------------------------- tracking
   {
     type: 'tracking.selectMarker',
     label: 'Select Marker',
@@ -177,16 +128,6 @@ const defs: NodeDefinition[] = [
   },
 
   // ------------------------------------------------------------- filters
-  {
-    type: 'jsartoolkitNFT.nativeFilter',
-    label: 'Native Filter',
-    category: 'filter',
-    provider: 'JsartoolkitNFT',
-    description: "ARToolKit's built-in pose filter (the tracker's 'native' filter). JsartoolkitNFT controllers only.",
-    inputs: {},
-    outputs: { filter: { type: 'poseFilter', label: 'Filter' } },
-    params: {},
-  },
   {
     type: 'filter.oneEuro',
     label: 'One Euro Filter',
@@ -254,11 +195,15 @@ const defs: NodeDefinition[] = [
       'A light. Left unconnected (or wired to AR View) it lives in camera space and lights the scene from the viewer; ' +
       'wired to a Marker Anchor it follows the marker and lights from above it. ' +
       'Turn off "Default lights" on the Scene to light only with these.',
-    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      // Overrides the color param while connected (alpha ignored: a light has no opacity).
+      color: { type: 'color', label: 'Color', optional: true },
+    },
     outputs: { object: { type: 'sceneObject', label: 'Light' } },
     params: {
       kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient' } },
-      color: { kind: 'color', label: 'Color', default: '#ffffff' },
+      color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
       intensity: { kind: 'number', label: 'Intensity', default: 1.5, min: 0, max: 10, step: 0.1, live: true },
     },
   },
@@ -267,14 +212,42 @@ const defs: NodeDefinition[] = [
     label: 'Primitive',
     category: 'scene',
     provider: 'core',
-    description: 'A simple mesh created in the connected scene.',
-    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    description:
+      'A simple mesh created in the connected scene, resting on the marker. Position (mm) and rotation (degrees, X then Y then Z) ' +
+      'move it from there; Spin turns it about its own Z axis.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      // Overrides the position param while connected (e.g. from math nodes).
+      position: { type: 'vector3', label: 'Position', optional: true },
+      // Overrides the color param while connected; alpha below 1 makes it transparent.
+      color: { type: 'color', label: 'Color', optional: true },
+    },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
       shape: { kind: 'select', label: 'Shape', default: 'box', options: { Box: 'box', Sphere: 'sphere', 'Torus knot': 'torusKnot' } },
       size: { kind: 'number', label: 'Size (mm)', default: 80, min: 1, max: 1000, step: 1 },
       color: { kind: 'color', label: 'Color', default: '#ff0055', live: true },
       spin: { kind: 'boolean', label: 'Spin', default: true, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+    },
+  },
+  {
+    type: 'scene.gltf',
+    label: 'glTF Model',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A glTF 2.0 model: a .glb, or a .gltf with embedded resources (a .gltf loading other files works from a URL in the studio, ' +
+      'but uploads and exported apps need it self-contained). Its front (glTF +Z) faces the marker bottom edge. ' +
+      'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Model' } },
+    params: {
+      url: { kind: 'string', label: 'Model URL', default: 'models/cube.glb', asset: 'model' },
+      scale: { kind: 'number', label: 'Scale (mm / unit)', default: 80, min: 0.001, max: 100000, step: 1, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
     },
   },
   {
@@ -309,6 +282,191 @@ const defs: NodeDefinition[] = [
     },
     outputs: {},
     params: { stats: { kind: 'boolean', label: 'Show FPS', default: true, live: true } },
+  },
+
+  // ---------------------------------------------------------------- math
+  // Plain numbers and vectors, no renderer types. An input with the same name
+  // as a param overrides it while connected (the param applies otherwise).
+  {
+    type: 'math.number',
+    label: 'Number',
+    category: 'math',
+    provider: 'core',
+    description: 'A constant number.',
+    inputs: {},
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: { value: { kind: 'number', label: 'Value', default: 0, step: 0.1, live: true } },
+  },
+  {
+    type: 'math.vector3',
+    label: 'Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'A vector from x, y, z (marker space: mm, +Z up). Connected inputs override the params.',
+    inputs: {
+      x: { type: 'number', label: 'X', optional: true },
+      y: { type: 'number', label: 'Y', optional: true },
+      z: { type: 'number', label: 'Z', optional: true },
+    },
+    outputs: { vector: { type: 'vector3', label: 'Vector' } },
+    params: {
+      x: { kind: 'number', label: 'X', default: 0, step: 1, live: true },
+      y: { kind: 'number', label: 'Y', default: 0, step: 1, live: true },
+      z: { kind: 'number', label: 'Z', default: 0, step: 1, live: true },
+    },
+  },
+  {
+    type: 'math.splitVector3',
+    label: 'Split Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'The x, y, z of a vector.',
+    inputs: { vector: { type: 'vector3', label: 'Vector' } },
+    outputs: {
+      x: { type: 'number', label: 'X' },
+      y: { type: 'number', label: 'Y' },
+      z: { type: 'number', label: 'Z' },
+    },
+    params: {},
+  },
+  {
+    type: 'math.addVector3',
+    label: 'Add Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'a + b, component by component. Connected inputs override the params.',
+    inputs: { a: { type: 'vector3', label: 'A', optional: true }, b: { type: 'vector3', label: 'B', optional: true } },
+    outputs: { vector: { type: 'vector3', label: 'A + B' } },
+    params: {
+      a: { kind: 'vector3', label: 'A', default: [0, 0, 0], step: 1, live: true },
+      b: { kind: 'vector3', label: 'B', default: [0, 0, 0], step: 1, live: true },
+    },
+  },
+  {
+    type: 'math.scaleVector3',
+    label: 'Scale Vector3',
+    category: 'math',
+    provider: 'core',
+    description: 'vector × factor. Connected inputs override the params.',
+    inputs: { vector: { type: 'vector3', label: 'Vector', optional: true }, factor: { type: 'number', label: 'Factor', optional: true } },
+    outputs: { vector: { type: 'vector3', label: 'Vector × factor' } },
+    params: {
+      vector: { kind: 'vector3', label: 'Vector', default: [0, 0, 0], step: 1, live: true },
+      factor: { kind: 'number', label: 'Factor', default: 1, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.add',
+    label: 'Add',
+    category: 'math',
+    provider: 'core',
+    description: 'a + b. Connected inputs override the params.',
+    inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
+    outputs: { value: { type: 'number', label: 'A + B' } },
+    params: {
+      a: { kind: 'number', label: 'A', default: 0, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 0, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.multiply',
+    label: 'Multiply',
+    category: 'math',
+    provider: 'core',
+    description: 'a × b. Connected inputs override the params.',
+    inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
+    outputs: { value: { type: 'number', label: 'A × B' } },
+    params: {
+      a: { kind: 'number', label: 'A', default: 1, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 1, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.sin',
+    label: 'Sine',
+    category: 'math',
+    provider: 'core',
+    description: 'offset + amplitude × sin(x), x in degrees (like the rotations). A connected x overrides the param.',
+    inputs: { x: { type: 'number', label: 'X (°)', optional: true } },
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: {
+      x: { kind: 'number', label: 'X (°)', default: 0, step: 1, live: true },
+      amplitude: { kind: 'number', label: 'Amplitude', default: 1, step: 0.1, live: true },
+      offset: { kind: 'number', label: 'Offset', default: 0, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'math.time',
+    label: 'Time',
+    category: 'math',
+    provider: 'core',
+    description: 'Seconds since the first frame (after every node is ready), counted at Speed. With Multiply and Sine, it animates.',
+    inputs: {},
+    outputs: { seconds: { type: 'number', label: 'Seconds' } },
+    params: { speed: { kind: 'number', label: 'Speed', default: 1, step: 0.1, live: true } },
+  },
+  {
+    type: 'math.expression',
+    label: 'Expression',
+    category: 'math',
+    provider: 'core',
+    description:
+      'A number from a formula, e.g. 40 + 30 * sin(t * 180). Variables a, b, c, d (params, or their inputs) and t ' +
+      '(seconds since the first frame, or its input). Operators + - * / % ^, unary - and ! (not), comparisons, && ||, ? :, pi; functions ' +
+      'sin cos tan asin acos atan atan2 (degrees), sqrt abs min max clamp lerp pow log exp floor ceil round mod.',
+    inputs: {
+      a: { type: 'number', label: 'A', optional: true },
+      b: { type: 'number', label: 'B', optional: true },
+      c: { type: 'number', label: 'C', optional: true },
+      d: { type: 'number', label: 'D', optional: true },
+      t: { type: 'number', label: 'T (s)', optional: true },
+    },
+    outputs: { value: { type: 'number', label: 'Value' } },
+    params: {
+      expression: { kind: 'string', label: 'Formula', default: 'a + b', syntax: 'expression', live: true },
+      a: { kind: 'number', label: 'A', default: 0, step: 0.1, live: true },
+      b: { kind: 'number', label: 'B', default: 0, step: 0.1, live: true },
+      c: { kind: 'number', label: 'C', default: 0, step: 0.1, live: true },
+      d: { kind: 'number', label: 'D', default: 0, step: 0.1, live: true },
+    },
+  },
+
+  // --------------------------------------------------------------- color
+  // [r, g, b, a] values (0–1, sRGB). Inputs override the params of the same name.
+  {
+    type: 'color.rgba',
+    label: 'RGBA Color',
+    category: 'math',
+    provider: 'core',
+    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
+    inputs: {
+      r: { type: 'number', label: 'R', optional: true },
+      g: { type: 'number', label: 'G', optional: true },
+      b: { type: 'number', label: 'B', optional: true },
+      a: { type: 'number', label: 'A', optional: true },
+    },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: {
+      r: { kind: 'number', label: 'R', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      g: { kind: 'number', label: 'G', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      b: { kind: 'number', label: 'B', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      a: { kind: 'number', label: 'A', default: 1, min: 0, max: 1, step: 0.01, live: true },
+    },
+  },
+  {
+    type: 'color.split',
+    label: 'Split Color',
+    category: 'math',
+    provider: 'core',
+    description: 'The red, green, blue and alpha of a colour (0–1).',
+    inputs: { color: { type: 'color', label: 'Color' } },
+    outputs: {
+      r: { type: 'number', label: 'R' },
+      g: { type: 'number', label: 'G' },
+      b: { type: 'number', label: 'B' },
+      a: { type: 'number', label: 'A' },
+    },
+    params: {},
   },
 
   // --------------------------------------------------------------- debug
@@ -351,4 +509,5 @@ const defs: NodeDefinition[] = [
   },
 ];
 
-export const NODE_CATALOG: Record<string, NodeDefinition> = Object.fromEntries(defs.map((d) => [d.type, d]));
+/** Every node type of this page: the core nodes, then those of the loaded plugins. */
+export const NODE_CATALOG: Record<string, NodeDefinition> = Object.fromEntries(CORE_NODES.map((d) => [d.type, d]));

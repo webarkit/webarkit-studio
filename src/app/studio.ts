@@ -2,11 +2,20 @@
  * Studio shell: palette + Rete editor + live preview (GraphRuntime).
  */
 import { createStudioEditor } from '../editor/editor';
-import { NODE_CATALOG, type NodeCategory } from '../nodes/catalog';
+import { commitPendingEdit, renderInspector } from '../editor/inspector';
+import type { StudioNode } from '../editor/studio-node';
+import { NODE_CATALOG } from '../nodes/catalog';
+import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, validateGraph, type GraphDocument } from '../core/graph';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
+import { isProjectFile, unpackProject } from '../export/project';
+import { openAssetStore } from '../assets/asset-store';
+import { mountAssetsPanel } from './assets-panel';
+import { parseAssetRef } from '../core/assets';
+import { loadPlugins } from '../plugins/host';
+import studioConfig from '../../webarkit-studio.config';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -19,8 +28,20 @@ const log = (msg: string) => {
   logEl.scrollTop = logEl.scrollHeight;
 };
 
+// Every plugin of the build, before the editor: the palette lists their nodes.
+await loadPlugins(studioConfig).catch((err) => log(`✗ plugins: ${(err as Error).message}`));
+const assetStore = await openAssetStore(log);
+
+const inspectorEl = $('inspector');
+let inspected: StudioNode | null = null;
+const showInspector = () => {
+  const node = inspected; // bound here: the setter must not follow a later selection
+  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value));
+};
+
 const studio = await createStudioEditor($('editor'), {
   onChange() {
+    showInspector(); // params may have changed (in the node, by undo)
     try {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(studio.toDocument()));
     } catch {
@@ -31,11 +52,35 @@ const studio = await createStudioEditor($('editor'), {
   onParamChange(nodeId, key, value) {
     if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
+  // Wires are read when the preview starts: say so once per run.
+  onWiresChange() {
+    if (runtime && !wiresChangedLogged) {
+      wiresChangedLogged = true;
+      log('⟳ wires changed: press Reload to apply them');
+    }
+  },
+  onInspect(node) {
+    commitPendingEdit(inspectorEl); // to the node it was typed for
+    inspected = node;
+    showInspector();
+  },
+  onHistoryChange({ canUndo, canRedo }) {
+    $<HTMLButtonElement>('btn-undo').disabled = !canUndo;
+    $<HTMLButtonElement>('btn-redo').disabled = !canRedo;
+  },
 });
+showInspector();
+$('btn-undo').onclick = () => void studio.undo();
+$('btn-redo').onclick = () => void studio.redo();
+$('btn-arrange').onclick = () => void studio.arrange();
+
+mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
+  studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),
+);
 
 // ---------------------------------------------------------------- palette
-const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'output', 'debug'];
 const palette = $('palette');
+const paletteButtons = new Map<string, HTMLButtonElement>();
 for (const category of CATEGORY_ORDER) {
   const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category);
   if (!defs.length) continue;
@@ -49,9 +94,19 @@ for (const category of CATEGORY_ORDER) {
     btn.className = `cat-${category}`;
     btn.onclick = () => void studio.addNode(def.type);
     group.appendChild(btn);
+    paletteButtons.set(def.type, btn);
   }
   palette.appendChild(group);
 }
+// Filter: same ranking as the context menu search; empty groups are hidden.
+const paletteSearch = $<HTMLInputElement>('palette-search');
+paletteSearch.oninput = () => {
+  const shown = new Set(searchNodes(paletteSearch.value, Object.values(NODE_CATALOG)).map((d) => d.type));
+  for (const [type, btn] of paletteButtons) btn.hidden = !shown.has(type);
+  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group')) {
+    group.hidden = !group.querySelector('button:not([hidden])');
+  }
+};
 
 // ----------------------------------------------------------- graph I/O
 async function load(doc: unknown): Promise<boolean> {
@@ -88,7 +143,7 @@ for (const exporter of EXPORTERS) {
     exportMenu.open = false;
     log(`⇩ export: ${exporter.label}`);
     try {
-      const { filename, blob } = await exporter.run(studio.toDocument(), { baseUrl: document.baseURI, log });
+      const { filename, blob } = await exporter.run(studio.toDocument(), { baseUrl: document.baseURI, log, assets: assetStore });
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
@@ -105,8 +160,23 @@ const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {
   const file = fileInput.files?.[0];
-  if (file) await load(JSON.parse(await file.text()));
   fileInput.value = '';
+  if (!file) return;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (isProjectFile(bytes)) {
+      // A project brings its assets: they replace the current ones.
+      const project = await unpackProject(bytes);
+      validateGraph(project.graph); // an unusable project must not replace the current assets
+      await assetStore.replaceAll(project.assets);
+      log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+      await load(project.graph);
+    } else {
+      await load(JSON.parse(new TextDecoder().decode(bytes)));
+    }
+  } catch (err) {
+    log(`✗ import failed: ${(err as Error).message}`);
+  }
 };
 $('btn-player').onclick = () => {
   try {
@@ -119,6 +189,7 @@ $('btn-player').onclick = () => {
 
 // ------------------------------------------------------------- preview
 let runtime: GraphRuntime | null = null;
+let wiresChangedLogged = false;
 const stage = $('stage');
 const runBtn = $<HTMLButtonElement>('btn-run');
 const stopBtn = $<HTMLButtonElement>('btn-stop');
@@ -152,7 +223,9 @@ async function run(reason = 'run') {
       log,
       onReport: (nodeId, text) => studio.setNodeStatus(nodeId, { text }),
       studio: true,
+      assets: (assetId) => assetStore.get(assetId),
     });
+    wiresChangedLogged = false;
     await runtime.start();
     if (id !== runId) return; // superseded while starting
     log('✓ running');

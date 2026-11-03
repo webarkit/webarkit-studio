@@ -7,6 +7,7 @@ registry, node implementations or the demo graphs:
 - `src/nodes/catalog.ts`
 - `src/runtime/registry.ts`
 - `src/runtime/nodes/`
+- `src/plugin-api/`, `src/plugins/` and the plugins' catalogs and manifests (`plugins/jsartoolkit-nft/catalog.ts`, `plugins/jsartoolkit-nft/index.ts`)
 - `public/graphs/`
 
 It is tool-agnostic. The Claude Code agent `.claude/agents/graph-reviewer.md` runs
@@ -43,9 +44,20 @@ key by key; a renamed key looks like one removal plus one addition.
 - Every output a factory returns is declared in the catalog, and every required input
   the factory reads is declared (optional ones with `optional: true`).
 
+- A plugin's nodes, sockets and factories are in its manifest only (`StudioPlugin`,
+  `src/plugin-api/index.ts`); its code imports the plugin API as types, its own files and npm
+  packages, never `src/`; `src/` never imports a plugin (only `webarkit-studio.config.ts` does,
+  `webarkit-studio.node.config.ts` for the Node-only parts, and `vite.config.ts` for a plugin's
+  build-time part, a Node-side Vite plugin).
+- A graph that uses a plugin's nodes lists the plugin in `plugins` (format v5), with the
+  plugin's version; a demo graph lists the version of the plugin in this repository.
+- A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
+  the plugin API: `PLUGIN_API_VERSION` is bumped.
+
 ## 3. Naming
 
-- Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
+- Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
+  nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
 - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
@@ -60,6 +72,10 @@ key by key; a renamed key looks like one removal plus one addition.
 
 - Socket types (`src/core/sockets.ts`) stay compatible with existing graphs: a changed
   compatibility rule can break saved connections, so treat it as a format change.
+- An input that overrides a param (same name) is `optional`, has the socket type of the
+  param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
+  no valid value (AGENTS.md, "Inputs override params"). An optional input without a
+  same-named param documents what the node does when it is unwired.
 
 ## 6. Units and spaces
 

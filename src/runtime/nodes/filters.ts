@@ -13,10 +13,3 @@ export const oneEuroFilter: NodeFactory = (params) => ({
     };
   },
 });
-
-/** jsartoolkitNFT.nativeFilter — ARToolKit's built-in filtering. */
-export const jsartoolkitNativeFilter: NodeFactory = () => ({
-  init(): { filter: PoseFilterValue } {
-    return { filter: { kind: 'native', library: 'jsartoolkitNFT' } };
-  },
-});

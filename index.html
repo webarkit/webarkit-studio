@@ -18,22 +18,34 @@
         <option value="pinball-three">Demo: pinball · Three.js</option>
         <option value="pinball-babylon">Demo: pinball · Babylon.js</option>
         <option value="multi-three">Demo: multi NFT (pinball + kuva)</option>
+        <option value="pinball-image">Demo: pinball · image, no camera</option>
+        <option value="pinball-math">Demo: pinball · math and colour nodes (bobbing, fading cube)</option>
+        <option value="pinball-expression">Demo: pinball · one formula (Expression node)</option>
       </select>
       <button id="btn-demo">Load demo</button>
       <button id="btn-new">New</button>
+      <span class="sep"></span>
+      <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
+      <button id="btn-arrange" title="Lay the graph out left to right">Arrange</button>
+      <span class="sep"></span>
       <button id="btn-import">Import…</button>
       <details id="export-menu" class="menu">
         <summary>Export ▾</summary>
         <div class="menu-items" id="export-items"></div>
       </details>
       <button id="btn-player">Open in player</button>
-      <input id="file-import" type="file" accept=".json,application/json" hidden />
+      <input id="file-import" type="file" accept=".json,application/json,.zip,application/zip" hidden />
     </header>
     <main class="layout">
-      <aside id="palette" class="palette"></aside>
+      <aside class="palette">
+        <input id="palette-search" type="search" placeholder="Search nodes…" title="Filter the palette. Right-click the canvas to add a node where you click." aria-label="Search nodes" />
+        <div id="palette"></div><section id="assets-panel"></section>
+      </aside>
       <section id="editor" class="editor"></section>
       <aside class="preview">
         <div id="stage" class="stage"><p class="hint">Press ▶ Run to preview the graph.</p></div>
+        <section id="inspector" class="inspector" aria-label="Properties"></section>
         <pre id="log" class="log"></pre>
       </aside>
     </main>

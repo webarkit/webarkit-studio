@@ -1,5 +1,14 @@
 import * as THREE from 'three';
-import { assertOwned, type LightSpec, type PrimitiveSpec, type RendererAdapter, type SceneHandle, type SceneObject } from './adapter';
+import {
+  assertOwned,
+  Y_UP_TO_Z_UP,
+  type LightSpec,
+  type ModelSpec,
+  type PrimitiveSpec,
+  type RendererAdapter,
+  type SceneHandle,
+  type SceneObject,
+} from './adapter';
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
@@ -55,6 +64,29 @@ function createThreeScene(
       disposables.add(geometry).add(material);
       return wrap(new THREE.Mesh(geometry, material));
     },
+    async loadModel(spec: ModelSpec) {
+      // Loaded on demand: graphs without glTF models do not download the loader.
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+      const gltf = await new GLTFLoader().parseAsync(spec.data, spec.url.slice(0, spec.url.lastIndexOf('/') + 1));
+      gltf.scene.traverse((o) => {
+        // Meshes, lines and points: geometry and materials (with their textures); skinned meshes: skeleton.
+        const { geometry, material, skeleton } = o as Partial<THREE.SkinnedMesh>;
+        if (geometry) disposables.add(geometry);
+        if (skeleton) disposables.add(skeleton);
+        for (const m of material ? (Array.isArray(material) ? material : [material]) : []) {
+          disposables.add(m);
+          for (const value of Object.values(m)) if (value instanceof THREE.Texture) disposables.add(value);
+        }
+      });
+      const upright = new THREE.Group();
+      upright.matrixAutoUpdate = false;
+      upright.matrix.fromArray(Y_UP_TO_Z_UP);
+      upright.add(gltf.scene);
+      const model = new THREE.Group();
+      model.matrixAutoUpdate = false;
+      model.add(upright);
+      return wrap(model);
+    },
     createGroup() {
       const g = new THREE.Group();
       g.matrixAutoUpdate = false;
@@ -95,12 +127,28 @@ function createThreeScene(
       n.position.set(x, y, z);
       if (!n.matrixAutoUpdate) n.updateMatrix();
     },
-    setMatrix: (o, m) => void obj(o).matrix.fromArray(Array.from(m)),
+    setMatrix(o, m) {
+      const n = obj(o);
+      n.matrix.fromArray(Array.from(m));
+      // An object that rebuilds its matrix each frame (a mesh) keeps it through its position / rotation / scale
+      // (a TRS matrix: shear would be lost, so a raw matrix4 for a mesh needs matrixAutoUpdate = false instead).
+      if (n.matrixAutoUpdate) n.matrix.decompose(n.position, n.quaternion, n.scale);
+    },
     setVisible: (o, v) => void (obj(o).visible = v),
-    rotateZ: (o, r) => void (obj(o).rotation.z += r),
-    setColor(o, c) {
-      const material = (obj(o) as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      material?.color?.set(c);
+    setColor(o, [r, g, b, a]) {
+      const n = obj(o);
+      if (n instanceof THREE.Light) {
+        n.color.setRGB(r, g, b, THREE.SRGBColorSpace);
+        return;
+      }
+      const material = (n as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (!material?.color) return;
+      material.color.setRGB(r, g, b, THREE.SRGBColorSpace);
+      const transparent = a < 1;
+      if (material.transparent !== transparent) material.needsUpdate = true;
+      material.transparent = transparent;
+      material.opacity = a;
+      material.depthWrite = !transparent;
     },
     setIntensity: (o, i) => void ((obj(o) as THREE.Light).intensity = i),
 

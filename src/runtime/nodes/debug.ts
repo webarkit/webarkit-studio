@@ -7,7 +7,6 @@
  */
 import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
-import type { NftSettings } from '../trackers/nft-session';
 
 const REPORT_INTERVAL_MS = 200;
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
@@ -31,6 +30,8 @@ export function formatValue(value: unknown): string {
     return rows.join('\n');
   }
   if (Array.isArray(value)) {
+    // Vectors (vector3, vector2): the numbers themselves.
+    if (value.length && value.length <= 4 && value.every((v) => typeof v === 'number')) return `[${value.map(num).join(', ')}]`;
     // Tracking result: one line per marker.
     if (value.length && value.every((m) => m && typeof m === 'object' && 'found' in m && 'name' in m)) {
       return (value as Array<{ index: number; name: string; found: boolean; onFound: { count: number } }>)
@@ -51,7 +52,9 @@ export function formatValue(value: unknown): string {
     }
     if (typeof o.kind === 'string' && 'canvas' in o) return `${o.kind} renderer`;
     if ('scene' in o && 'native' in o) return 'scene object';
-    if ('element' in o && o.element instanceof HTMLVideoElement) return `video ${o.width}×${o.height}`;
+    // Video values: by tag name, not instanceof, so this also runs outside a browser.
+    const tag = (o.element as { tagName?: unknown } | null | undefined)?.tagName;
+    if (tag === 'VIDEO' || tag === 'IMG') return `${tag === 'IMG' ? 'image' : 'video'} ${o.width}×${o.height}`;
     return Object.entries(o)
       .map(([k, v]) => `${k}: ${typeof v === 'number' ? num(v) : isMatrix4(v) ? '4x4 matrix' : JSON.stringify(v)}`)
       .join('\n');
@@ -149,7 +152,7 @@ export const statsNode: NodeFactory = (params, ctx) => {
 export class TraceRecorder {
   private seen: TrackingTraceValue | null = null;
   /** Settings in force now: the header's, then the last live change. */
-  private settings: NftSettings | null = null;
+  private settings: object | null = null;
   private header: TraceHeader | null = null;
   private records: TraceRecord[] = [];
   private frameCount = 0;

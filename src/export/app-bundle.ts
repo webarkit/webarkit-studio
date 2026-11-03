@@ -7,13 +7,17 @@
  *   <app>/graph.json     the graph (re-importable in the studio)
  *   <app>/assets/…       player, engine and tracker chunks (only those the graph uses)
  *   <app>/data/…         camera parameters, NFT datasets, …
+ *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
-import { validateGraph, type GraphDocument } from '../core/graph';
+import { validateGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
+import { INSTALLED_PLUGINS } from '../plugins/host';
+import type { ExportFile, StudioPlugin } from '../plugin-api';
 
 export interface PlayerManifest {
   entry: string;
@@ -29,21 +33,26 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
-  {
-    module: 'jsartoolkit-nft/dist/ARToolkitNFT_simd.js',
-    needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && (n.params.build ?? 'simd') === 'simd'),
-  },
-  {
-    module: 'jsartoolkit-nft/dist/ARToolkitNFT.js',
-    needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller' && n.params.build === 'default'),
-  },
+  // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
+  { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
+  { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
+  // Plugins add theirs (on-demand builds, their own chunk): `kind: 'module'` exportFiles.
 ];
-/** Workers are referenced by URL (new Worker(new URL(…))), not imported: started from these roots. */
-const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
-  { module: 'src/runtime/workers/jsartoolkit-nft.worker.ts', needed: (d) => d.nodes.some((n) => n.type === 'jsartoolkitNFT.controller') },
-];
+/**
+ * Workers are referenced by URL (new Worker(new URL(…))), not imported: started from these roots.
+ * The core has none; plugins add theirs (`kind: 'worker'` exportFiles).
+ */
+const WORKER_ROOTS: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [];
 
-const NFT_DATASET_EXTENSIONS = ['iset', 'fset', 'fset3'];
+/** The plugins' export files, each with whether this graph needs it (it uses the plugin, and `needed` agrees). */
+function pluginExportFiles(doc: GraphDocument, plugins: Iterable<StudioPlugin>): Array<{ file: ExportFile; needed: boolean }> {
+  const out: Array<{ file: ExportFile; needed: boolean }> = [];
+  for (const plugin of plugins) {
+    const nodes: GraphNode[] = doc.nodes.filter((n) => n.type.startsWith(`${plugin.id}.`));
+    for (const file of plugin.exportFiles ?? []) out.push({ file, needed: nodes.length > 0 && (file.needed?.(nodes) ?? true) });
+  }
+  return out;
+}
 
 class ExportError extends Error {}
 
@@ -65,12 +74,36 @@ async function tryFetch(url: string): Promise<Uint8Array | null> {
   }
 }
 
-/** Player files the graph needs, following the chunk graph from the entry page and worker roots. */
-/** Exported for tests. */
-export function selectPlayerFiles(manifest: PlayerManifest, entryHtml: string, doc: GraphDocument): Set<string> {
+/**
+ * Player files the graph needs, following the chunk graph from the entry page
+ * and worker roots. `plugins`: the loaded plugins, whose exportFiles add
+ * optional modules and worker roots. Exported for tests.
+ */
+export function selectPlayerFiles(
+  manifest: PlayerManifest,
+  entryHtml: string,
+  doc: GraphDocument,
+  plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
+): Set<string> {
   const chunkWith = (module: string) => Object.entries(manifest.chunks).find(([, c]) => c.modules.some((m) => m.endsWith(module)))?.[0];
+  const fromPlugins = [...plugins].flatMap((plugin) => pluginExportFiles(doc, [plugin]).map((f) => ({ ...f, plugin: plugin.id })));
+  // A needed file the build does not have would leave the app without it: say so at export time.
+  for (const { file, needed, plugin } of fromPlugins) {
+    if (needed && file.kind !== 'file' && !chunkWith(file.module)) {
+      throw new ExportError(`plugin ${plugin}: ${file.module} is not in the player build (rebuild it with "npm run build:player")`);
+    }
+  }
+  const optional = [
+    ...OPTIONAL_MODULES.map((o) => ({ module: o.module, needed: o.needed(doc) })),
+    ...fromPlugins.flatMap(({ file, needed }) => (file.kind === 'module' ? [{ module: file.module, needed }] : [])),
+  ];
+  const workers = [
+    ...WORKER_ROOTS.map((w) => ({ module: w.module, needed: w.needed(doc) })),
+    ...fromPlugins.flatMap(({ file, needed }) => (file.kind === 'worker' ? [{ module: file.module, needed }] : [])),
+  ];
   const excluded = new Set(
-    OPTIONAL_MODULES.filter((o) => !o.needed(doc))
+    optional
+      .filter((o) => !o.needed)
       .map((o) => chunkWith(o.module))
       .filter((f): f is string => !!f),
   );
@@ -79,8 +112,8 @@ export function selectPlayerFiles(manifest: PlayerManifest, entryHtml: string, d
   const queue: string[] = [];
   // Scripts and styles referenced by the entry page.
   for (const m of entryHtml.matchAll(/(?:src|href)="\.\/([^"]+)"/g)) queue.push(m[1]);
-  for (const root of WORKER_ROOTS) {
-    const file = root.needed(doc) ? chunkWith(root.module) : undefined;
+  for (const root of workers) {
+    const file = root.needed ? chunkWith(root.module) : undefined;
     if (file) queue.push(file);
   }
   while (queue.length) {
@@ -108,6 +141,98 @@ export function bundlePath(url: URL, base: URL): { path: string; rewritten: bool
   return { path: `data/_ext/${name}`, rewritten: true };
 }
 
+/** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
+const safeName = (name: string) => {
+  const safe = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  return /^\.*$/.test(safe) ? '_' : safe; // never "", "." or ".."
+};
+
+/**
+ * Only the model file is bundled: a JSON .gltf that loads buffers or images
+ * from other files would arrive without them. GLB files are always accepted.
+ */
+function checkSelfContained(data: Uint8Array, where: string): void {
+  if (data[0] === 0x67 && data[1] === 0x6c && data[2] === 0x54 && data[3] === 0x46) return; // "glTF": GLB
+  let gltf: { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  try {
+    gltf = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return; // not glTF JSON: the loader will say so
+  }
+  const external = [...(gltf.buffers ?? []), ...(gltf.images ?? [])].map((r) => r.uri).filter((uri): uri is string => !!uri && !uri.startsWith('data:'));
+  if (external.length) {
+    throw new ExportError(`${where}: the model loads ${external.join(', ')}; export needs a self-contained .gltf (embedded data) or a .glb`);
+  }
+}
+
+/**
+ * Collects the files the graph's asset params need, as bundle path → bytes,
+ * and rewrites the params that point elsewhere (uploads, other origins).
+ * Uploaded assets go under data/assets/<id>/. `doc` is modified.
+ */
+/** Exported for tests. */
+export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
+  for (const node of doc.nodes) {
+    const def = NODE_CATALOG[node.type];
+    for (const [key, spec] of Object.entries(def.params)) {
+      if (spec.kind !== 'string' || !spec.asset) continue;
+      const value = String(node.params[key] ?? spec.default);
+      const ref = parseAssetRef(value);
+      if (ref) {
+        const asset = ctx.assets?.get(ref.id);
+        if (!asset) throw new ExportError(`${node.id}.${key}: asset "${ref.name || ref.id}" is not in this project`);
+        if (asset.kind !== spec.asset) throw new ExportError(`${node.id}.${key}: asset "${asset.name}" is a ${asset.kind}, not a ${spec.asset}`);
+        const path = `data/assets/${asset.id}/${safeName(asset.name)}`;
+        if (spec.asset === 'nftDataset') {
+          for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
+        } else {
+          files[path] = await bytes(asset.files['']);
+          if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
+        }
+        node.params[key] = path;
+        ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
+        continue;
+      }
+      const url = new URL(value, base);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
+      const { path, rewritten } = bundlePath(url, base);
+
+      if (spec.asset === 'nftDataset') {
+        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
+        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
+        if (parts.every(Boolean)) {
+          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
+        } else {
+          const zft = await tryFetch(`${url.href}.zft`);
+          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
+          files[`${path}.zft`] = zft;
+        }
+      } else {
+        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
+        if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
+      }
+      if (rewritten) node.params[key] = path;
+      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
+    }
+  }
+  return files;
+}
+
+/** The static files (`kind: 'file'`) of the plugins the graph uses, as bundle path → bytes. Exported for tests. */
+export async function collectPluginFiles(
+  doc: GraphDocument,
+  base: URL,
+  plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
+): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  for (const { file, needed } of pluginExportFiles(doc, plugins)) {
+    if (file.kind === 'file' && needed) files[file.to] = await fetchBytes(new URL(file.from, base).href, `plugin file ${file.to}`);
+  }
+  return files;
+}
+
 export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
   const doc = validateGraph(structuredClone(input));
   const base = new URL(ctx.baseUrl);
@@ -130,32 +255,8 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
   }
 
   // ---------------------------------------------------------------- assets
-  for (const node of doc.nodes) {
-    const def = NODE_CATALOG[node.type];
-    for (const [key, spec] of Object.entries(def.params)) {
-      if (spec.kind !== 'string' || !spec.asset) continue;
-      const value = String(node.params[key] ?? spec.default);
-      const url = new URL(value, base);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
-      const { path, rewritten } = bundlePath(url, base);
-
-      if (spec.asset === 'file') {
-        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
-      } else {
-        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
-        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
-        if (parts.every(Boolean)) {
-          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
-        } else {
-          const zft = await tryFetch(`${url.href}.zft`);
-          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
-          files[`${path}.zft`] = zft;
-        }
-      }
-      if (rewritten) node.params[key] = path;
-      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
-    }
-  }
+  Object.assign(files, await collectAssets(doc, base, ctx));
+  Object.assign(files, await collectPluginFiles(doc, base));
 
   // ------------------------------------------------------- page and graph
   const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');
@@ -192,8 +293,9 @@ Serve this folder with any static web server and open index.html, e.g.:
 Requirements:
 - Camera access needs a secure context: http://localhost works; on a phone use HTTPS
   (or "adb reverse tcp:8080 tcp:8080" on Android).
-- The server must answer 404 for missing files. JsartoolkitNFT probes <dataset>.zft and
-  treats any HTTP 200 (e.g. an SPA fallback page) as a compressed dataset.
+- The server must answer 404 for missing files. Trackers probe for optional files (the
+  jsartoolkitNFT tracker: <dataset>.zft) and treat any HTTP 200 (e.g. an SPA fallback
+  page) as that file.
 
 Contents
 --------

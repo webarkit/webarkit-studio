@@ -1,35 +1,26 @@
+import type { Rgba } from '../core/color';
 import type { ParamValue } from '../core/graph';
 import type { RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
 import type { PoseFilterConfig } from './filters/pose-filter';
-import type { NftSettings } from './trackers/nft-session';
 import type { TraceHeader, TraceRecord } from './trackers/trace';
 
 /** Values flowing through each socket type at runtime. */
 export interface VideoValue {
-  element: HTMLVideoElement;
+  /** Drawn into the tracker's frame and shown behind the scene: a camera or a video file, or a still image. */
+  element: HTMLVideoElement | HTMLImageElement;
   width: number;
   height: number;
 }
-/** artkCameraParams */
-export interface ArtkCameraParamsValue {
-  url: string;
-}
-/** artkNftDataset */
-export interface ArtkNftDatasetValue {
-  url: string;
-  /** Marker name used by Select Marker (defaults to the URL's last segment). */
-  name: string;
-}
-/** artkSettings: the Controller Settings, applied with the tracker's configure() (live). */
-export type ArtkSettingsValue = NftSettings;
 /** poseFilter: a serialisable description, instantiated where the poses are produced (the tracker worker). */
 export type PoseFilterValue = PoseFilterConfig;
 /** Column-major 4x4 matrix (WebGL convention), or null when not tracked. */
 export type PoseValue = ArrayLike<number> | null;
 export type ProjectionValue = ArrayLike<number> | null;
+/** color: [r, g, b, a], each 0–1, in sRGB (src/core/color.ts). */
+export type ColorValue = Rgba;
 /** matrix4: any column-major 4x4 matrix. */
 export type Matrix4Value = ArrayLike<number>;
-/** markerInfo: getNFTData() plus the physical size it implies. */
+/** markerInfo: a marker's image size and resolution, and the physical size they imply. */
 export interface MarkerInfoValue {
   id: number;
   name: string;
@@ -66,7 +57,7 @@ export type TrackingResultValue = TrackedMarkerValue[];
 export interface TrackingStatsValue {
   /** Processed frames per second (a frame is sent when the previous result arrived). */
   trackingFps: number;
-  /** Time spent in ARControllerNFT.process(), ms (worker side). */
+  /** Time spent in the tracker's process(), ms (worker side). */
   processMs: number;
   /** Frame sent → result received, ms (includes transfer and queueing). */
   latencyMs: number;
@@ -110,6 +101,12 @@ export interface RuntimeContext {
   report: (text: string) => void;
   /** True in the studio's preview, false in the player (exported apps): debug tools that act on their own (downloads) stay off there. */
   studio: boolean;
+  /**
+   * Files of uploaded NFT datasets: virtual URL (under VIRTUAL_ASSET_ORIGIN) →
+   * blob: URL (src/runtime/assets.ts), filled as nodes resolve their asset
+   * params. A tracker worker serves them to its library's fetch().
+   */
+  virtualFiles?: Record<string, string>;
 }
 
 /**

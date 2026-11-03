@@ -1,5 +1,5 @@
 ---
-applyTo: "src/core/**,src/nodes/**,src/runtime/registry.ts,src/runtime/nodes/**,public/graphs/**"
+applyTo: "src/core/**,src/nodes/**,src/plugin-api/**,src/plugins/**,src/runtime/registry.ts,src/runtime/nodes/**,plugins/*/catalog.ts,plugins/*/index.ts,public/graphs/**"
 ---
 
 # Graph rules

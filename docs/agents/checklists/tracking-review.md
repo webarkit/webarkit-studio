@@ -3,8 +3,8 @@
 Use this checklist for a diff that touches tracking:
 
 - `src/runtime/trackers/`
-- `src/runtime/workers/`
-- `src/runtime/nodes/jsartoolkit-nft.ts`
+- `plugins/`
+- `plugins/jsartoolkit-nft/nodes.ts`
 - `src/runtime/nodes/tracking.ts`
 - `src/runtime/filters/`
 - `tests/integration/`
@@ -16,18 +16,24 @@ wins on conflict.
 
 ## 1. Where the logic lives
 
-- The jsartoolkitNFT tracker facade (`createNFTTracker`, #5) does the tracking: poses,
-  found / lost, filters, the lens and its projection.
-- `NftSession` (`src/runtime/trackers/nft-session.ts`) only maps the graph onto the facade:
+- The jsartoolkitNFT tracker facade (#5) does the tracking: poses, found / lost, filters,
+  the lens and its projection. In the browser it runs in the facade's own worker
+  (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14).
+- `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto the facade:
   Controller Settings → `configure()`, the filter slot → `filter`, target ids → dataset
   indices. It depends only on the facade's public API (type imports and an injected
-  `createNFTTracker`), so the browser worker and the Node tests share it. No DOM, worker
-  globals or build-specific imports in `src/runtime/trackers/`.
+  factory: `createNFTTrackerWorker` in the browser, `createNFTTracker` in Node), so the
+  browser and the Node tests share it. It handles a worker's skipped frames (`{ skipped: true }`). No DOM, worker
+  globals or build-specific imports in `src/runtime/trackers/` or `plugins/jsartoolkit-nft/nft-session.ts`.
 - Reimplementing in this repository what the facade does (a lost timer, a pose filter, a
   lens rebuild, a projection rescale) is **Blocking**: use the facade's setting or method.
-- The worker (`src/runtime/workers/jsartoolkit-nft.worker.ts`) only picks the build and
-  relays messages (`src/runtime/workers/nft-protocol.ts`). Any state, filtering, event
-  logic or matrix maths added to the worker is **Blocking**: move it into `NftSession`.
+- No worker or protocol of our own: the facade's worker files are served unchanged from
+  `jsartoolkit-nft/<version>/` next to the page (`worker-files.ts`, `vite.ts`, the manifest's
+  `exportFiles`). The only code of ours in that worker is `virtual-fetch.ts` (uploaded
+  datasets). Any state, filtering, event logic or matrix maths added there, or a custom
+  worker or message protocol, is **Blocking**: move the logic into `NftSession`.
+- The controller's `build` param maps onto `createNFTTrackerWorker`'s `{ build }`
+  (`workerOptions` in `nodes.ts`), and an exported app holds only that build's worker files.
 
 ## 2. Found / lost semantics
 
@@ -96,7 +102,7 @@ Run and report each:
 
 - `npm run typecheck`
 - `npm test`
-- `npm run test:e2e` when the worker, the protocol or the controller node changed
+- `npm run test:e2e` when the worker files, their serving or export, or the controller node changed
 
 ## Report
 

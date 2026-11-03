@@ -12,6 +12,7 @@
   --cat-renderer: #e57373;
   --cat-scene: #81c784;
   --cat-output: #ba68c8;
+  --cat-math: #ffcc80;
   --cat-debug: #bdbdbd;
   color-scheme: dark;
 }
@@ -25,10 +26,21 @@ button:disabled { opacity: 0.4; cursor: default; }
 .toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
 .layout { display: grid; grid-template-columns: 180px 1fr 380px; height: calc(100% - 44px); }
 
-.palette { border-right: 1px solid var(--border); padding: 10px; overflow: auto; background: var(--panel); }
+.palette { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+/* Node buttons scroll; the assets panel stays visible at the bottom of the column. */
+#palette { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 10px; }
+#assets-panel { flex: none; max-height: 40%; overflow: auto; padding: 0 10px 10px; border-top: 1px solid var(--border); }
 .palette h3 { margin: 12px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .palette button small { display: block; font-size: 10px; color: var(--muted); }
+.asset-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.asset { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 3px 0 3px 6px; border-left: 3px solid var(--border); margin-bottom: 4px; }
+.asset .asset-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset small { grid-column: 1; font-size: 10px; color: var(--muted); }
+.asset .asset-remove { grid-row: 1 / span 2; grid-column: 2; width: auto; margin: 0; padding: 0 6px; border: none; background: transparent; color: var(--muted); font-size: 16px; }
+.asset .asset-remove:hover { color: var(--accent); }
 .toolbar select { background: var(--node); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; font: inherit; }
+.palette input[type='search'] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; }
+.palette button[hidden], .palette-group[hidden] { display: none; }
 .palette button { display: block; width: 100%; text-align: left; margin-bottom: 4px; border-left: 3px solid var(--c, var(--border)); }
 
 .editor { position: relative; overflow: hidden; background: radial-gradient(circle, #2a2e37 1px, transparent 1px) 0 0 / 22px 22px; }
@@ -44,6 +56,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-renderer { --c: var(--cat-renderer); }
 .cat-scene { --c: var(--cat-scene); }
 .cat-output { --c: var(--cat-output); }
+.cat-math { --c: var(--cat-math); }
 .cat-debug { --c: var(--cat-debug); }
 
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */
@@ -85,3 +98,46 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .menu-items button:hover:not(:disabled) { background: var(--node); }
 .menu-items button strong { display: block; font-weight: 600; }
 .menu-items button small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+/* ---------- context menu (rete-context-menu-plugin, drawn by LitRenderPlugin) ---------- */
+.context-menu { position: relative; width: 240px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); z-index: 20; }
+.context-menu input[type='search'] { width: 100%; margin-bottom: 4px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font: inherit; }
+.context-menu .items { max-height: 320px; overflow: auto; display: flex; flex-direction: column; }
+.context-menu .item { text-align: left; border: none; background: transparent; padding: 5px 8px; }
+.context-menu .item.active { background: var(--node); }
+.context-menu:focus { outline: none; }
+.context-menu .item small { display: block; font-size: 10px; color: var(--muted); }
+.context-menu .empty { margin: 6px 8px; color: var(--muted); }
+
+/* ---------- minimap (rete-minimap-plugin, drawn by LitRenderPlugin) ---------- */
+.minimap { position: absolute; right: 12px; bottom: 12px; z-index: 5; touch-action: none; user-select: none; overflow: hidden; background: rgb(22 24 29 / 0.85); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.minimap .mini-node { position: absolute; background: var(--muted); border-radius: 1px; opacity: 0.8; pointer-events: none; }
+.minimap .mini-viewport { position: absolute; border: 1px solid var(--accent); background: rgb(255 0 85 / 0.08); cursor: grab; }
+
+/* ---------- Inspector ---------- */
+.inspector { border-bottom: 1px solid var(--border); padding: 10px 12px; max-height: 45%; overflow: auto; }
+.inspector .hint { margin: 0; color: var(--muted); }
+.inspector header { border-left: 3px solid var(--c, var(--border)); padding-left: 8px; }
+.inspector h2 { margin: 0; font-size: 14px; }
+.inspector header small { color: var(--muted); font-size: 11px; }
+.inspector .description { margin: 6px 0 8px; color: var(--muted); font-size: 12px; }
+.inspector .param { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 8px; margin: 4px 0; color: var(--muted); }
+.inspector .param-matrix4 { align-items: start; }
+.inspector input[type='text'], .inspector input[type='number'], .inspector select {
+  width: 100%; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 5px; font: inherit;
+}
+.inspector input[type='checkbox'] { justify-self: start; }
+.inspector .live, .studio-node .param .live { font-style: normal; margin-left: 3px; color: #ffd54f; font-size: 10px; }
+.vector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.studio-node .param .vector input { padding: 2px 2px; }
+.matrix { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.matrix-reset { grid-column: 2; justify-self: start; margin-top: 4px; padding: 2px 8px; font-size: 11px; }
+.matrix-summary { color: var(--muted); font-style: italic; }
+
+/* A param control; disabled while a connected input of the same name sets the param. */
+.param-control { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
+.param.driven > span { font-style: italic; opacity: 0.7; }
+.param.driven input, .param.driven select { opacity: 0.5; }
+
+/* A formula error (math.expression), under its field. */
+.param-error { display: block; margin: -1px 0 4px; color: #ef9a9a; font-size: 10.5px; white-space: normal; }

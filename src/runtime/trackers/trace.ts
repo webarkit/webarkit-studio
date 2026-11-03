@@ -3,20 +3,20 @@
  *
  * Line 1 is a TraceHeader (format, version, tracker version, frame size,
  * settings, filter, targets, where the frames came from); every other line is
- * a TraceFrame (the facade's FrameResult, JSON-safe) or a TraceSettings (a
- * live configure() while recording). The browser (debug.trace) and Node
+ * a TraceFrame (a frame result, JSON-safe) or a TraceSettings (a live settings
+ * change while recording). Trackers produce them (the jsartoolkitNFT plugin:
+ * its facade's FrameResult); the browser (debug.trace) and Node
  * (tests/helpers/trace-recorder.ts) write the same format, and
- * scripts/trace-diff.mjs compares two traces.
+ * scripts/trace-diff.mjs compares two traces. `S` is the tracker's settings type.
  *
  * Bump TRACE_VERSION when a field is renamed or removed, or changes meaning.
+ * Plugins write these literals through the plugin API's types, so a bump
+ * shows up there as a type error.
  */
-import type { FrameResult } from '@webarkit/jsartoolkit-nft';
-import { version as JSARTOOLKIT_NFT_VERSION } from '@webarkit/jsartoolkit-nft/package.json';
 import type { PoseFilterConfig } from '../filters/pose-filter';
-import type { NftSettings } from './nft-session';
 
 export const TRACE_FORMAT = 'webarkit-studio/trace';
-export const TRACE_VERSION = 1;
+export const TRACE_VERSION = 1 as const;
 
 /** Where the frames came from. A `sequence` can be replayed in Node; a camera cannot. */
 export type TraceSource =
@@ -31,19 +31,21 @@ export type TraceSource =
       startMs: number;
       frameMs: number;
     }
+  /** Still images, by repo-relative path or 'blank', each shown `count` frames (the MCP server's tracking_run): not replayable. */
+  | { kind: 'images'; frames: Array<[image: string, count: number]>; startMs: number; frameMs: number }
   /** Converted from an older recording (the golden run of #5): not replayable. */
   | { kind: 'converted'; from: string };
 
-export interface TraceHeader {
+export interface TraceHeader<S extends object = object> {
   type: 'header';
   format: typeof TRACE_FORMAT;
-  version: number;
+  version: typeof TRACE_VERSION;
   /** Tracker library and version, or a description of an older tracker. */
   tracker: { name: string; version: string };
   /** Processing frame size: every frame passed to process(). */
   frame: { width: number; height: number };
-  /** The settings when recording started (null: the facade's defaults). */
-  settings: NftSettings | null;
+  /** The settings when recording started (null: the tracker's defaults). */
+  settings: S | null;
   /** The filter slot (null: no filtering). */
   filter: PoseFilterConfig | null;
   /** Targets in dataset order (index = position), with the facade's ids. */
@@ -51,7 +53,7 @@ export interface TraceHeader {
   source: TraceSource;
 }
 
-/** FrameResult (time, processMs, targets, transitions) with plain arrays. */
+/** A frame result (time, processMs, targets, transitions) with plain arrays. */
 export interface TraceFrame {
   type: 'frame';
   /** The `timestampMs` passed to process(). */
@@ -63,34 +65,21 @@ export interface TraceFrame {
 }
 
 /** Settings changed live while recording, from `time` on (same clock as the frames). */
-export interface TraceSettings {
+export interface TraceSettings<S extends object = object> {
   type: 'settings';
   time: number;
-  settings: NftSettings;
+  settings: S;
 }
 
-export type TraceRecord = TraceFrame | TraceSettings;
+export type TraceRecord<S extends object = object> = TraceFrame | TraceSettings<S>;
 
-export interface Trace {
-  header: TraceHeader;
-  records: TraceRecord[];
+export interface Trace<S extends object = object> {
+  header: TraceHeader<S>;
+  records: TraceRecord<S>[];
 }
 
-export const TRACKER = { name: 'jsartoolkit-nft', version: JSARTOOLKIT_NFT_VERSION };
-
-export function traceHeader(fields: Omit<TraceHeader, 'type' | 'format' | 'version' | 'tracker'> & { tracker?: TraceHeader['tracker'] }): TraceHeader {
-  const { tracker = TRACKER, ...rest } = fields;
-  return { type: 'header', format: TRACE_FORMAT, version: TRACE_VERSION, tracker, ...rest };
-}
-
-export function traceFrame(result: FrameResult): TraceFrame {
-  return {
-    type: 'frame',
-    time: result.time,
-    processMs: result.processMs,
-    targets: result.targets.map(({ id, found, pose, error }) => ({ id, found, pose: pose ? Array.from(pose) : null, error })),
-    transitions: result.transitions.map(({ type, id }) => ({ type, id })),
-  };
+export function traceHeader<S extends object>(fields: Omit<TraceHeader<S>, 'type' | 'format' | 'version'>): TraceHeader<S> {
+  return { type: 'header', format: TRACE_FORMAT, version: TRACE_VERSION, ...fields };
 }
 
 export const traceFrames = (trace: Trace) => trace.records.filter((r): r is TraceFrame => r.type === 'frame');
@@ -100,7 +89,7 @@ export function serializeTrace(trace: Trace): string {
 }
 
 /** Parses a JSONL trace; throws on another format, another version or a malformed line. */
-export function parseTrace(text: string): Trace {
+export function parseTrace<S extends object = object>(text: string): Trace<S> {
   const lines = text.split('\n').filter((l) => l.trim());
   const parse = (line: string, n: number) => {
     try {
@@ -115,7 +104,7 @@ export function parseTrace(text: string): Trace {
   const records = lines.slice(1).map((line, i) => {
     const r = parse(line, i + 1);
     if (r?.type !== 'frame' && r?.type !== 'settings') throw new Error(`trace line ${i + 2}: unknown record type ${JSON.stringify(r?.type)}`);
-    return r as TraceRecord;
+    return r as TraceRecord<S>;
   });
-  return { header: header as TraceHeader, records };
+  return { header: header as TraceHeader<S>, records };
 }

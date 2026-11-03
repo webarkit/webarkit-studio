@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { filterConfig, settingsPatch } from '../../src/runtime/trackers/nft-session';
+import { filterConfig, settingsPatch } from '../../plugins/jsartoolkit-nft/nft-session';
 import { selectMarker } from '../../src/runtime/nodes/tracking';
 import { formatValue } from '../../src/runtime/nodes/debug';
-import { artkSettings, letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { artkNftDataset, artkSettings, letterbox } from '../../plugins/jsartoolkit-nft/nodes';
 import type { RuntimeContext } from '../../src/runtime/types';
 import type { TrackedMarkerValue } from '../../src/runtime/types';
 
@@ -22,6 +22,16 @@ describe('tracker facade mapping', () => {
     expect(settingsPatch(base)).toEqual(base);
     expect(settingsPatch({ ...base, lostTimeout: 500, ar2: {} })).toEqual({ ...base, lostTimeout: 500 });
     expect(settingsPatch({ ...base, ar2: { trackingThresh: 3 } })).toEqual({ ...base, ar2: { trackingThresh: 3 } });
+  });
+});
+
+describe('jsartoolkitNFT.dataset', () => {
+  it('names a dataset after the decoded last URL segment (uploads have encoded names)', async () => {
+    const ctx = { baseUrl: 'http://localhost/' } as RuntimeContext;
+    const out = (await artkNftDataset({ url: 'https://assets.webarkit.invalid/a1/my%20marker', name: '' }, ctx).init!({})) as {
+      dataset: { name: string };
+    };
+    expect(out.dataset.name).toBe('my marker');
   });
 });
 
@@ -88,12 +98,24 @@ describe('Inspector formatValue', () => {
     expect(formatValue({ count: 3, time: Date.now() })).toMatch(/^event fired 3×/);
   });
 
+  it('shows short number arrays (vector3) as a list', () => {
+    expect(formatValue([0, 0, 40])).toBe('[0, 0, 40]');
+    expect(formatValue([1.5, -2, 0.25])).toBe('[1.500, -2, 0.250]');
+  });
+
   it('shows one line per marker for a tracking result', () => {
     const text = formatValue([marker(0, 'pinball', true), marker(1, 'kuva')]);
     expect(text.split('\n')).toHaveLength(2);
     expect(text).toContain('pinball');
     expect(text).toContain('● tracked');
     expect(text).toContain('○ lost');
+  });
+
+  it('labels a video value by its element: camera or video file, or still image', () => {
+    expect(formatValue({ element: { tagName: 'VIDEO' }, width: 640, height: 480 })).toBe('video 640×480');
+    expect(formatValue({ element: { tagName: 'IMG' }, width: 893, height: 1117 })).toBe('image 893×1117');
+    // Anything else shaped like it is shown as data.
+    expect(formatValue({ element: 'div', width: 1, height: 2 })).toBe('element: "div"\nwidth: 1\nheight: 2');
   });
 });
 

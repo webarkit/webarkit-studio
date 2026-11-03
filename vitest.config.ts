@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     environment: 'node',
+    setupFiles: ['tests/setup/plugins.ts'],
     testTimeout: 30_000,
     // The tracker logs every frame; show console output only for failing tests.
     silent: 'passed-only',

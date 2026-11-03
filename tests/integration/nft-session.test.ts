@@ -5,8 +5,8 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
-import { NftSession, type NftFrameResult, type NftSessionOptions } from '../../src/runtime/trackers/nft-session';
-import { letterbox } from '../../src/runtime/nodes/jsartoolkit-nft';
+import { NftSession, type NftFrameResult, type NftSessionOptions } from '../../plugins/jsartoolkit-nft/nft-session';
+import { letterbox } from '../../plugins/jsartoolkit-nft/nodes';
 import { CAMERA, KUVA, nodeTrackerFactory, PINBALL } from '../helpers/nft-node';
 import { blank, FIXTURE_PHOTO, loadJpeg, resize, type RgbaFrame } from '../helpers/frames';
 
@@ -28,8 +28,8 @@ beforeAll(() => {
 
 // Every session a test creates, disposed after it.
 const sessions: NftSession[] = [];
-afterEach(() => {
-  for (const s of sessions.splice(0)) s.dispose();
+afterEach(async () => {
+  await Promise.all(sessions.splice(0).map((s) => s.dispose()));
 });
 const open = async (options: NftSessionOptions) => {
   const s = await NftSession.create(nodeTrackerFactory, options);
@@ -39,9 +39,10 @@ const open = async (options: NftSessionOptions) => {
 
 /** An increasing clock, 33 ms per frame. */
 const clock = (t = 0) => () => (t += 33);
-const run = (s: NftSession, frame: RgbaFrame, n: number, now: () => number) => {
+/** The Node tracker never skips a frame: every result is there. */
+const run = async (s: NftSession, frame: RgbaFrame, n: number, now: () => number) => {
   const results: NftFrameResult[] = [];
-  for (let i = 0; i < n; i++) results.push(s.process(frame, now()));
+  for (let i = 0; i < n; i++) results.push((await s.process(frame, now()))!);
   return results;
 };
 
@@ -57,7 +58,7 @@ describe.skipIf(!haveAssets)('NftSession (Node build)', () => {
 
   it('tracks both markers, each with its own pose, and fires found once per marker', async () => {
     const s = await open(base);
-    const results = run(s, photo, 6, clock());
+    const results = await run(s, photo, 6, clock());
     const last = results.at(-1)!;
     expect(last.poses[0]).not.toBeNull();
     expect(last.poses[1]).not.toBeNull();
@@ -71,10 +72,10 @@ describe.skipIf(!haveAssets)('NftSession (Node build)', () => {
   it('fires lost once per marker after the grace period, and found again when it reappears', async () => {
     const s = await open({ ...base, datasetUrls: [PINBALL] });
     const now = clock();
-    run(s, photo, 4, now);
-    const lost = run(s, empty, 10, now).flatMap((r) => r.events); // 330 ms > 200 ms
+    await run(s, photo, 4, now);
+    const lost = (await run(s, empty, 10, now)).flatMap((r) => r.events); // 330 ms > 200 ms
     expect(lost).toEqual([{ name: 'lost', index: 0 }]);
-    const again = run(s, photo, 4, now).flatMap((r) => r.events);
+    const again = (await run(s, photo, 4, now)).flatMap((r) => r.events);
     expect(again).toEqual([{ name: 'found', index: 0 }]);
   });
 
@@ -82,23 +83,23 @@ describe.skipIf(!haveAssets)('NftSession (Node build)', () => {
     const s = await open({ ...base, datasetUrls: [PINBALL] });
     expect(await s.configure({ ...settings, lostTimeout: 500 })).toBe(false); // planes unchanged
     const now = clock();
-    run(s, photo, 4, now);
-    expect(run(s, empty, 10, now).flatMap((r) => r.events)).toEqual([]); // 330 ms < 500 ms
-    expect(run(s, empty, 10, now).flatMap((r) => r.events)).toEqual([{ name: 'lost', index: 0 }]);
+    await run(s, photo, 4, now);
+    expect((await run(s, empty, 10, now)).flatMap((r) => r.events)).toEqual([]); // 330 ms < 500 ms
+    expect((await run(s, empty, 10, now)).flatMap((r) => r.events)).toEqual([{ name: 'lost', index: 0 }]);
   });
 
   it('accepts the AR2 parameters', async () => {
     const ar2 = { trackingThresh: 5, simThresh: 0.5, searchFeatureNum: 16, templateSize1: 6, templateSize2: 6, searchSize: 0 };
     const s = await open({ ...base, settings: { ...settings, ar2 } });
-    expect(run(s, photo, 4, clock()).at(-1)!.poses[0]).not.toBeNull();
+    expect((await run(s, photo, 4, clock())).at(-1)!.poses[0]).not.toBeNull();
     await expect(s.configure({ ...settings, ar2: { searchFeatureNum: 2 } })).rejects.toThrow();
   });
 
   it('applies the One Euro filter per marker', async () => {
     const raw = await open(base);
     const filtered = await open({ ...base, filter: { kind: 'oneEuro', minCutOff: 0.0001, beta: 0.01, warmUp: 0 } });
-    const r = run(raw, photo, 12, clock());
-    const f = run(filtered, photo, 12, clock());
+    const r = await run(raw, photo, 12, clock());
+    const f = await run(filtered, photo, 12, clock());
     // Same static image: filtered poses stay close to the raw ones, and markers do not mix.
     for (const i of [0, 1]) {
       expect(Math.abs(f.at(-1)!.poses[i]![12] - r.at(-1)!.poses[i]![12])).toBeLessThan(20);
@@ -154,7 +155,7 @@ describe.skipIf(!haveAssets)('NftSession (Node build)', () => {
       ...base, datasetUrls: [PINBALL], geometry,
     });
     const frame = blank(geometry.frameWidth, geometry.frameHeight);
-    expect(() => s.process(frame, 1)).not.toThrow();
+    await expect(s.process(frame, 1)).resolves.not.toBeNull();
   });
 
   it('rejects a missing dataset with one line per failed dataset', async () => {

@@ -15,9 +15,12 @@ import { Scope } from 'rete';
 import type { RenderSignal as AreaRenderSignal } from 'rete-area-plugin';
 import { classicConnectionPath, getDOMSocketPosition } from 'rete-render-utils';
 import type { StudioConnection, StudioNode } from './studio-node';
-import { SOCKET_TYPES } from '../core/sockets';
+import { SOCKET_TYPES, type SocketType } from '../core/sockets';
 import type { ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
+import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
+import { renderMinimap, type MinimapData } from './minimap-view';
+import { paramRow } from './param-editors';
 
 type Position = { x: number; y: number };
 type Side = 'input' | 'output';
@@ -37,12 +40,16 @@ export type RenderSignal =
   | AreaRenderSignal<'node', { payload: StudioNode }>
   | AreaRenderSignal<'connection', { payload: StudioConnection; start?: Position; end?: Position }>
   | AreaRenderSignal<'socket', { payload: unknown; nodeId: string; side: Side; key: string }>
+  | AreaRenderSignal<'contextmenu', { items: MenuItem[]; onHide(): void; searchBar?: boolean }>
+  | AreaRenderSignal<'minimap', Omit<MinimapData, 'element'> & { start(): { x: number; y: number; k: number } }>
   | { type: 'unmount'; data: { element: HTMLElement } };
 
 export interface LitRenderOptions {
   onParamChange: (node: StudioNode, key: string, value: ParamValue) => void;
   onRemoveNode: (node: StudioNode) => void;
   onRemoveConnection: (connection: StudioConnection) => void;
+  /** Filters context menu items for the search bar. */
+  searchMenu: MenuSearch;
 }
 
 interface ConnectionState {
@@ -65,6 +72,8 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
       else if (context.type === 'render' && !context.data.filled) {
         if (context.data.type === 'node') this.renderNode(context.data as NodeRender);
         else if (context.data.type === 'connection') this.renderConnection(context.data as ConnectionRender);
+        else if (context.data.type === 'contextmenu') renderContextMenu(context.data as ContextMenuData, this.opts.searchMenu);
+        else if (context.data.type === 'minimap') renderMinimap(context.data as MinimapData);
         // Socket elements are drawn as part of their node; acknowledging them with
         // `rendered` lets DOMSocketPosition measure them (connections need this).
         else if (context.data.type === 'socket') void this.parentScope().emit({ type: 'rendered', data: context.data } as RenderSignal);
@@ -86,7 +95,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
     const node = data.payload;
     const stop = (e: Event) => e.stopPropagation();
 
-    const socket = (side: Side, key: string, type: keyof typeof SOCKET_TYPES) =>
+    const socket = (side: Side, key: string, type: SocketType) =>
       html`<span class="socket" data-side=${side} data-key=${key} title=${SOCKET_TYPES[type].label}
         style="--socket-color:${SOCKET_TYPES[type].color}"></span>`;
 
@@ -100,12 +109,12 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
           ([key, spec]) => html`<div class="port output"><span class="port-label">${spec.label}</span>${socket('output', key, spec.type)}</div>`,
         )}
         ${Object.keys(node.def.params).length
-          ? html`<div class="params" @pointerdown=${stop} @wheel=${stop}>
+          ? html`<div class="params" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>
               ${Object.entries(node.def.params).map(([key, spec]) => this.paramEditor(node, key, spec))}
             </div>`
           : nothing}
         ${node.status
-          ? html`<pre class="status ${node.status.error ? 'error' : ''}" @pointerdown=${stop} @wheel=${stop}>${node.status.text}</pre>`
+          ? html`<pre class="status ${node.status.error ? 'error' : ''}" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>${node.status.text}</pre>`
           : nothing}
         ${Object.entries(node.def.inputs).map(
           ([key, spec]) =>
@@ -115,6 +124,13 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
       </div>`,
       data.element,
     );
+
+    // Measured size, used by the minimap and Arrange.
+    const drawn = data.element.firstElementChild as HTMLElement | null;
+    if (drawn?.offsetWidth) {
+      node.width = drawn.offsetWidth;
+      node.height = drawn.offsetHeight;
+    }
 
     // Register socket elements (once per element) with the area / connection plugin.
     const parent = this.parentScope();
@@ -132,30 +148,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
   }
 
   private paramEditor(node: StudioNode, key: string, spec: ParamSpec): TemplateResult {
-    const value = node.params[key] ?? spec.default;
-    const set = (v: ParamValue) => this.opts.onParamChange(node, key, v);
-    let control: TemplateResult;
-    switch (spec.kind) {
-      case 'boolean':
-        control = html`<input type="checkbox" .checked=${Boolean(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).checked)} />`;
-        break;
-      case 'number':
-        control = html`<input type="number" .value=${String(value)} min=${spec.min ?? ''} max=${spec.max ?? ''} step=${spec.step ?? 'any'}
-          @change=${(e: Event) => set(Number((e.target as HTMLInputElement).value))} />`;
-        break;
-      case 'select':
-        control = html`<select @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
-          ${Object.entries(spec.options).map(([label, v]) => html`<option value=${v} ?selected=${v === value}>${label}</option>`)}
-        </select>`;
-        break;
-      case 'color':
-        control = html`<input type="color" .value=${String(value)} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
-        break;
-      default:
-        control = html`<input type="text" .value=${String(value)} @change=${(e: Event) => set((e.target as HTMLInputElement).value)} />`;
-    }
-    return html`<label class="param"><span title=${spec.live ? 'Live: applied while running' : 'Applied on the next Run'}
-      >${spec.label}${spec.live ? html`<i class="live">⚡</i>` : nothing}</span>${control}</label>`;
+    return paramRow(spec, node.params[key] ?? spec.default, (v: ParamValue) => this.opts.onParamChange(node, key, v), 'node', node.driven.has(key));
   }
 
   // ---------------------------------------------------------- connections
