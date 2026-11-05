@@ -1,11 +1,15 @@
 // Which files are agent files: what scripts/check-agent-docs.mjs reads, and what the post-edit
 // hook (.claude/hooks/post-edit.mjs) reruns that check for. tests/unit/hooks.test.ts checks that
-// the hook's patterns cover everything the check reads.
+// the hook's patterns cover everything the check reads. Also the generated folders, which the check
+// allows the docs to name and the walk for nested agent files skips.
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Never holds agent files of ours. Hidden folders are left out too (.claude/worktrees holds other checkouts). */
 const NOT_OURS = new Set(['node_modules', 'dist', 'out', 'generated', '__player', 'test-results', 'playwright-report', 'coverage']);
+
+/** Generated or downloaded folders (npm run assets, e2e setup, build), from the repository root: named in the docs, never committed. */
+export const GENERATED_FOLDERS = ['public/data', 'public/__player', 'tests/fixtures', 'tests/e2e/.cache'];
 
 /** Files that must point to AGENTS.md, relative to `root`. */
 export function pointerFiles(root = '.') {
@@ -27,6 +31,7 @@ export function nestedAgentFolders(root = '.') {
     for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || NOT_OURS.has(entry.name)) continue;
       const path = dir ? `${dir}/${entry.name}` : entry.name;
+      if (GENERATED_FOLDERS.includes(path)) continue;
       if (existsSync(join(root, path, 'AGENTS.md')) || existsSync(join(root, path, 'CLAUDE.md'))) found.push(path);
       walk(path);
     }

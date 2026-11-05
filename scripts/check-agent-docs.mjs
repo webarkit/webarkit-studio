@@ -10,14 +10,14 @@
 // Run from the repository root: npm run check:agents
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
-import { nestedAgentFolders, pointerFiles } from './agent-files.mjs';
+import { GENERATED_FOLDERS, nestedAgentFolders, pointerFiles } from './agent-files.mjs';
 
 const CANONICAL = 'AGENTS.md';
 
 /** Path prefixes checked for existence; anything else in backticks is ignored. */
 const PATH_PREFIXES = ['src/', 'plugins/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
-/** Generated, downloaded or personal paths (npm run assets, e2e setup, build, local settings): named in the docs, never committed. */
-const GENERATED = ['public/data', 'public/__player', 'tests/fixtures', 'tests/e2e/.cache', '.claude/settings.local.json'];
+/** Named in the docs, never committed: the generated folders, and a personal file that only this check has to allow for. */
+const NOT_COMMITTED = [...GENERATED_FOLDERS, '.claude/settings.local.json'];
 
 const problems = [];
 const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};
@@ -32,7 +32,7 @@ function checkPath(file, raw, base = '.') {
   const path = staticPart(raw);
   if (!path) return;
   const resolved = normalize(join(base, path)).replaceAll('\\', '/');
-  if (GENERATED.some((g) => resolved === g || resolved.startsWith(`${g}/`))) return;
+  if (NOT_COMMITTED.some((g) => resolved === g || resolved.startsWith(`${g}/`))) return;
   if (!existsSync(resolved)) problems.push(`${file}: names "${raw}", which does not exist`);
 }
 
