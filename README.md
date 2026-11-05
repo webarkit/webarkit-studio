@@ -201,7 +201,7 @@ npm run mcp:studio   # stdio, from the repository root
 
 Graphs are passed inline or as a path; the tools write nothing except `export_bundle`'s zip.
 The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`, and `tests/e2e/mcp-export.spec.ts` on the real build) cover every tool, the
-stdio transport and this scenario. See `AGENTS.md`, "MCP server".
+stdio transport and this scenario. See `src/mcp/AGENTS.md`.
 
 ## Assets
 

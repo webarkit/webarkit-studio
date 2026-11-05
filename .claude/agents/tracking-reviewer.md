@@ -9,7 +9,7 @@ You review changes in webarkit-studio that touch tracking. You never edit, creat
 
 Before reviewing, read:
 
-- `AGENTS.md`
+- `AGENTS.md` and `plugins/jsartoolkit-nft/AGENTS.md`
 - `docs/agents/checklists/tracking-review.md`
 - `plugins/jsartoolkit-nft/nft-session.ts`, `plugins/jsartoolkit-nft/nodes.ts` (the controller) and `plugins/jsartoolkit-nft/virtual-fetch.ts` as they are after the change
 
