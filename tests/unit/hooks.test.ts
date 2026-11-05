@@ -289,24 +289,83 @@ describe('scripts/agent-files.mjs', () => {
       expect(isAgentFile(file), file).toBe(true);
     }
   });
+
+  it.each(['public/data', 'tests/fixtures'])('does not report an agent file under %s, and still reports the folders of ours', async (generated) => {
+    const { nestedAgentFolders } = await import(/* @vite-ignore */ pathToFileURL(resolve('scripts/agent-files.mjs')).href);
+    const root = mkdtempSync(join(tmpdir(), 'agent-folders-'));
+    try {
+      // `docs/data` and `other/tests/fixtures` share a name with a generated folder, not its path.
+      for (const folder of [generated, `${generated}/deeper`, 'src/runtime', 'tests/e2e', 'docs/data', 'other/tests/fixtures']) {
+        mkdirSync(join(root, folder), { recursive: true });
+        writeFileSync(join(root, folder, 'AGENTS.md'), 'x');
+      }
+      expect((nestedAgentFolders(root) as string[]).sort()).toEqual(['docs/data', 'other/tests/fixtures', 'src/runtime', 'tests/e2e']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('.claude/settings.json', () => {
-  const settings = JSON.parse(readFileSync('.claude/settings.json', 'utf8'));
+  type Hook = { type: string; command: string; args: string[] };
+  type HookEvents = Record<string, { matcher?: string; hooks: Hook[] }[]>;
 
-  it('declares the three hooks, each on a script that exists, without a shell', () => {
-    const entries = Object.entries(settings.hooks as Record<string, { matcher?: string; hooks: { command: string; args: string[] }[] }[]>);
-    expect(entries.map(([event, list]) => [event, list[0].matcher])).toEqual([
-      ['SessionStart', undefined],
-      ['PreToolUse', 'Bash|PowerShell'],
-      ['PostToolUse', 'Edit|Write'],
-    ]);
-    for (const [, list] of entries) {
-      const [{ command, args }] = list[0].hooks;
-      expect(command).toBe('node');
-      expect(args[0]).toMatch(/^\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/[a-z-]+\.mjs$/);
-      expect(existsSync(args[0].replace('${CLAUDE_PROJECT_DIR}/', ''))).toBe(true);
+  const SCRIPT = /^\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/[a-z-]+\.mjs$/;
+  const scriptPath = (name: string) => `\${CLAUDE_PROJECT_DIR}/.claude/hooks/${name}.mjs`;
+
+  /** Each declared hook that does not run, with node and without a shell, a script of .claude/hooks that exists. */
+  function hookProblems(events: HookEvents) {
+    const problems: string[] = [];
+    for (const [event, list] of Object.entries(events)) {
+      for (const { command, args } of list.flatMap((group) => group.hooks)) {
+        const script = args?.[0] ?? '';
+        if (command !== 'node') problems.push(`${event}: runs "${command}", not node`);
+        if (!SCRIPT.test(script)) problems.push(`${event}: "${script}" is not a script of .claude/hooks`);
+        else if (!existsSync(script.replace('${CLAUDE_PROJECT_DIR}/', ''))) problems.push(`${event}: "${script}" does not exist`);
+      }
     }
+    return problems;
+  }
+
+  const settings: { hooks: HookEvents } = JSON.parse(readFileSync('.claude/settings.json', 'utf8'));
+
+  it('declares the three events and nothing else', () => {
+    expect(Object.keys(settings.hooks).sort()).toEqual(['PostToolUse', 'PreToolUse', 'SessionStart']);
+  });
+
+  it.each([
+    ['SessionStart', undefined, 'session-context'],
+    ['PreToolUse', 'Bash|PowerShell', 'guard-bash'],
+    ['PostToolUse', 'Edit|Write', 'post-edit'],
+  ])('declares %s, matching %s, on the %s script', (event, matcher, script) => {
+    const entry = settings.hooks[event].find((candidate) => candidate.matcher === matcher);
+    expect(entry?.hooks.map((declared) => declared.args[0])).toContain(scriptPath(script));
+  });
+
+  it('runs every declared hook on a script that exists, without a shell', () => {
+    expect(hookProblems(settings.hooks)).toEqual([]);
+  });
+
+  describe('reports a hook after the first of its event', () => {
+    const missing = scriptPath('no-such-script');
+
+    it('a second hook of the group, whose script does not exist', () => {
+      const events = structuredClone(settings.hooks);
+      events.PreToolUse[0].hooks.push({ type: 'command', command: 'node', args: [missing] });
+      expect(hookProblems(events)).toEqual([`PreToolUse: "${missing}" does not exist`]);
+    });
+
+    it('a second group of the event, whose script does not exist', () => {
+      const events = structuredClone(settings.hooks);
+      events.PostToolUse.push({ matcher: 'Read', hooks: [{ type: 'command', command: 'node', args: [missing] }] });
+      expect(hookProblems(events)).toEqual([`PostToolUse: "${missing}" does not exist`]);
+    });
+
+    it('a second hook that runs a shell', () => {
+      const events = structuredClone(settings.hooks);
+      events.SessionStart[0].hooks.push({ type: 'command', command: 'bash', args: [scriptPath('guard-bash')] });
+      expect(hookProblems(events)).toEqual(['SessionStart: runs "bash", not node']);
+    });
   });
 
   it('holds no personal rule: only hooks and the schema', () => {
