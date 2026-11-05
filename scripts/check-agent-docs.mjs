@@ -25,7 +25,7 @@ function pointerFiles() {
 }
 
 /** Path prefixes checked for existence; anything else in backticks is ignored. */
-const PATH_PREFIXES = ['src/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
+const PATH_PREFIXES = ['src/', 'plugins/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
 /** Generated or downloaded paths (npm run assets, e2e setup, build): named in the docs, never committed. */
 const GENERATED = ['public/data', 'public/__player', 'tests/fixtures', 'tests/e2e/.cache'];
 
