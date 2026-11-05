@@ -15,7 +15,7 @@ Before writing code, settle:
 - **Ports:** socket types from `src/core/sockets.ts`. Mark inputs `optional` or `multiple` where it applies.
 - **Params:** kind, default, range. Mark `live: true` only if the factory can apply the change in `onParamChange` without a restart. A param the graph can drive gets an optional input of the same name (`AGENTS.md`, "Inputs override params").
 
-If the type already exists, or the request renames or removes an existing node, port or param, stop: that is a format change (see `docs/agents/checklists/graph-review.md`), not a new node.
+If the type already exists, or the request renames or removes an existing node, port or param, or changes a socket type, a param kind or what a value means, stop: that is a format change (see `docs/agents/checklists/graph-review.md`), not a new node.
 
 ## 2. Write it
 
