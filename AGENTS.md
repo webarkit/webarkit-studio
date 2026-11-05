@@ -16,12 +16,22 @@ See the [README](./README.md) for the architecture, the node list and the known 
 
 | Tool | How it gets these instructions |
 |---|---|
-| Codex, Cursor, Antigravity | Read `AGENTS.md` natively |
-| GitHub Copilot | VS Code and the cloud agent read `AGENTS.md`. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) inlines the critical rules for chat and code review on github.com. [`.github/instructions/`](.github/instructions/) adds path-specific rules (cloud agent, code review, VS Code) |
-| Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md` |
-| Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/) |
+| Cursor | Reads `AGENTS.md`, and a nested one when working with files in its folder |
+| Codex | Reads `AGENTS.md` from the project root down to the working directory, at startup: a session started at the root does not get the nested ones |
+| Antigravity | Reads `AGENTS.md` in the workspace folder and above, not in subfolders |
+| GitHub Copilot | The cloud agent, code review on github.com, VS Code chat and the CLI read `AGENTS.md`. On github.com the nearest one takes precedence; in VS Code nested ones are experimental and off by default. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) inlines the critical rules for chat on github.com and code review in VS Code, which do not read `AGENTS.md`. [`.github/instructions/`](.github/instructions/) adds path-specific rules (cloud agent, code review, VS Code) |
+| Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md`. It loads context files in a folder when a tool touches it; its documentation describes this for `GEMINI.md` only |
+| Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. A nested `CLAUDE.md`, with the `AGENTS.md` it imports, loads when Claude reads, writes or edits a file in its folder. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/), hooks in [`.claude/hooks/`](.claude/hooks/) |
 
-Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file. `npm run check:agents` checks that the pointer files link here and that the commands and paths named here exist.
+Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file and the nested ones. `npm run check:agents` checks that the pointer files link here, that the commands and paths named here and in the nested files exist, and that this file lists every nested folder.
+
+### Folders with their own file
+
+- `plugins/jsartoolkit-nft/`: how `NftSession` maps the graph onto the facade, and the worker files.
+- `src/mcp/`: the MCP server and its tools.
+- `tests/e2e/`: ports, the lock's escape, the fake camera.
+
+Each has an `AGENTS.md` and a one-line `CLAUDE.md` that imports it. Paths in a nested file are written from the repository root, so the check can find them. **Before changing a file in one of these folders, read its `AGENTS.md`:** not every tool loads it on its own (see the table). A nested file only refines this file for its folder and never contradicts it, because Cursor, Codex and Copilot favour the nearer file; if they ever disagree, this file wins.
 
 In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) at the end of a session. It proposes additions to `CLAUDE.md`; put what it finds in this file instead, unless it is specific to Claude Code.
 
@@ -32,21 +42,20 @@ In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) 
 - Typecheck: `npm run typecheck`
 - Unit + integration tests: `npm test`. Integration tests use the Node build of `@webarkit/jsartoolkit-nft` and read the assets with paths relative to the repository root, so run them from the root.
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
-- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. CI uses Playwright's Chromium: on system Chrome, the `source.videoFile` test of `tests/e2e/no-camera.spec.ts` failed in one run on Windows (cause not known), so check a failure there on Playwright's Chromium before calling it a regression. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock (`PW_NO_LOCK=1` skips it too). Each checkout serves its build on its own port, derived from its path; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
+- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock.
 - Benchmarks: `npm run bench` (tinybench through tsx).
 - Agent files: `npm run check:agents`.
-- MCP server: `npm run mcp:studio` (stdio; see "MCP server" below).
+- MCP server: `npm run mcp:studio` (stdio; see `src/mcp/AGENTS.md`).
 - Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
 - Tracking traces: `npm run trace:record -- --out a.jsonl` records a deterministic trace in Node (`--filter`, `--settings`, `--replay <trace>`, `--golden`); `npm run trace:diff -- a.jsonl b.jsonl` compares two traces and exits non-zero above its thresholds. See "Tracking traces" below.
 
 CI (`.github/workflows/ci.yml`, Node 22) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.
 
-## Test assets and the fake camera
+## Test assets
 
 - `npm run assets` (`scripts/fetch-assets.mjs`) downloads from the jsartoolkitNFT repository:
   - the camera parameters and the pinball and kuva NFT datasets into `public/data/`;
   - a photo of the printed pinball marker into `tests/fixtures/pinball-demo.jpg`, and into `public/data/` for the no-camera demo (`pinball-image`, `source.image`).
-- The e2e global setup (`tests/e2e/global-setup.ts`) turns that photo into a Y4M video for Chromium's fake camera (`tests/e2e/fake-camera.ts`), written to `tests/e2e/.cache/`. The marker is visible for 4 s, then hidden for 2 s, in a loop, so the tests see both found and lost.
 - None of these files are committed. If a test cannot find them, run `npm run assets`.
 
 ## Tracking traces
@@ -58,24 +67,6 @@ CI (`.github/workflows/ci.yml`, Node 22) runs the agent files check, typecheck, 
 - `.mcp.json` provides Playwright MCP (the studio with the e2e fake camera; `npm run mcp:setup` generates the video and its config from `.claude/mcp/playwright.json`) and Chrome DevTools MCP (`--isolated`, no usage statistics, Chrome's synthetic camera with the permission granted: the graph starts, but no marker is ever found), pinned to exact versions; `npm run check:agents` validates it. Playwright MCP needs its own Chromium revision, installed once per version (see the `tracking-debugger` skill).
 
 In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger/`) reproduces, records, diffs and reports.
-
-## MCP server
-
-`src/mcp/` is an MCP server (#8) over stdio, declared in `.mcp.json` as `webarkit-studio`
-(`node --import tsx src/mcp/main.ts`, from the repository root). It loads the plugins of
-`webarkit-studio.config.ts`, so its tools see the studio's catalog and registry, never a node list of their own.
-
-- `catalog_list`: node types, ports, params, defaults, `live` flags, the graph version and the loaded plugins.
-- `graph_validate`: `validateGraph()`, as a list of problems.
-- `graph_create`, `graph_edit`: ops (add / remove nodes, connect / disconnect, set params), checked against the catalog, all or nothing.
-- `tracking_run`: the graph's tracker on JPEG frames in Node; returns trace records (`TraceFrame`, the facade's `FrameResult`) and a per-marker summary. Needs `npm run assets` for the demo data.
-- `export_bundle`: the standalone app `.zip`, from the studio build (`baseDir` defaults to `dist/`: run `npm run build`). `public/` is not enough: plugin files such as the tracker's workers are only served by Vite or written into the build (#47).
-
-Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
-JSON or as a path; nothing is written except `export_bundle`'s zip (an existing file is overwritten). A tool is one module in `src/mcp/tools/` (a
-`StudioTool`) and one entry in `src/mcp/tools/index.ts`. `src/mcp/` never imports `src/editor` or `plugins/`:
-a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webarkit-studio.node.config.ts`
-(kept out of the browser config, it imports Node builds).
 
 ## Architecture rules
 
@@ -95,7 +86,7 @@ a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webar
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
   - The camera looks down −Z.
-- **Tracking is the jsartoolkitNFT tracker facade** (#5), in the facade's own worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the browser (over the worker) and the Node tests (`createNFTTracker`) share it. Do not reimplement in this repository what the facade does (found / lost, filters, lens, projection, the worker and its protocol). The worker files are served unchanged from `jsartoolkit-nft/<version>/` next to the page (`plugins/jsartoolkit-nft/worker-files.ts`, `vite.ts`); the only code of ours in the worker is `virtual-fetch.ts`, which serves uploaded datasets.
+- **Tracking is the jsartoolkitNFT tracker facade** (#5), in the facade's own worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14). Do not reimplement in this repository what the facade does (found / lost, filters, lens, projection, the worker and its protocol).
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 - **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param, `color` for a color param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired. An optional input without a same-named param falls back to the node's documented behaviour when unwired (for example `math.expression`'s `t` is its own clock).
 - **Math and colour nodes** (`math.*`, `color.*`) compute on plain numbers and arrays (marker space; colours `[r, g, b, a]` 0–1 in sRGB), never on renderer types; only the renderer adapters convert.

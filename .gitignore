@@ -10,5 +10,6 @@ test-results/
 .traces/
 .idea/
 .playwright-mcp/
+.claude/settings.local.json
 generated/
 out/
