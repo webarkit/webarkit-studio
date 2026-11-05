@@ -11,13 +11,15 @@ Follow the "Adding a node" steps in `AGENTS.md`. This skill adds the details.
 
 Before writing code, settle:
 
-- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker.
+- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker.
 - **Ports:** socket types from `src/core/sockets.ts`. Mark inputs `optional` or `multiple` where it applies.
-- **Params:** kind, default, range. Mark `live: true` only if the factory can apply the change in `onParamChange` without a restart.
+- **Params:** kind, default, range. Mark `live: true` only if the factory can apply the change in `onParamChange` without a restart. A param the graph can drive gets an optional input of the same name (`AGENTS.md`, "Inputs override params").
 
 If the type already exists, or the request renames or removes an existing node, port or param, stop: that is a format change (see `docs/agents/checklists/graph-review.md`), not a new node.
 
 ## 2. Write it
+
+A plugin's node goes into the plugin instead of steps 1 to 3 (`AGENTS.md`, "Adding a node").
 
 1. **Catalog:** add a `NodeDefinition` to `defs` in `src/nodes/catalog.ts`, in the section of its category. Metadata only, no runtime imports.
 2. **Factory:** implement it in the matching file of `src/runtime/nodes/` (or a new file for a new area). Use the lifecycle in `src/runtime/types.ts`: `init`, `update`, `onParamChange`, `dispose`. Copy the style of a nearby node of the same category.
