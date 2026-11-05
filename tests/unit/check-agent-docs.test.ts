@@ -6,10 +6,13 @@ import { dirname, join, resolve } from 'node:path';
 
 const SCRIPT = resolve('scripts/check-agent-docs.mjs');
 
+/** A root AGENTS.md with its list of folders, then another section. */
+const LISTED = (...folders: string[]) => `### Folders with their own file\n\n${folders.map((f) => `- \`${f}/\`: what it has.\n`).join('')}\n## Next\n\nText.\n`;
+
 /** The smallest repository the check accepts: one nested folder, and everything it reads. */
 const VALID: Record<string, string> = {
   'package.json': JSON.stringify({ scripts: { 'check:agents': 'x' } }),
-  'AGENTS.md': 'Folders with their own file: `lib/`.\n',
+  'AGENTS.md': LISTED('lib'),
   'CLAUDE.md': '@AGENTS.md\n',
   '.github/copilot-instructions.md': 'See AGENTS.md\n',
   '.gemini/settings.json': JSON.stringify({ context: { fileName: ['AGENTS.md'] } }),
@@ -98,11 +101,39 @@ describe('check-agent-docs: nested agent files', () => {
     expect(output).toContain('lib/');
   });
 
+  it('does not take a passing mention for the list', () => {
+    write('AGENTS.md', `${LISTED()}Never touch \`lib/\`.\n`);
+    const { status, output } = check();
+    expect(status).toBe(1);
+    expect(output).toContain('lib/');
+  });
+
+  it('fails on a listed folder that has no agent files', () => {
+    write('AGENTS.md', LISTED('lib', 'gone'));
+    const { status, output } = check();
+    expect(status).toBe(1);
+    expect(output).toContain('gone/');
+  });
+
+  it('fails on an empty nested AGENTS.md', () => {
+    write('lib/AGENTS.md', '  \n');
+    const { status, output } = check();
+    expect(status).toBe(1);
+    expect(output).toContain('lib/AGENTS.md');
+  });
+
+  it('leaves out generated folders', () => {
+    write('out/CLAUDE.md', 'Generated.\n');
+    write('generated/CLAUDE.md', 'Generated.\n');
+    write('public/__player/CLAUDE.md', 'Generated.\n');
+    expect(check()).toMatchObject({ status: 0 });
+  });
+
   it('finds a folder at any depth, and leaves out dependencies, builds and hidden folders', () => {
     write('a/b/AGENTS.md', 'Deep.\n');
     write('a/b/CLAUDE.md', '@AGENTS.md\n');
     expect(check().output).toContain('a/b/');
-    write('AGENTS.md', 'Folders with their own file: `lib/`, `a/b/`.\n');
+    write('AGENTS.md', LISTED('lib', 'a/b'));
     write('node_modules/pkg/CLAUDE.md', 'Not ours.\n');
     write('dist/CLAUDE.md', 'Not ours.\n');
     write('.claude/worktrees/x/lib/CLAUDE.md', 'Another checkout.\n');

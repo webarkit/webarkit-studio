@@ -1,12 +1,20 @@
 // PreToolUse on Bash and PowerShell: refuses what skips the e2e lock, and force pushes.
-// It reads the command the way a shell splits it, so these words in a quoted string or a commit
-// message pass. It does not look inside `sh -c "..."` or variables: CI is what enforces the rules.
+// It reads the command the way a shell splits it, so these words in a quoted string, a here-document
+// or a commit message pass. It does not look inside `sh -c "..."`, `cmd /c ...`, variables or a quoted
+// "$(...)", or at `node .../cli.js test`, and a wrapper's own options can hide the program (`sudo -u x`).
+// False refusals stop real work, misses only lose a convenience: CI is what enforces the rules.
 import { report, runHook } from './lib.mjs';
+
+/** Text that is not commands: bash here-documents, whose opening line stays, and PowerShell here-strings. */
+const withoutHereText = (source) =>
+  source
+    .replace(/@'\r?\n[\s\S]*?\r?\n'@/g, '""')
+    .replace(/@"\r?\n[\s\S]*?\r?\n"@/g, '""')
+    .replace(/<<-?\s*(['"]?)(\w+)\1([^\n]*)\n[\s\S]*?\n\s*\2(?=\s|$)/g, '$3');
 
 /** Splits a command into its simple commands, each a list of words with the quotes removed. */
 function simpleCommands(source) {
-  // A here-document is text, not commands.
-  const command = source.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, '');
+  const command = withoutHereText(source);
   const commands = [];
   let words = [];
   let word = null;
@@ -21,6 +29,7 @@ function simpleCommands(source) {
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
+    const next = command[i + 1];
     if (c === "'" || c === '"') {
       word ??= '';
       for (i++; i < command.length && command[i] !== c; i++) {
@@ -29,8 +38,19 @@ function simpleCommands(source) {
       }
     } else if (c === '#' && word === null) {
       while (i + 1 < command.length && command[i + 1] !== '\n') i++;
-    } else if (c === '\\' && command[i + 1] === '\n') {
+    } else if (c === '\\' && (next === "'" || next === '"')) {
+      word = (word ?? '') + next;
       i++;
+    } else if ((c === '\\' || c === '`') && next === '\n') {
+      // A line continuation, in bash or in PowerShell.
+      endWord();
+      i++;
+    } else if (c === '`' && next === '\r' && command[i + 2] === '\n') {
+      endWord();
+      i += 2;
+    } else if (c === '&' && (word?.endsWith('>') || next === '>')) {
+      // A redirect (`2>&1`, `&>file`), not the end of a command.
+      word = (word ?? '') + c;
     } else if (';&|()\n`'.includes(c)) {
       endCommand();
     } else if (/\s/.test(c)) {
@@ -43,21 +63,45 @@ function simpleCommands(source) {
   return commands;
 }
 
-/** The program's name: `node_modules\.bin\playwright.cmd` → `playwright`. */
+/** The program's name: `node_modules\.bin\playwright.cmd` → `playwright`, `GIT` → `git`. */
 const programName = (word) =>
   word
     .split(/[\\/]/)
     .pop()
-    .replace(/\.(cmd|ps1|exe)$/i, '');
+    .replace(/\.(cmd|ps1|exe)$/i, '')
+    .toLowerCase();
 
-/** Leaves out what comes before the program: `FOO=1`, `env`, `time`, `command`. */
+/** What can come before the program: shell keywords, and commands that run another command. */
+const BEFORE_PROGRAM = new Set(['do', 'then', 'else', 'elif', '{', '!', 'env', 'time', 'command', 'sudo', 'exec', 'nohup', 'nice', 'timeout']);
+
+/** Leaves out what comes before the program: `FOO=1`, `do`, `timeout 300`, `nice -n 5`. */
 function withoutPrefixes(words) {
   let start = 0;
-  while (start < words.length && (/^\w+=/.test(words[start]) || ['env', 'time', 'command', 'sudo'].includes(words[start]))) start++;
+  while (start < words.length) {
+    if (/^\w+=/.test(words[start])) {
+      start++;
+    } else if (BEFORE_PROGRAM.has(words[start])) {
+      start++;
+      while (start < words.length && (words[start].startsWith('-') || /^\d+[smhd]?$/.test(words[start]))) start++;
+    } else {
+      break;
+    }
+  }
   return words.slice(start);
 }
 
+/** Leaves out options, and the value of those that take the next word as one. */
+function withoutOptions(words, takesValue) {
+  const kept = [];
+  for (let i = 0; i < words.length; i++) {
+    if (takesValue.includes(words[i])) i++;
+    else if (!words[i].startsWith('-')) kept.push(words[i]);
+  }
+  return kept;
+}
+
 const isPlaywright = (word) => /^(@playwright\/test|playwright)(@.+)?$/.test(word);
+const VALUE_OPTIONS = ['-p', '--package', '-c', '--config'];
 
 function runsPlaywrightTest(words) {
   const program = programName(words[0]);
@@ -66,11 +110,14 @@ function runsPlaywrightTest(words) {
     if (rest[0] !== 'exec' && rest[0] !== 'x') return false;
     rest = rest.slice(1);
   } else if (!['npx', 'pnpx', 'bunx'].includes(program)) {
-    return isPlaywright(program) && rest[0] === 'test';
+    return isPlaywright(program) && withoutOptions(rest, VALUE_OPTIONS)[0] === 'test';
   }
-  rest = rest.filter((word) => !word.startsWith('-'));
+  rest = withoutOptions(rest, VALUE_OPTIONS);
   return isPlaywright(rest[0] ?? '') && rest[1] === 'test';
 }
+
+/** `git push` options whose next word is their value, not a refspec. */
+const PUSH_VALUE_OPTIONS = ['-o', '--push-option', '--repo', '--receive-pack', '--exec'];
 
 function forcePushes(words) {
   if (programName(words[0]) !== 'git') return false;
@@ -80,7 +127,12 @@ function forcePushes(words) {
     i += ['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(words[i]) ? 2 : 1;
   }
   if (words[i] !== 'push') return false;
-  return words.slice(i + 1).some((word) => /^--force(-with-lease|-if-includes)?(=|$)/.test(word) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(word) || word.startsWith('+'));
+  for (let j = i + 1; j < words.length; j++) {
+    const word = words[j];
+    if (PUSH_VALUE_OPTIONS.includes(word)) j++;
+    else if (/^--(force|mirror)/.test(word) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(word) || word.startsWith('+')) return true;
+  }
+  return false;
 }
 
 /** Why this command is refused, or null. */

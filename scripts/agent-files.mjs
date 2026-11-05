@@ -1,10 +1,11 @@
 // Which files are agent files: what scripts/check-agent-docs.mjs reads, and what the post-edit
-// hook (.claude/hooks/post-edit.mjs) reruns that check for. One list, so the two cannot drift.
+// hook (.claude/hooks/post-edit.mjs) reruns that check for. tests/unit/hooks.test.ts checks that
+// the hook's patterns cover everything the check reads.
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Never holds agent files of ours. Hidden folders are left out too (.claude/worktrees holds other checkouts). */
-const NOT_OURS = new Set(['node_modules', 'dist', 'test-results', 'playwright-report', 'coverage']);
+const NOT_OURS = new Set(['node_modules', 'dist', 'out', 'generated', '__player', 'test-results', 'playwright-report', 'coverage']);
 
 /** Files that must point to AGENTS.md, relative to `root`. */
 export function pointerFiles(root = '.') {

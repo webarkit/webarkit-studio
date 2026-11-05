@@ -72,11 +72,20 @@ for (const file of pointerFiles()) {
 }
 
 const nested = nestedAgentFolders();
+/** The folders in the root's "Folders with their own file" section, as `a/b`. */
+const FOLDERS_HEADING = '### Folders with their own file';
+const listed = new Set(
+  [...(rootText.split(FOLDERS_HEADING)[1]?.split(/^#/m)[0] ?? '').matchAll(/^- `([^`]+)\/`/gm)].map(([, folder]) => folder),
+);
 for (const folder of nested) {
-  checkFile(`${folder}/${CANONICAL}`);
+  const agents = checkFile(`${folder}/${CANONICAL}`);
+  if (agents !== undefined && !agents.trim()) problems.push(`${folder}/${CANONICAL}: is empty`);
   const claude = checkFile(`${folder}/CLAUDE.md`);
   if (claude !== undefined && claude.trim() !== `@${CANONICAL}`) problems.push(`${folder}/CLAUDE.md: must hold only the import, @${CANONICAL}`);
-  if (!rootText.includes(`\`${folder}/\``)) problems.push(`${CANONICAL}: does not list the folder \`${folder}/\`, which has its own agent files`);
+  if (!listed.has(folder)) problems.push(`${CANONICAL}: "${FOLDERS_HEADING}" does not list \`${folder}/\`, which has its own agent files`);
+}
+for (const folder of listed) {
+  if (!nested.includes(folder)) problems.push(`${CANONICAL}: "${FOLDERS_HEADING}" lists \`${folder}/\`, which has no agent files`);
 }
 
 const gemini = '.gemini/settings.json';

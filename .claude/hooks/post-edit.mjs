@@ -12,18 +12,17 @@ import { addContext, report, runHook } from './lib.mjs';
 
 const CHECK = 'scripts/check-agent-docs.mjs';
 
-/** The nearest folder above `file` that holds the check: the checkout, or null outside one. */
+/** The nearest folder above `file` that is a checkout, or null. A worktree holds a `.git` file. */
 function checkoutOf(file) {
   for (let dir = dirname(file); ; dir = dirname(dir)) {
-    if (existsSync(join(dir, CHECK))) return dir;
+    if (existsSync(join(dir, CHECK)) || existsSync(join(dir, '.git'))) return dir;
     if (dirname(dir) === dir) return null;
   }
 }
 
 const isCatalog = (path) => path === 'src/nodes/catalog.ts' || /^plugins\/[^/]+\/catalog\.ts$/.test(path);
 
-const FORMAT_REMINDER =
-  'A node catalog changed. A node type, port or param renamed or removed, a changed socket type or param kind, or a change in what a value means is a format change: bump GRAPH_VERSION, update public/graphs/ and add a CHANGELOG.md line (AGENTS.md). A new node type, or a new optional input or param with a default, is not.';
+const FORMAT_REMINDER = 'A node catalog changed: check it against the format change rule of AGENTS.md (GRAPH_VERSION, public/graphs/, CHANGELOG.md). This is a reminder: a new node type is not a format change.';
 
 runHook('post-edit', (input) => {
   const path = input.tool_input?.file_path;
@@ -34,8 +33,10 @@ runHook('post-edit', (input) => {
   const inCheckout = relative(checkout, file).replaceAll('\\', '/');
 
   if (isCatalog(inCheckout)) addContext('PostToolUse', FORMAT_REMINDER);
-  if (!isAgentFile(inCheckout)) return;
+  // A branch from before the check exists has nothing to run.
+  if (!isAgentFile(inCheckout) || !existsSync(join(checkout, CHECK))) return;
 
-  const check = spawnSync(process.execPath, [CHECK], { cwd: checkout, encoding: 'utf8' });
-  if (check.status !== 0) report(`npm run check:agents fails after this edit:\n${check.stderr || check.stdout}`.trimEnd());
+  // Under the hook's own timeout (.claude/settings.json), so a hanging check is still reported.
+  const check = spawnSync(process.execPath, [CHECK], { cwd: checkout, encoding: 'utf8', timeout: 25_000 });
+  if (check.status !== 0) report(`npm run check:agents fails after this edit:\n${check.stderr || check.stdout || check.error?.message || 'the check did not finish'}`.trimEnd());
 });

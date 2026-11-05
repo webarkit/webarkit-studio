@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs';
 function readInput() {
   try {
     // A PowerShell pipe adds a byte order mark, which JSON.parse refuses.
-    return JSON.parse(readFileSync(0, 'utf8').replace(/^﻿/, ''));
+    const text = readFileSync(0, 'utf8');
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
   } catch {
     return null;
   }

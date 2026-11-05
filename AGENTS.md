@@ -23,7 +23,7 @@ See the [README](./README.md) for the architecture, the node list and the known 
 | Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md`. It loads context files in a folder when a tool touches it; its documentation describes this for `GEMINI.md` only |
 | Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. A nested `CLAUDE.md`, with the `AGENTS.md` it imports, loads when Claude reads, writes or edits a file in its folder. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/), hooks in [`.claude/hooks/`](.claude/hooks/) |
 
-Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file. `npm run check:agents` checks that the pointer files link here, that the commands and paths named here and in the nested files exist, and that this file lists every nested folder.
+Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file and the nested ones. `npm run check:agents` checks that the pointer files link here, that the commands and paths named here and in the nested files exist, and that this file lists every nested folder.
 
 ### Folders with their own file
 
@@ -31,7 +31,7 @@ Pointer files never duplicate a rule, except where a tool cannot follow links (C
 - `src/mcp/`: the MCP server and its tools.
 - `tests/e2e/`: ports, the lock's escape, the fake camera.
 
-Each has an `AGENTS.md` and a one-line `CLAUDE.md` that imports it. **Before changing a file in one of these folders, read its `AGENTS.md`:** not every tool loads it on its own (see the table). A nested file only refines this file for its folder and never contradicts it, because Cursor, Codex and Copilot favour the nearer file; if they ever disagree, this file wins.
+Each has an `AGENTS.md` and a one-line `CLAUDE.md` that imports it. Paths in a nested file are written from the repository root, so the check can find them. **Before changing a file in one of these folders, read its `AGENTS.md`:** not every tool loads it on its own (see the table). A nested file only refines this file for its folder and never contradicts it, because Cursor, Codex and Copilot favour the nearer file; if they ever disagree, this file wins.
 
 In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) at the end of a session. It proposes additions to `CLAUDE.md`; put what it finds in this file instead, unless it is specific to Claude Code.
 

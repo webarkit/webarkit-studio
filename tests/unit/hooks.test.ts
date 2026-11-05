@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const hook = (name: string) => resolve(`.claude/hooks/${name}.mjs`);
 
@@ -28,6 +29,16 @@ describe('guard-bash', () => {
     'node_modules\\.bin\\playwright.cmd test',
     'cd tests && npx playwright test',
     'FOO=1 npx playwright test',
+    'for i in 1 2 3; do npx playwright test; done',
+    '! npx playwright test',
+    'foreach ($i in 1..3) { npx playwright test }',
+    'git status; if ($?) { npx playwright test }',
+    'timeout 300 npx playwright test',
+    'nohup npx playwright test &',
+    'exec npx playwright test',
+    'npx -p @playwright/test playwright test',
+    'npx --package @playwright/test playwright test',
+    'npx playwright -c playwright.config.ts test',
   ])('refuses %s and names npm run test:e2e', (command) => {
     const { status, stderr } = guard(command);
     expect(status).toBe(2);
@@ -49,6 +60,16 @@ describe('guard-bash', () => {
     'git status && git push -f',
     'git status; git push -f',
     '(git push -f)',
+    'if true; then git push -f; fi',
+    'true && { git push -f; }',
+    'if ($?) { git push -f }',
+    '& { git push -f }',
+    'git push --mirror',
+    'git push --force-w',
+    'git push 2>&1 -f',
+    'git push `\n --force origin dev',
+    'GIT push -f',
+    'cat <<EOF && git push -f\nbody\nEOF',
   ])('refuses %s', (command) => {
     const { status, stderr } = guard(command);
     expect(status).toBe(2);
@@ -74,6 +95,15 @@ describe('guard-bash', () => {
     'grep -rn "npx playwright test" docs',
     '# git push -f',
     "cat <<'EOF'\ngit push -f\nnpx playwright test\nEOF",
+    "git commit -m @'\nDon't use this:\ngit push --force\n'@",
+    "git commit -m @'\nDon't use `npx playwright test`: it skips the lock.\n'@",
+    "gh pr create --title x --body @'\nThe hook doesn't allow `git push --force`.\n'@",
+    "$body = @'\nThat's it\nnpx playwright test\n'@\ngh pr create --body $body",
+    'git commit -m @"\nSays "hi\ngit push -f\n"@',
+    "git commit -m 'don'\\''t `git push -f`'",
+    'git push -o +x origin dev',
+    'git push 2>&1',
+    'timeout 300 npm run test:e2e',
   ])('lets through %s', (command) => {
     expect(guard(command)).toMatchObject({ status: 0, stderr: '' });
   });
@@ -96,7 +126,7 @@ describe('guard-bash', () => {
 
   it('reads input with a byte order mark, which a PowerShell pipe adds', () => {
     const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push -f' } });
-    expect(run('guard-bash', `﻿${input}\r\n`).status).toBe(2);
+    expect(run('guard-bash', `${String.fromCharCode(0xfeff)}${input}\r\n`).status).toBe(2);
   });
 
   it('is turned off by STUDIO_HOOKS_OFF, by name', () => {
@@ -141,6 +171,15 @@ describe('post-edit', () => {
     const { status, stderr } = edit(path);
     expect(status).toBe(2);
     expect(stderr).toContain('out of sync: reason');
+  });
+
+  it('does not run the check of the checkout around a worktree without one, and still reminds', () => {
+    write('broken', '');
+    write('.claude/worktrees/old/.git', 'gitdir: elsewhere');
+    expect(edit('.claude/worktrees/old/AGENTS.md')).toMatchObject({ status: 0, stderr: '' });
+    const reminder = edit('.claude/worktrees/old/src/nodes/catalog.ts');
+    expect(reminder.status).toBe(0);
+    expect(reminder.stdout).toContain('format change');
   });
 
   it('stays silent when the check passes', () => {
@@ -238,6 +277,17 @@ describe('session-context', () => {
   it('is turned off by STUDIO_HOOKS_OFF', () => {
     git('init', '-q', '-b', 'feat/x');
     expect(context('session-context')).toMatchObject({ status: 0, stdout: '' });
+  });
+});
+
+describe('scripts/agent-files.mjs', () => {
+  it('counts as an agent file everything the check reads', async () => {
+    const { pointerFiles, nestedAgentFolders, isAgentFile } = await import(/* @vite-ignore */ pathToFileURL(resolve('scripts/agent-files.mjs')).href);
+    const nested = (nestedAgentFolders() as string[]).flatMap((folder) => [`${folder}/AGENTS.md`, `${folder}/CLAUDE.md`]);
+    expect(nested.length).toBeGreaterThan(0);
+    for (const file of [...(pointerFiles() as string[]), ...nested, 'AGENTS.md', '.gemini/settings.json', '.mcp.json', 'package.json']) {
+      expect(isAgentFile(file), file).toBe(true);
+    }
   });
 });
 
