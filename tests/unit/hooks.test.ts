@@ -307,19 +307,20 @@ describe('scripts/agent-files.mjs', () => {
 });
 
 describe('.claude/settings.json', () => {
-  type Hook = { type: string; command: string; args: string[] };
+  type Hook = { type: string; command: string; args: string[]; shell?: string };
   type HookEvents = Record<string, { matcher?: string; hooks: Hook[] }[]>;
 
   const SCRIPT = /^\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/[a-z-]+\.mjs$/;
   const scriptPath = (name: string) => `\${CLAUDE_PROJECT_DIR}/.claude/hooks/${name}.mjs`;
 
-  /** Each declared hook that does not run, with node and without a shell, a script of .claude/hooks that exists. */
+  /** What is wrong with the declared hooks: each must run a script of .claude/hooks that exists, with node, without a shell. */
   function hookProblems(events: HookEvents) {
     const problems: string[] = [];
     for (const [event, list] of Object.entries(events)) {
-      for (const { command, args } of list.flatMap((group) => group.hooks)) {
+      for (const { command, args, shell } of list.flatMap((group) => group.hooks)) {
         const script = args?.[0] ?? '';
         if (command !== 'node') problems.push(`${event}: runs "${command}", not node`);
+        if (shell !== undefined) problems.push(`${event}: declares the shell "${shell}"`);
         if (!SCRIPT.test(script)) problems.push(`${event}: "${script}" is not a script of .claude/hooks`);
         else if (!existsSync(script.replace('${CLAUDE_PROJECT_DIR}/', ''))) problems.push(`${event}: "${script}" does not exist`);
       }
@@ -365,6 +366,12 @@ describe('.claude/settings.json', () => {
       const events = structuredClone(settings.hooks);
       events.SessionStart[0].hooks.push({ type: 'command', command: 'bash', args: [scriptPath('guard-bash')] });
       expect(hookProblems(events)).toEqual(['SessionStart: runs "bash", not node']);
+    });
+
+    it('a second hook that declares a shell', () => {
+      const events = structuredClone(settings.hooks);
+      events.SessionStart[0].hooks.push({ type: 'command', command: 'node', args: [scriptPath('guard-bash')], shell: 'bash' });
+      expect(hookProblems(events)).toEqual(['SessionStart: declares the shell "bash"']);
     });
   });
 

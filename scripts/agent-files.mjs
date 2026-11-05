@@ -1,6 +1,7 @@
 // Which files are agent files: what scripts/check-agent-docs.mjs reads, and what the post-edit
 // hook (.claude/hooks/post-edit.mjs) reruns that check for. tests/unit/hooks.test.ts checks that
-// the hook's patterns cover everything the check reads.
+// the hook's patterns cover everything the check reads. Also the generated folders, which the check
+// allows the docs to name and the walk for nested agent files skips.
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
