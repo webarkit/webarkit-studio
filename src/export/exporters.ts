@@ -1,7 +1,6 @@
 /**
  * Export formats. Each one turns the current graph into a downloadable file.
- * New formats (e.g. readable jsartoolkitNFT source code) are added here and
- * appear in the studio's Export menu.
+ * New formats are added here and appear in the studio's Export menu.
  */
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
@@ -34,8 +33,6 @@ export interface Exporter {
   id: string;
   label: string;
   description: string;
-  /** false = shown in the menu as planned, not selectable. */
-  available: boolean;
   run(doc: GraphDocument, ctx: ExportContext): Promise<ExportResult>;
 }
 
@@ -53,7 +50,6 @@ const graphJson: Exporter = {
   id: 'graph-json',
   label: 'Graph (.json)',
   description: 'The node graph only. Re-import it in the studio or run it with any player.',
-  available: true,
   async run(doc, ctx) {
     if (usesUploadedAssets(doc)) ctx.log('⚠ the graph uses uploaded assets, which a .json does not carry: export a Project (.zip) to keep them');
     return {
@@ -67,7 +63,6 @@ const appBundle: Exporter = {
   id: 'app-bundle',
   label: 'Standalone app (.zip)',
   description: 'Player + graph + assets, ready for any static web server (GitHub Pages, Netlify…).',
-  available: true,
   async run(doc, ctx) {
     const { exportAppBundle } = await import('./app-bundle');
     return exportAppBundle(doc, ctx);
@@ -78,7 +73,6 @@ const project: Exporter = {
   id: 'project',
   label: 'Project (.zip)',
   description: 'The graph and its uploaded assets, to open in another browser with Import…',
-  available: true,
   async run(doc, ctx) {
     const { packProject } = await import('./project');
     const zip = await packProject(doc, ctx.assets?.list() ?? []);
@@ -86,14 +80,4 @@ const project: Exporter = {
   },
 };
 
-const jsartoolkitSource: Exporter = {
-  id: 'jsartoolkitnft-source',
-  label: 'jsartoolkitNFT source code (.zip)',
-  description: 'Planned: readable, editable code (worker + Three.js) generated from the graph.',
-  available: false,
-  run() {
-    return Promise.reject(new Error('Not implemented yet'));
-  },
-};
-
-export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, jsartoolkitSource];
+export const EXPORTERS: Exporter[] = [graphJson, project, appBundle];

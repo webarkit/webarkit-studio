@@ -6,7 +6,7 @@
  * an external plugin: see docs/plugins.md.
  */
 import type { StudioPlugin } from '@webarkit/studio-plugin-api';
-import { NODES, SOCKETS } from './catalog';
+import { ASSET_KINDS, NODES, SOCKETS } from './catalog';
 import { PLUGIN_ID } from './nft-session';
 import { artkCameraParams, artkController, artkNativeFilter, artkNftDataset, artkSettings } from './nodes';
 import { WORKER_DIR, workerFiles, type WorkerBuild } from './worker-files';
@@ -25,6 +25,7 @@ const plugin: StudioPlugin = {
   apiVersion: 1,
   nodes: NODES,
   sockets: SOCKETS,
+  assetKinds: ASSET_KINDS,
   factories: {
     'jsartoolkitNFT.cameraParams': artkCameraParams,
     'jsartoolkitNFT.dataset': artkNftDataset,

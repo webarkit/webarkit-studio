@@ -22,6 +22,7 @@ const plugin: StudioPlugin = {
   nodes: [/* NodeDefinition, type 'acme.*' */],
   factories: { 'acme.tracker': acmeTracker /* one per node */ },
   sockets: [{ id: 'acme.marker', label: 'Acme marker', color: '#ffb74d' }],
+  assetKinds: [/* see "Asset kinds" */],
   exportFiles: [/* see below */],
 };
 export default plugin;
@@ -37,7 +38,9 @@ and refuses it with the list of problems if:
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
 - a node type or socket id does not start with `<id>.`, or is defined twice;
 - a node has no factory, or a factory has no node;
-- a port uses a socket type that is neither a core socket nor one of the plugin's.
+- a port uses a socket type that is neither a core socket nor one of the plugin's;
+- an asset kind is invalid, or a param's `asset` is neither built in nor declared by the plugin (see
+  "Asset kinds").
 
 Node definitions and factories follow the same rules as the built-in nodes (`AGENTS.md`,
 "Adding a node"): the definitions are metadata only, factories implement `init`, `update`,
@@ -119,10 +122,10 @@ these rules for the jsartoolkitNFT plugin.
 - **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`,
   or use the library's own worker (as the jsartoolkitNFT plugin does, see below). Keep heavy builds
   (WASM) behind a dynamic `import()` inside the worker.
-- **Asset params**: a `string` param with `asset: 'file' | 'nftDataset' | 'model'` gets uploads and
-  is bundled by the exporter. The runtime resolves uploads before the factory runs: files become
-  blob: URLs; NFT dataset prefixes become virtual URLs under `VirtualAssetOrigin`, whose files are in
-  `RuntimeContext.virtualFiles` (virtual URL → blob: URL). A worker that loads them must serve them
+- **Asset params**: a `string` param with `asset: 'file' | 'model'`, or a kind a plugin declares (see
+  "Asset kinds"), gets uploads and is bundled by the exporter. The runtime resolves uploads before the
+  factory runs: files become blob: URLs; the prefixes of declared kinds become virtual URLs under
+  `VirtualAssetOrigin`, whose files are in `RuntimeContext.virtualFiles` (virtual URL → blob: URL). A worker that loads them must serve them
   to its library's `fetch()`, and answer 404 for other virtual URLs. A library that runs its own
   worker cannot be handed that map: `plugins/jsartoolkit-nft/virtual-fetch.ts` puts the files in the
   dataset URL's query string and installs a `fetch()` in the library's worker that reads them back.
@@ -134,6 +137,38 @@ these rules for the jsartoolkitNFT plugin.
 - **Traces**: a tracker that outputs `trackingTrace` writes the studio's trace format
   (`TraceHeader`, `TraceRecord`, see `src/runtime/trackers/trace.ts`), so the Trace Recorder and
   `npm run trace:diff` work with it.
+
+## Asset kinds
+
+A library's data that is several files sharing a base name gets an asset kind of its own, declared
+in `assetKinds` and named by its params' `asset`:
+
+```ts
+assetKinds: [
+  { id: 'acmeMarker', label: 'Acme marker', extensions: ['mk1', 'mk2'], alternative: 'pack' },
+],
+```
+
+A param of this kind holds a URL prefix. From the declaration, the studio:
+
+- classifies uploads by `extensions`, groups the files with the same base name into one asset, and
+  refuses an incomplete one (`Acme marker "logo" is incomplete: add logo.mk2`);
+- offers the extensions in the upload picker, and uploads of this kind on the param;
+- checks that a project file holds each file of such an asset;
+- gives the runtime a virtual prefix for an upload (see "Workers and assets");
+- bundles each file into an exported app. When a URL's files are not all there, the exporter looks
+  for `<url>.<alternative>`, if the kind has one, and fails with the kind's label if not.
+
+`id` is a plain identifier, and it has no `<plugin id>.` prefix: it is stored in project files and in
+the browser, so renaming it breaks them. A kind whose id or extensions are already taken is refused
+(`model` owns `glb` and `gltf`), so claim only extensions that are your library's own: `file` has no
+list, and a kind that claimed `jpg` would take over every image upload.
+
+A plugin declares every kind it uses. The player loads only the plugins a graph lists, so it cannot
+rely on another plugin's. Two plugins that read the same files declare the same kind, identically:
+that is allowed, in either load order, and any other difference is refused.
+
+A kind's value is always a URL prefix, even with one extension. For one plain file, use `file`.
 
 ## Export files
 

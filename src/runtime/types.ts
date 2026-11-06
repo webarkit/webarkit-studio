@@ -102,7 +102,7 @@ export interface RuntimeContext {
   /** True in the studio's preview, false in the player (exported apps): debug tools that act on their own (downloads) stay off there. */
   studio: boolean;
   /**
-   * Files of uploaded NFT datasets: virtual URL (under VIRTUAL_ASSET_ORIGIN) →
+   * Files of uploaded assets with several files: virtual URL (under VIRTUAL_ASSET_ORIGIN) →
    * blob: URL (src/runtime/assets.ts), filled as nodes resolve their asset
    * params. A tracker worker serves them to its library's fetch().
    */

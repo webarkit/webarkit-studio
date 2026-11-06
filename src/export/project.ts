@@ -8,7 +8,7 @@
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { extensionOf, type StoredAsset } from '../assets/asset';
-import { NFT_DATASET_EXTENSIONS } from '../core/assets';
+import { isAssetKind, pluginAssetKind } from '../core/assets';
 import type { AssetKind } from '../nodes/catalog';
 
 interface ManifestEntry {
@@ -90,8 +90,6 @@ export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown
   return { graph: JSON.parse(strFromU8(files['graph.json'])), assets };
 }
 
-const KINDS: AssetKind[] = ['file', 'nftDataset', 'model'];
-
 /** Throws on a manifest entry the studio could not use, before anything is imported. */
 function checkEntry(entry: Partial<ManifestEntry>, index: number): void {
   const fail = (what: string) => {
@@ -99,9 +97,9 @@ function checkEntry(entry: Partial<ManifestEntry>, index: number): void {
   };
   if (typeof entry?.id !== 'string' || !entry.id) fail('has no valid id');
   if (typeof entry.name !== 'string' || !entry.name) fail('has no valid name');
-  if (!KINDS.includes(entry.kind as AssetKind)) fail(`has an unknown kind "${String(entry.kind)}"`);
+  if (!isAssetKind(entry.kind)) fail(`has an unknown kind "${String(entry.kind)}"`);
   const keys = Object.keys(entry.files ?? {});
-  const expected: readonly string[] = entry.kind === 'nftDataset' ? NFT_DATASET_EXTENSIONS : [''];
+  const expected = pluginAssetKind(entry.kind)?.extensions ?? [''];
   const missing = expected.filter((k) => !keys.includes(k));
   if (missing.length) fail(`is missing its ${missing.map((k) => (k ? `.${k}` : 'file')).join(', ')}`);
 }

@@ -138,7 +138,7 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | Graph (.json) | the node graph only; re-import it in the studio |
 | Project (.zip) | the graph and its uploaded assets; open it with **Import…** |
 | Standalone app (.zip) | player + graph + assets, runs on any static web server |
-| jsartoolkitNFT source code (.zip) | planned: readable code generated from the graph |
+| Source code (.zip) | planned: readable code generated from the graph ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
 
 The standalone app is the prebuilt player (`npm run build:player`, run
 automatically by `dev` and `build`) plus `graph.json` and the files its nodes

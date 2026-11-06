@@ -30,12 +30,12 @@ interface ParamBase {
 
 /**
  * Marks a string param as a URL of files the graph needs at runtime, so the
- * app exporter can bundle them: `file` = the URL itself, `nftDataset` = an
- * ARToolKit dataset prefix (.iset / .fset / .fset3, or .zft), `model` = a
- * glTF / GLB file. The value may also reference an uploaded asset of that
- * kind (`asset://<id>/<name>`, see src/core/assets.ts).
+ * app exporter can bundle them: `file` = the URL itself, `model` = a glTF / GLB
+ * file, or a kind a plugin declares (AssetKindDefinition, src/core/assets.ts):
+ * a URL prefix with several files. The value may also reference an uploaded
+ * asset of that kind (`asset://<id>/<name>`).
  */
-export type AssetKind = 'file' | 'nftDataset' | 'model';
+export type AssetKind = 'file' | 'model' | (string & {});
 
 export type ParamSpec = ParamBase &
   (
@@ -115,7 +115,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Select Marker',
     category: 'tracking',
     provider: 'core',
-    description: 'Picks one marker from a tracker\'s result, by name (NFT Dataset name) or by index (0 = first dataset).',
+    description: 'Picks one marker from a tracker\'s result, by name (its dataset\'s name) or by index (0 = first dataset).',
     inputs: { markers: { type: 'trackingResult', label: 'Markers' } },
     outputs: {
       pose: { type: 'pose', label: 'Pose' },

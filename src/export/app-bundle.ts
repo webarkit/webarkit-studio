@@ -6,14 +6,14 @@
  *   <app>/index.html     player page, pointed at graph.json
  *   <app>/graph.json     the graph (re-importable in the studio)
  *   <app>/assets/…       player, engine and tracker chunks (only those the graph uses)
- *   <app>/data/…         camera parameters, NFT datasets, …
+ *   <app>/data/…         the data files its nodes read
  *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
 import { validateGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
+import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
 import { INSTALLED_PLUGINS } from '../plugins/host';
@@ -179,42 +179,47 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       const value = String(node.params[key] ?? spec.default);
+      const multi = pluginAssetKind(spec.asset);
       const ref = parseAssetRef(value);
       if (ref) {
         const asset = ctx.assets?.get(ref.id);
         if (!asset) throw new ExportError(`${node.id}.${key}: asset "${ref.name || ref.id}" is not in this project`);
         if (asset.kind !== spec.asset) throw new ExportError(`${node.id}.${key}: asset "${asset.name}" is a ${asset.kind}, not a ${spec.asset}`);
         const path = `data/assets/${asset.id}/${safeName(asset.name)}`;
-        if (spec.asset === 'nftDataset') {
-          for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
+        if (multi) {
+          for (const ext of multi.extensions) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
         } else {
           files[path] = await bytes(asset.files['']);
           if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
         node.params[key] = path;
-        ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
+        ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''} (uploaded)`);
         continue;
       }
       const url = new URL(value, base);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
       const { path, rewritten } = bundlePath(url, base);
 
-      if (spec.asset === 'nftDataset') {
-        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
-        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
+      if (multi) {
+        // A prefix: each of the kind's files, or the one file that can stand in for them.
+        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(`${url.href}.${ext}`)));
         if (parts.every(Boolean)) {
-          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
+          multi.extensions.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
         } else {
-          const zft = await tryFetch(`${url.href}.zft`);
-          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
-          files[`${path}.zft`] = zft;
+          const { alternative } = multi;
+          const packed = alternative ? await tryFetch(`${url.href}.${alternative}`) : null;
+          if (!packed) {
+            const where = `${url.href}.{${multi.extensions.join(',')}${alternative ? `|${alternative}` : ''}}`;
+            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}`);
+          }
+          files[`${path}.${alternative}`] = packed;
         }
       } else {
         files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
         if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
       if (rewritten) node.params[key] = path;
-      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
+      ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
     }
   }
   return files;
@@ -293,15 +298,14 @@ Serve this folder with any static web server and open index.html, e.g.:
 Requirements:
 - Camera access needs a secure context: http://localhost works; on a phone use HTTPS
   (or "adb reverse tcp:8080 tcp:8080" on Android).
-- The server must answer 404 for missing files. Trackers probe for optional files (the
-  jsartoolkitNFT tracker: <dataset>.zft) and treat any HTTP 200 (e.g. an SPA fallback
-  page) as that file.
+- The server must answer 404 for missing files. Trackers probe for optional files and
+  treat any HTTP 200 (e.g. an SPA fallback page) as that file.
 
 Contents
 --------
 index.html   player page (reads graph.json)
 graph.json   the node graph; import it in WebARKit Studio to edit it
 assets/      player, 3D engine and tracker code
-data/        camera parameters and NFT datasets
+data/        the data files the graph's nodes read
 `;
 }

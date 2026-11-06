@@ -17,7 +17,7 @@ export const trackabilityCheck = defineTool({
     dataset: z
       .string()
       .min(1)
-      .describe('Dataset path without extension, or any of its .iset, .fset and .fset3 files (absolute or relative to the repository root). A .zft is not supported.'),
+      .describe('Dataset path without extension, or any of its files (absolute or relative to the repository root). A packed dataset is not supported.'),
   }),
   run(input, env) {
     const checks = Object.entries(DATASET_CHECKS);

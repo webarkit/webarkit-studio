@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { uploadAccept, uploadHint } from '../../src/app/assets-panel';
 import { CORE_SOCKET_TYPES } from '../../src/core/sockets';
 import { LOADED_PLUGINS } from '../../src/core/plugins';
 import { CORE_NODES, NODE_CATALOG } from '../../src/nodes/catalog';
@@ -48,6 +49,23 @@ describe('jsartoolkitNFT plugin (#12)', () => {
       expect(imports(file).filter(({ from }) => /jsartoolkit-nft|camera-view|\.\.\/\.\.\/plugins\//.test(from)), file).toEqual([]);
       expect(text.match(/'jsartoolkitNFT\.\w+'/g), file).toBeNull();
     }
+  });
+
+  it('leaves nothing specific to its datasets in the code of src/ (#30)', () => {
+    // A comment starts a line or follows a space: `image/*` in a string is not one.
+    const code = (file: string) => readFileSync(file, 'utf8').replace(/(^|\s)\/\*[\s\S]*?\*\//g, '$1').replace(/^\s*\/\/.*$/gm, '');
+    for (const file of files('src')) {
+      expect(code(file).match(/nftDataset|\bNFT\b|NFT_|\.(iset|fset3?|zft)\b|jsartoolkit|artoolkit|camera_para/gi), file).toBeNull();
+    }
+  });
+
+  it('declares its dataset kind, with the id project files and uploads already hold (#30)', () => {
+    expect(plugin.assetKinds).toEqual([{ id: 'nftDataset', label: 'NFT dataset', extensions: ['iset', 'fset', 'fset3'], alternative: 'zft' }]);
+  });
+
+  it('keeps the upload picker as it was', () => {
+    expect(uploadAccept()).toBe('.iset,.fset,.fset3,.glb,.gltf,image/*,video/*,.dat');
+    expect(uploadHint()).toBe('Images, videos, glTF / GLB models and NFT datasets (select the .iset, .fset and .fset3 files together)');
   });
 
   it('is listed by every demo graph that uses it', () => {
