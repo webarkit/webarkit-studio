@@ -52,9 +52,10 @@ describe('jsartoolkitNFT plugin (#12)', () => {
   });
 
   it('leaves nothing specific to its datasets in the code of src/ (#30)', () => {
-    const code = (file: string) => readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // A comment starts a line or follows a space: `image/*` in a string is not one.
+    const code = (file: string) => readFileSync(file, 'utf8').replace(/(^|\s)\/\*[\s\S]*?\*\//g, '$1').replace(/^\s*\/\/.*$/gm, '');
     for (const file of files('src')) {
-      expect(code(file).match(/nftDataset|\bNFT\b|NFT_|\.(iset|fset3?|zft)\b|jsartoolkit/gi), file).toBeNull();
+      expect(code(file).match(/nftDataset|\bNFT\b|NFT_|\.(iset|fset3?|zft)\b|jsartoolkit|artoolkit|camera_para/gi), file).toBeNull();
     }
   });
 

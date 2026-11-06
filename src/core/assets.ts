@@ -44,8 +44,10 @@ export function registerAssetKinds(kinds: readonly AssetKindDefinition[]): void 
 /** The asset kinds of the loaded plugins. */
 export const pluginAssetKinds = (): AssetKindDefinition[] => [...PLUGIN_ASSET_KINDS.values()];
 
-/** The definition of a kind whose assets have several files; undefined for a single-file kind. */
+/** The definition of a plugin's kind, whose params hold a URL prefix; undefined for `file` and `model`, a single file. */
 export const pluginAssetKind = (id: unknown): AssetKindDefinition | undefined => (typeof id === 'string' ? PLUGIN_ASSET_KINDS.get(id) : undefined);
+
+export const isCoreAssetKind = (id: unknown): boolean => typeof id === 'string' && Object.hasOwn(CORE_ASSET_KINDS, id);
 
 export const isAssetKind = (id: unknown): boolean => typeof id === 'string' && (Object.hasOwn(CORE_ASSET_KINDS, id) || PLUGIN_ASSET_KINDS.has(id));
 

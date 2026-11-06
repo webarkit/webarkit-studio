@@ -39,7 +39,8 @@ and refuses it with the list of problems if:
 - a node type or socket id does not start with `<id>.`, or is defined twice;
 - a node has no factory, or a factory has no node;
 - a port uses a socket type that is neither a core socket nor one of the plugin's;
-- an asset kind is invalid, or a param's `asset` names a kind nobody declares (see "Asset kinds").
+- an asset kind is invalid, or a param's `asset` is neither built in nor declared by the plugin (see
+  "Asset kinds").
 
 Node definitions and factories follow the same rules as the built-in nodes (`AGENTS.md`,
 "Adding a node"): the definitions are metadata only, factories implement `init`, `update`,
@@ -160,7 +161,14 @@ A param of this kind holds a URL prefix. From the declaration, the studio:
 
 `id` is a plain identifier, and it has no `<plugin id>.` prefix: it is stored in project files and in
 the browser, so renaming it breaks them. A kind whose id or extensions are already taken is refused
-(`model` owns `glb` and `gltf`). A single-file kind is not supported: use `file`.
+(`model` owns `glb` and `gltf`), so claim only extensions that are your library's own: `file` has no
+list, and a kind that claimed `jpg` would take over every image upload.
+
+A plugin declares every kind it uses. The player loads only the plugins a graph lists, so it cannot
+rely on another plugin's. Two plugins that read the same files declare the same kind, identically:
+that is allowed, in either load order, and any other difference is refused.
+
+A kind's value is always a URL prefix, even with one extension. For one plain file, use `file`.
 
 ## Export files
 

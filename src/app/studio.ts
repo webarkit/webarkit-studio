@@ -137,7 +137,6 @@ const exportItems = $('export-items');
 for (const exporter of EXPORTERS) {
   const item = document.createElement('button');
   item.innerHTML = `<strong>${exporter.label}</strong><small>${exporter.description}</small>`;
-  item.disabled = !exporter.available;
   item.dataset.exporter = exporter.id;
   item.onclick = async () => {
     exportMenu.open = false;

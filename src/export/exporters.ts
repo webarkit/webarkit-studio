@@ -33,8 +33,6 @@ export interface Exporter {
   id: string;
   label: string;
   description: string;
-  /** false = shown in the menu as planned, not selectable. */
-  available: boolean;
   run(doc: GraphDocument, ctx: ExportContext): Promise<ExportResult>;
 }
 
@@ -52,7 +50,6 @@ const graphJson: Exporter = {
   id: 'graph-json',
   label: 'Graph (.json)',
   description: 'The node graph only. Re-import it in the studio or run it with any player.',
-  available: true,
   async run(doc, ctx) {
     if (usesUploadedAssets(doc)) ctx.log('⚠ the graph uses uploaded assets, which a .json does not carry: export a Project (.zip) to keep them');
     return {
@@ -66,7 +63,6 @@ const appBundle: Exporter = {
   id: 'app-bundle',
   label: 'Standalone app (.zip)',
   description: 'Player + graph + assets, ready for any static web server (GitHub Pages, Netlify…).',
-  available: true,
   async run(doc, ctx) {
     const { exportAppBundle } = await import('./app-bundle');
     return exportAppBundle(doc, ctx);
@@ -77,7 +73,6 @@ const project: Exporter = {
   id: 'project',
   label: 'Project (.zip)',
   description: 'The graph and its uploaded assets, to open in another browser with Import…',
-  available: true,
   async run(doc, ctx) {
     const { packProject } = await import('./project');
     const zip = await packProject(doc, ctx.assets?.list() ?? []);

@@ -7,6 +7,7 @@ import { AssetStore, memoryBackend, type StoredAsset } from '../../src/assets/as
 import { assetRef } from '../../src/core/assets';
 import type { GraphDocument } from '../../src/core/graph';
 import { validatePlugin } from '../../src/core/plugins';
+import { CORE_NODES } from '../../src/nodes/catalog';
 import { collectAssets } from '../../src/export/app-bundle';
 import { packProject, unpackProject } from '../../src/export/project';
 import type { StudioPlugin } from '../../src/plugin-api';
@@ -189,6 +190,32 @@ describe('validatePlugin on asset kinds', () => {
   it('refuses two kinds of the plugin with the same id or extension', () => {
     expect(() => validatePlugin(manifest([kind(), kind()]))).toThrow(/asset kind "betaKind" is already defined/);
     expect(() => validatePlugin(manifest([kind(), kind({ id: 'other' })]))).toThrow(/extension "bt1" already belongs to "betaKind"/);
+  });
+
+  it('takes a kind identical to a loaded one, so two plugins can share a file format in any order', () => {
+    const same = { id: 'acmeMarker', label: 'Acme marker', extensions: ['mk1', 'mk2'], alternative: 'pack' };
+    expect(() => validatePlugin(manifest([same]))).not.toThrow();
+    for (const other of [{ label: 'Other' }, { extensions: ['mk1'] }, { alternative: undefined }]) {
+      expect(() => validatePlugin(manifest([{ ...same, ...other }]))).toThrow(/asset kind "acmeMarker" is already defined/);
+    }
+  });
+
+  it("refuses a param of another plugin's kind unless the plugin declares it too", () => {
+    const params = { url: { kind: 'string', label: 'URL', default: '', asset: 'acmeMarker' } };
+    const node = { type: 'beta.n', label: 'n', description: 'n', category: 'source', provider: 'beta', inputs: {}, outputs: {}, params };
+    const using = (assetKinds: unknown) => ({ ...manifest(assetKinds, [node]), factories: { 'beta.n': () => ({}) } });
+    expect(() => validatePlugin(using([]))).toThrow(/beta\.n: param "url" has unknown asset kind "acmeMarker"/);
+    expect(() => validatePlugin(using(acme.assetKinds))).not.toThrow();
+  });
+
+  it('knows every asset kind the core nodes use', () => {
+    for (const def of CORE_NODES) {
+      for (const [key, spec] of Object.entries(def.params)) {
+        if (spec.kind === 'string' && spec.asset) expect(['file', 'model'], `${def.type}.${key}`).toContain(spec.asset);
+      }
+    }
+    expect(assetKindOf('cube.glb')).toBe('model');
+    expect(assetKindOf('photo.jpg')).toBe('file');
   });
 
   it('refuses a param of a kind nobody declares, and takes its own and the built-in ones', () => {

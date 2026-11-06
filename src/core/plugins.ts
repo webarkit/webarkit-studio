@@ -7,7 +7,7 @@
  * with each other or with the built-in nodes.
  */
 import type { NodeDefinition } from '../nodes/catalog';
-import { assetKindOfExtension, isAssetKind, type AssetKindDefinition } from './assets';
+import { assetKindOfExtension, isCoreAssetKind, pluginAssetKind, type AssetKindDefinition } from './assets';
 import { isSocketType } from './sockets';
 
 /** The plugin API version this studio implements (src/plugin-api). */
@@ -54,10 +54,14 @@ export function compareVersions(a: string, b: string): number {
 
 const EXTENSION = /^[a-z0-9]+$/;
 
+const sameKind = (a: AssetKindDefinition, b: AssetKindDefinition) =>
+  a.label === b.label && a.alternative === b.alternative && a.extensions.join() === b.extensions.join();
+
 /**
  * Adds the problems of a plugin's asset kinds to `problems`, and returns their ids.
  * A kind's id has no plugin prefix (they are stored in project files and in the
- * browser), so a clash with a loaded kind is what is refused.
+ * browser), so a clash with a loaded kind is what is refused. An identical
+ * definition is no clash: two plugins can share a file format, whichever loads first.
  */
 function checkAssetKinds(kinds: readonly AssetKindDefinition[], problems: string[]): Set<string> {
   const ids = new Set<string>();
@@ -65,13 +69,15 @@ function checkAssetKinds(kinds: readonly AssetKindDefinition[], problems: string
   for (const kind of kinds) {
     const name = `asset kind "${String(kind.id)}"`;
     if (typeof kind.id !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(kind.id)) problems.push(`${name} must be a plain identifier (letters and digits)`);
-    if (ids.has(kind.id) || isAssetKind(kind.id)) problems.push(`${name} is already defined`);
-    ids.add(kind.id);
     if (typeof kind.label !== 'string' || !kind.label) problems.push(`${name} has no label`);
     if (!Array.isArray(kind.extensions) || kind.extensions.length === 0) {
       problems.push(`${name} needs at least one extension`);
+      ids.add(kind.id);
       continue;
     }
+    const loaded = pluginAssetKind(kind.id);
+    if (ids.has(kind.id) || isCoreAssetKind(kind.id) || (loaded && !sameKind(loaded, kind))) problems.push(`${name} is already defined`);
+    ids.add(kind.id);
     const seen = new Set<string>();
     for (const ext of kind.extensions) {
       if (typeof ext !== 'string' || !EXTENSION.test(ext)) problems.push(`${name}: extension "${String(ext)}" must be lower-case letters and digits, without the dot`);
@@ -134,7 +140,8 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
   const ownKinds = checkAssetKinds(plugin.assetKinds ?? [], problems);
   for (const def of plugin.nodes ?? []) {
     for (const [key, spec] of Object.entries(def.params ?? {})) {
-      if (spec.kind === 'string' && spec.asset && !ownKinds.has(spec.asset) && !isAssetKind(spec.asset)) {
+      // Its own or a built-in one, never one it hopes another plugin loaded: the player loads only a graph's plugins.
+      if (spec.kind === 'string' && spec.asset && !ownKinds.has(spec.asset) && !isCoreAssetKind(spec.asset)) {
         problems.push(`${def.type}: param "${key}" has unknown asset kind "${spec.asset}"`);
       }
     }
