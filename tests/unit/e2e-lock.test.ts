@@ -232,6 +232,98 @@ describe('e2e lock, two contenders', () => {
     expect(readdirSync(dirname(path))).toEqual(['e2e.lock']);
   });
 
+  /** `other` takes the stale lock over just before `me` moves it aside, and `me` fails to link it back `failures` times. */
+  function moveAsideLiveLock(path: string, failures: number): LockFs {
+    let left = failures;
+    return {
+      ...realFs,
+      renameSync: (from, to) => {
+        tryAcquireLock(path, other, both);
+        realFs.renameSync(from, to);
+      },
+      linkSync: (from, to) => {
+        if (String(from).endsWith('.stale') && left-- > 0) throw busy();
+        realFs.linkSync(from, to);
+      },
+    };
+  }
+
+  it('retries putting back a live lock when the link fails with EPERM', () => {
+    const path = lockFile();
+    writeFileSync(path, staleLock);
+    expect(tryAcquireLock(path, me, both, moveAsideLiveLock(path, 1))).toMatchObject({ acquired: false, holder: other });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject(other);
+  });
+
+  it('throws and keeps a live lock it cannot put back, rather than take the lock too', () => {
+    const path = lockFile();
+    writeFileSync(path, staleLock);
+    expect(() => tryAcquireLock(path, me, both, moveAsideLiveLock(path, 100))).toThrow('EPERM');
+    const kept = readdirSync(dirname(path));
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatch(/\.stale$/);
+    expect(JSON.parse(readFileSync(join(dirname(path), kept[0]), 'utf8'))).toMatchObject(other);
+  });
+
+  it('fails loudly where hard links do not work, leaving no file behind', () => {
+    const path = lockFile();
+    const fs: LockFs = {
+      ...realFs,
+      linkSync: () => {
+        throw busy();
+      },
+    };
+    expect(() => tryAcquireLock(path, me, both, fs)).toThrow('EPERM');
+    expect(readdirSync(dirname(path))).toEqual([]);
+  });
+
+  it('fails loudly on a lock it has no permission to read', () => {
+    const path = lockFile();
+    tryAcquireLock(path, other, both);
+    const fs: LockFs = {
+      ...realFs,
+      readFileSync: (() => {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }) as LockFs['readFileSync'],
+    };
+    expect(() => tryAcquireLock(path, me, both, fs)).toThrow('EACCES');
+  });
+
+  it('gives up waiting on a lock it cannot take from a holder that is gone, and says how to go on', async () => {
+    const path = lockFile();
+    writeFileSync(path, staleLock);
+    const fs: LockFs = {
+      ...realFs,
+      renameSync: () => {
+        throw busy();
+      },
+    };
+    let polls = 0;
+    const waiting = acquireLock(path, me, {
+      isAlive: both,
+      fs,
+      sleep: async () => {
+        if (++polls > 1000) throw new Error('still waiting');
+      },
+    });
+    await expect(waiting).rejects.toThrow(/PW_NO_LOCK=1/);
+    await expect(waiting).rejects.toThrow(path);
+  });
+
+  it('never gives up waiting on a holder that is alive', async () => {
+    const path = lockFile();
+    tryAcquireLock(path, other, both);
+    let polls = 0;
+    await acquireLock(path, me, {
+      isAlive: both,
+      sleep: async () => {
+        if (++polls === 200) releaseLock(path, other.pid);
+      },
+    });
+    expect(polls).toBe(200);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject(me);
+  });
+
   it('keeps the lock it won when removing its temporary file fails', () => {
     const path = lockFile();
     const fs: LockFs = {

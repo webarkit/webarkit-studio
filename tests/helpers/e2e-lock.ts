@@ -27,12 +27,18 @@ export function processAlive(pid: number): boolean {
   }
 }
 
+const PUT_BACK_ATTEMPTS = 3;
+/** About a minute, at acquireLock's default of a poll every 5 s. */
+const STUCK_POLLS = 12;
+
+const errorCode = (err: unknown) => (err as NodeJS.ErrnoException).code;
+
 /**
  * Another contender is working on the file: it is gone, or, on Windows, it is
  * being deleted, which answers EPERM until the last handle closes. Worth another try.
  */
 function isContended(err: unknown): boolean {
-  return ['ENOENT', 'EPERM', 'EACCES', 'EBUSY'].includes((err as NodeJS.ErrnoException).code ?? '');
+  return errorCode(err) === 'ENOENT' || errorCode(err) === 'EPERM';
 }
 
 /** The file's text, or null if another contender is working on it. */
@@ -45,8 +51,8 @@ function readText(file: string, fs: LockFs): string | null {
   }
 }
 
-/** Removes a file only this contender uses. Failing to is not worth losing the lock over. */
-function removeOwnFile(file: string, fs: LockFs): void {
+/** Removes a file whose removal is only tidying up: a contended one stays, which harms nothing. */
+function removeQuietly(file: string, fs: LockFs): void {
   try {
     fs.rmSync(file, { force: true });
   } catch (err) {
@@ -77,7 +83,7 @@ function linkIfFree(from: string, path: string, fs: LockFs): boolean {
     fs.linkSync(from, path);
     return true;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    if (errorCode(err) !== 'EEXIST') throw err;
     return false;
   }
 }
@@ -89,7 +95,20 @@ function publish(path: string, owner: LockOwner, fs: LockFs): boolean {
   try {
     return linkIfFree(temp, path, fs);
   } finally {
-    removeOwnFile(temp, fs);
+    removeQuietly(temp, fs);
+  }
+}
+
+/** Links a moved lock back unless it has gone. If that keeps failing it throws, and the caller keeps the file. */
+function putBack(aside: string, path: string, fs: LockFs): void {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      linkIfFree(aside, path, fs);
+      return;
+    } catch (err) {
+      if (errorCode(err) === 'ENOENT') return;
+      if (!isContended(err) || attempt === PUT_BACK_ATTEMPTS) throw err;
+    }
   }
 }
 
@@ -99,7 +118,7 @@ function publish(path: string, owner: LockOwner, fs: LockFs): boolean {
  * contender can do to a given file, and a lock that turns out to be another
  * one goes back. So does one that cannot be read: putting a stale lock back
  * costs a retry, removing a live one lets two runs in. While it is aside a
- * third contender can take the lock: that window is one file step wide and
+ * third contender can take the lock: that window is a few file steps wide and
  * needs three contenders at the same moment.
  */
 function removeStale(path: string, staleText: string, fs: LockFs): void {
@@ -110,12 +129,8 @@ function removeStale(path: string, staleText: string, fs: LockFs): void {
     if (isContended(err)) return; // another contender got there first
     throw err;
   }
-  try {
-    if (readText(aside, fs) !== staleText) linkIfFree(aside, path, fs);
-  } catch (err) {
-    if (!isContended(err)) throw err;
-  }
-  removeOwnFile(aside, fs);
+  if (readText(aside, fs) !== staleText) putBack(aside, path, fs);
+  removeQuietly(aside, fs);
 }
 
 /** Takes the lock if it is free or its holder is gone; otherwise reports the holder. */
@@ -134,7 +149,7 @@ export function tryAcquireLock(path: string, owner: LockOwner, isAlive = process
 
 /** Removes the lock if `pid` holds it. One left behind names a process about to exit, so the next contender takes it over. */
 export function releaseLock(path: string, pid: number, fs: LockFs = nodeFs): void {
-  if (readHolder(path)?.pid === pid) removeOwnFile(path, fs);
+  if (readHolder(path)?.pid === pid) removeQuietly(path, fs);
 }
 
 export interface WaitOptions {
@@ -142,17 +157,28 @@ export interface WaitOptions {
   /** Called once, when the lock is first found taken. */
   onWait?: (holder: LockOwner) => void;
   sleep?: () => Promise<void>;
+  fs?: LockFs;
 }
 
-/** Waits until the lock is taken by `owner`. */
+/**
+ * Waits until the lock is taken by `owner`, for as long as a live process holds
+ * it. A lock with no live holder is free within a poll or two, so one that stays
+ * taken for STUCK_POLLS polls in a row cannot be taken at all: it fails.
+ */
 export async function acquireLock(path: string, owner: LockOwner, options: WaitOptions = {}): Promise<void> {
-  const { isAlive = processAlive, onWait, sleep = () => new Promise((r) => setTimeout(r, 5000)) } = options;
+  const { isAlive = processAlive, onWait, sleep = () => new Promise((r) => setTimeout(r, 5000)), fs = nodeFs } = options;
   let reported = false;
+  let stuck = 0;
   for (;;) {
-    const result = tryAcquireLock(path, owner, isAlive);
+    const result = tryAcquireLock(path, owner, isAlive, fs);
     if (result.acquired) return;
     if (!reported) onWait?.(result.holder);
     reported = true;
+    // pid -1 is "no holder could be read", and not one to ask about: to kill(), it means every process.
+    stuck = result.holder.pid > 0 && isAlive(result.holder.pid) ? 0 : stuck + 1;
+    if (stuck >= STUCK_POLLS) {
+      throw new Error(`e2e: cannot take the lock ${path}, and no running process holds it. Remove the file, or set PW_NO_LOCK=1 to run without the lock.`);
+    }
     await sleep();
   }
 }
