@@ -142,7 +142,7 @@ export interface HeadlessTracker {
 
 /** What a dataset check found. A plugin adds its own measures, all JSON-safe. */
 export interface DatasetCheckReport {
-  /** The dataset, named as the path that was given. */
+  /** The dataset, named from the path that was given: not resolved, though a plugin may drop a file's extension. */
   dataset: string;
   verdict: 'good' | 'fair' | 'poor';
 }

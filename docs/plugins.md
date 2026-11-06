@@ -192,8 +192,9 @@ contain.
 ## Rating a dataset in Node
 
 The MCP server's `trackability_check` (#44) rates a dataset from its files. A plugin provides this
-with a `DatasetCheck` (`src/plugin-api`), which is optional: `check()` takes a path and the root that a relative path resolves against, and returns the dataset's name, a
-verdict and the plugin's own measures, all JSON-safe. List it under `datasetChecks` in
+with a `DatasetCheck` (`src/plugin-api`), which is optional: `check()` takes a path and the root
+that a relative path resolves against, and returns the dataset's name, a verdict and the plugin's
+own measures, all JSON-safe. List it under `datasetChecks` in
 [`webarkit-studio.node.config.ts`](../webarkit-studio.node.config.ts), under the plugin's id, never in
 the manifest (jsartoolkitNFT:
 [`plugins/jsartoolkit-nft/trackability-files.ts`](../plugins/jsartoolkit-nft/trackability-files.ts)).

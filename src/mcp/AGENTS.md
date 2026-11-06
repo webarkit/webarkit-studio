@@ -16,5 +16,5 @@ Refines the root [`AGENTS.md`](../../AGENTS.md) for this folder and never contra
 Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
 JSON or as a path; nothing is written except `export_bundle`'s zip (an existing file is overwritten). A tool is one module in `src/mcp/tools/` (a
 `StudioTool`) and one entry in `src/mcp/tools/index.ts`. `src/mcp/` never imports `src/editor` or `plugins/`:
-a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webarkit-studio.node.config.ts`
-(kept out of the browser config, it imports Node builds).
+a plugin's tracker runs in Node through the `HeadlessTracker`, and its dataset check through the `DatasetCheck`, it lists in `webarkit-studio.node.config.ts`
+(kept out of the browser config, they import Node builds and `node:fs`).

@@ -4,9 +4,9 @@
  * well the marker will track. NFT needs texture-rich, non-repetitive images
  * with features spread over the whole marker; generated images often are not.
  *
- * Pure functions over bytes, so the CLI (scripts/trackability.mjs) and the MCP
- * server's trackability_check (#44), through trackability-files.ts, and the
- * editor can share them.
+ * Pure functions over bytes, so the editor can use them too. trackability-files.ts
+ * runs them on files, for the CLI (scripts/trackability.mjs) and the MCP server's
+ * trackability_check (#44).
  *
  * File layouts (little-endian), from WebARKitLib:
  * - .fset3 (`kpmSaveRefDataSet`, FREAK build): int num; num × { float x, y
