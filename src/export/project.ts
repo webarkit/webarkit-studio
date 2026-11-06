@@ -22,7 +22,7 @@ interface ManifestEntry {
 
 const fileName = (asset: Pick<StoredAsset, 'name'>, key: string) => (key ? `${asset.name}.${key}` : asset.name);
 
-/** What the assets panel accepts as images and videos. Loaders read the other files' bytes, whatever their type. */
+/** The usual images and videos. Any other file stays without a type, as it was before types were saved. */
 const TYPE_BY_EXTENSION = new Map([
   ['avif', 'image/avif'],
   ['bmp', 'image/bmp'],
