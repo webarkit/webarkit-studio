@@ -484,6 +484,8 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 
 ## Roadmap
 
+The source of truth for the roadmap is [#1](https://github.com/webarkit/webarkit-studio/issues/1). This list follows it.
+
 **Phase 1 — Foundation (this prototype)**
 - [x] Graph format v1 + validation
 - [x] Rete editor with typed sockets and a lit-html renderer
@@ -509,23 +511,35 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - [x] Inspector panel for complex params (`vector3`, `matrix4` param kinds)
 - [x] Undo / redo (`rete-history-plugin`), including param edits
 - [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
-- [ ] Asset manager: upload images and datasets, glTF models
+- [x] Asset manager: upload images and datasets, glTF models
 - [x] First math nodes and a Primitive position driven by an input (#25)
 - [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
 - [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
 - [x] MCP server (#8): catalog, graph editing and validation, tracking on images in Node, app export
-- [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
-**Phase 3 — Logic & publishing**
-- [ ] Logic and action nodes consuming events
-- [ ] Math nodes: numbers, vectors, matrices, functions, renderer-independent (#24)
-- [ ] Export: readable jsartoolkitNFT source code (code generation, Three.js first)
-- [ ] Deploy: publish the bundle to GitHub Pages from the studio
-- [ ] Graph format migrations (`version` field)
+**Phase 3 — Logic and publishing (v0.3.0, [#3](https://github.com/webarkit/webarkit-studio/issues/3), which has the full list)**
+- [ ] glTF animations on both renderers ([#58](https://github.com/webarkit/webarkit-studio/issues/58))
+- [ ] Logic nodes and the event model ([#59](https://github.com/webarkit/webarkit-studio/issues/59))
+- [ ] Action nodes triggered by events ([#60](https://github.com/webarkit/webarkit-studio/issues/60))
+- [ ] Math nodes: numbers, vectors, matrices, functions, renderer-independent ([#24](https://github.com/webarkit/webarkit-studio/issues/24))
+- [ ] Script nodes: `script.lite` ([#35](https://github.com/webarkit/webarkit-studio/issues/35)), `three.script` ([#36](https://github.com/webarkit/webarkit-studio/issues/36)), `three.renderScript` ([#37](https://github.com/webarkit/webarkit-studio/issues/37))
+- [ ] Graph format migrations: older `version`s upgrade on load ([#61](https://github.com/webarkit/webarkit-studio/issues/61))
+- [ ] Deploy: an export with a GitHub Actions workflow, which you push to your own repository for GitHub Pages; the studio holds no credential ([#62](https://github.com/webarkit/webarkit-studio/issues/62))
+- [ ] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
+- [ ] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
-**Phase 4 — WebARKit integration**
-- [ ] `webarkit.*` nodes on @webarkit/nft-tracker, cv-backend-spec backends and `.wnft` targets
-- [ ] In-editor NFT dataset generation from an uploaded image
+**Phase 4 — Scene and editor (v0.4.0)**
+- [ ] Node selection and macros in the editor
+- [ ] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
+
+**Phase 5 — Authoring tools and interaction (v0.5.0)**
+- [ ] Near / far on AR Camera, a preview camera, scene helpers, fog, custom geometry
+- [ ] NFT dataset generation from an uploaded image
+- [ ] Touch and mouse interaction with meshes and markers
+
+**Unscheduled**
+- [ ] WebARKit integration ([#4](https://github.com/webarkit/webarkit-studio/issues/4)): no phase and no version; it starts when webarkit/webarkit publishes `@webarkit/nft-tracker`
+- [ ] Not planned for a release yet: artoolkit5-ts as the first external plugin ([#31](https://github.com/webarkit/webarkit-studio/issues/31)), loading plugins from a URL ([#32](https://github.com/webarkit/webarkit-studio/issues/32))
 
 ## History
 
