@@ -188,3 +188,13 @@ trace records. It runs the same session class as the worker (jsartoolkitNFT:
 List it in [`webarkit-studio.node.config.ts`](../webarkit-studio.node.config.ts), under the plugin's id,
 never in the manifest: it imports the library's Node build, which the studio's bundles must not
 contain.
+
+## Rating a dataset in Node
+
+The MCP server's `trackability_check` (#44) rates a dataset from its files. A plugin provides this
+with a `DatasetCheck` (`src/plugin-api`), which is optional: `check()` takes a path and the root that a relative path resolves against, and returns the dataset's name, a
+verdict and the plugin's own measures, all JSON-safe. List it under `datasetChecks` in
+[`webarkit-studio.node.config.ts`](../webarkit-studio.node.config.ts), under the plugin's id, never in
+the manifest (jsartoolkitNFT:
+[`plugins/jsartoolkit-nft/trackability-files.ts`](../plugins/jsartoolkit-nft/trackability-files.ts)).
+The tool expects one such plugin for now, and fails with a clear message if several provide a check.

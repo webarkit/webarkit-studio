@@ -6,6 +6,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Added
+
+- MCP server: `trackability_check` (#44) rates an NFT dataset and returns the report of
+  `npm run trackability -- <dataset> --json`. Plugins can provide such a check with a `DatasetCheck`
+  (plugin API, optional), listed in `webarkit-studio.node.config.ts`.
+
 ### Fixed
 
 - Project files keep each uploaded file's MIME type (#49). An SVG used by `source.image` failed

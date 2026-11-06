@@ -5,11 +5,14 @@
  * own config, which the browser bundles read, cannot list them.
  */
 import { INSTALLED_PLUGINS } from '../plugins/host';
-import type { HeadlessTracker } from '../plugin-api';
+import type { DatasetCheck, HeadlessTracker } from '../plugin-api';
 
-/** The Node config: per plugin id, a lazy import of its headless trackers (default export: node type → tracker). */
+/** The Node config: per plugin id, lazy imports of what it adds in Node. */
 export interface NodeConfig {
+  /** Its headless trackers (default export: node type → tracker). */
   headless: Record<string, () => Promise<{ default: Record<string, HeadlessTracker> }>>;
+  /** Its dataset check, if it has one (trackability_check). */
+  datasetChecks?: Record<string, () => Promise<{ default: DatasetCheck }>>;
 }
 
 /** Headless trackers loaded with loadHeadlessTrackers(), by node type. */

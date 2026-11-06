@@ -121,8 +121,12 @@ npm run trackability -- generated/scribbles --json    # the report as JSON
 ```
 
 The exit code is 0 for a good or fair dataset, 1 for a poor one and 2 on an error. The logic is in
-`plugins/jsartoolkit-nft/trackability.ts`, a set of pure functions over the file bytes, so the MCP
-server (#8) and the editor can call it.
+`plugins/jsartoolkit-nft/trackability.ts`, a set of pure functions over the file bytes, so the
+editor can call it too.
+
+An agent can ask the studio's MCP server instead: `trackability_check` takes the same path and
+returns the same report as `--json`, with the default thresholds. A poor dataset is a result there
+and not an error, since there is no exit code. Paths are relative to the repository root.
 
 | Check | Measures | Warn | Fail |
 |---|---|---|---|
@@ -214,8 +218,5 @@ size.
 
 ## Left for later
 
-- **An MCP tool for the check.** The studio's MCP server (#8) will expose the check as a tool by
-  calling `checkTrackability` on the dataset bytes. The function and the report shape are ready for
-  it.
 - **Dataset generation in the editor.** The roadmap's in-editor generation would run the generator
   in a worker and show this report before the upload.
