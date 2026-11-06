@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { exportApp, nodeStatus, run } from './helpers';
+import { exportApp, nodeStatus, openStudio, run } from './helpers';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 const V4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
@@ -14,12 +14,7 @@ function downgraded(demo: string) {
   return { ...doc, version: 4 };
 }
 
-async function freshStudio(page: Page) {
-  await page.goto('/index.html');
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await expect(page.locator('.studio-node').first()).toBeVisible();
-}
+const freshStudio = openStudio;
 
 const importGraph = (page: Page, doc: unknown) =>
   page.setInputFiles('#file-import', { name: 'graph.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) });

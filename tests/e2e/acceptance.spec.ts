@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { cubeGlb } from '../helpers/cube-glb';
-import { exportApp, nodeStatus, run } from './helpers';
+import { exportApp, nodeStatus, run, startupDone } from './helpers';
 
 /**
  * Acceptance of Phase 2 (#2): the pinball demo built from an empty graph with
@@ -52,6 +52,7 @@ const socket = (page: Page, title: string, side: 'input' | 'output', key: string
 
 async function emptyStudio(page: Page) {
   await page.goto('/index.html');
+  await startupDone(page);
   await page.evaluate(async () => {
     localStorage.clear();
     await new Promise((resolve) => {
@@ -60,7 +61,7 @@ async function emptyStudio(page: Page) {
     });
   });
   await page.reload();
-  await expect(page.locator('.studio-node').first()).toBeVisible();
+  await startupDone(page);
   await page.click('#btn-new');
   await expect(page.locator('.studio-node')).toHaveCount(0);
 }

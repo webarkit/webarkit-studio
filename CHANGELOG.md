@@ -37,6 +37,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- A demo or file opened while another graph is still loading is no longer replaced by it (#77), such
+  as a demo chosen while a slow startup demo is arriving: the graph opened last is the one shown.
 - An autosave the studio cannot open, such as an unfinished graph, is no longer lost when the demo
   opens (#61): it is kept in localStorage as `webarkit-studio:autosave-set-aside`, and the log says so.
 - Project files keep each uploaded file's MIME type (#49). An SVG used by `source.image` failed
