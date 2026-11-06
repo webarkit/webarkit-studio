@@ -9,8 +9,8 @@
 // .iset / .fset / .fset3 files. <check> is detection-points, detection-coverage,
 // repetition, tracking-points or tracking-coverage.
 //
-// The check lives in plugins/jsartoolkit-nft/trackability.ts, loaded through tsx.
-import { readFileSync } from 'node:fs';
+// The check lives in plugins/jsartoolkit-nft/, loaded through tsx. The MCP server's
+// trackability_check calls the same checkDatasetFiles.
 import { parseArgs } from 'node:util';
 import { tsImport } from 'tsx/esm/api';
 
@@ -43,10 +43,8 @@ try {
 }
 if (args.positionals.length !== 1) fail('usage: trackability <dataset> [--json] [--<threshold> <value>]');
 
-const { DEFAULT_TRACKABILITY, checkTrackability, formatTrackability, validateThresholds } = await tsImport(
-  '../plugins/jsartoolkit-nft/trackability.ts',
-  import.meta.url,
-);
+const { DEFAULT_TRACKABILITY, formatTrackability, validateThresholds } = await tsImport('../plugins/jsartoolkit-nft/trackability.ts', import.meta.url);
+const { checkDatasetFiles } = await tsImport('../plugins/jsartoolkit-nft/trackability-files.ts', import.meta.url);
 
 function number(flag) {
   const value = Number(args.values[flag]);
@@ -70,17 +68,12 @@ try {
   fail(err.message.replace(/^trackability: /, '--'));
 }
 
-if (/\.zft$/i.test(args.positionals[0])) fail('a .zft is not supported: pass the dataset with its .iset, .fset and .fset3');
-const dataset = args.positionals[0].replace(/\.(iset|fset3?)$/i, '');
 let report;
 try {
-  report = checkTrackability(
-    { fset3: readFileSync(`${dataset}.fset3`), fset: readFileSync(`${dataset}.fset`) },
-    thresholds,
-  );
+  report = checkDatasetFiles(args.positionals[0], thresholds);
 } catch (err) {
-  fail(`${dataset}: ${err.message}`);
+  fail(err.message);
 }
 
-console.log(args.values.json ? JSON.stringify({ dataset, thresholds, ...report }, null, 1) : formatTrackability(report));
+console.log(args.values.json ? JSON.stringify(report, null, 1) : formatTrackability(report));
 process.exit(report.verdict === 'poor' ? 1 : 0);

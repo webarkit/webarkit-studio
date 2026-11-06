@@ -139,3 +139,20 @@ export interface HeadlessTracker {
     setClock: (now: number) => void;
   }): Promise<HeadlessRun>;
 }
+
+/** What a dataset check found. A plugin adds its own measures, all JSON-safe. */
+export interface DatasetCheckReport {
+  /** The dataset, named from the path that was given: not resolved, though a plugin may drop a file's extension. */
+  dataset: string;
+  verdict: 'good' | 'fair' | 'poor';
+}
+
+/**
+ * Rates how well a plugin's dataset will track, from its files (the MCP
+ * server's trackability_check, #44). Node-only: a plugin lists it in
+ * webarkit-studio.node.config.ts, never in its manifest.
+ */
+export interface DatasetCheck {
+  /** `dataset`: a path, in whatever form the plugin documents; a relative one resolves against `root`. Throws if it cannot be read. */
+  check(dataset: string, root: string): DatasetCheckReport;
+}

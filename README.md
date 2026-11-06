@@ -179,6 +179,7 @@ npm run mcp:studio   # stdio, from the repository root
 | `graph_validate` | the studio's validation, as a list of problems |
 | `graph_create` / `graph_edit` | build or change a graph with ops: add / remove nodes, connect, set params |
 | `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
+| `trackability_check` | rates an NFT dataset from its `.fset3` and `.fset`: the report of `npm run trackability -- <dataset> --json` |
 | `export_bundle` | the standalone app `.zip`, from the studio build (`npm run build`, in `dist/`) |
 
 ### Try it
@@ -186,7 +187,7 @@ npm run mcp:studio   # stdio, from the repository root
 1. Once: `npm install`, `npm run assets` (camera parameters, datasets and the test photo
    `tests/fixtures/pinball-demo.jpg`), and `npm run build` if you want `export_bundle` (it exports from `dist/`).
 2. Open your MCP client in the repository root. Claude Code picks up `.mcp.json` and asks to
-   approve `webarkit-studio`; `/mcp` then shows it connected with its six tools. Other clients:
+   approve `webarkit-studio`; `/mcp` then shows it connected with its seven tools. Other clients:
    add a stdio server running `node --import tsx src/mcp/main.ts` from the repository root.
 3. Ask, for example:
 

@@ -11,6 +11,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import config from '../../webarkit-studio.config';
 import nodeConfig from '../../webarkit-studio.node.config';
 import { loadPlugins } from '../plugins/host';
+import { loadDatasetChecks } from './dataset-checks';
 import { createStudioServer } from './server';
 import { REPO_ROOT } from './tool';
 import { loadHeadlessTrackers } from './trackers';
@@ -27,6 +28,7 @@ console.log = console.info = console.debug = console.error;
 try {
   await loadPlugins(config);
   await loadHeadlessTrackers(nodeConfig);
+  await loadDatasetChecks(nodeConfig);
 } catch (err) {
   console.error(`[webarkit-studio mcp] cannot load the plugins:\n${(err as Error).message}`);
   process.exit(1);

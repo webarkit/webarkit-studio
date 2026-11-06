@@ -17,6 +17,14 @@ describe('MCP server over stdio', () => {
   });
 });
 
+describe('trackability_check over stdio', () => {
+  it('rates a dataset, so the dataset checks of webarkit-studio.node.config.ts are loaded', async () => {
+    const result = await client.callTool({ name: 'trackability_check', arguments: { dataset: 'public/data/DataNFT/pinball' } });
+    expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('good');
+  });
+});
+
 describe('tracking_run over stdio', () => {
   it('keeps the tracker logs out of the JSON-RPC stream', async () => {
     const result = await client.callTool({ name: 'tracking_run', arguments: { graphPath: 'public/graphs/pinball-image.json', frames: [{ image: 'tests/fixtures/pinball-demo.jpg', count: 3 }] } });
