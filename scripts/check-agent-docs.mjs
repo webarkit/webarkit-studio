@@ -15,7 +15,7 @@ import { GENERATED_FOLDERS, nestedAgentFolders, pointerFiles } from './agent-fil
 const CANONICAL = 'AGENTS.md';
 
 /** Path prefixes checked for existence; anything else in backticks is ignored. */
-const PATH_PREFIXES = ['src/', 'plugins/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
+const PATH_PREFIXES = ['src/', 'plugins/', 'packages/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
 /** Named in the docs, never committed: the generated folders, and a personal file that only this check has to allow for. */
 const NOT_COMMITTED = [...GENERATED_FOLDERS, '.claude/settings.local.json'];
 

@@ -12,11 +12,15 @@
   "bugs": {
     "url": "https://github.com/webarkit/webarkit-studio/issues"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "predev": "npm run build:player",
     "build": "tsc --noEmit && npm run build:player && vite build",
     "build:player": "vite build -c vite.player.config.ts",
+    "build:plugin-api": "node scripts/build-plugin-api.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "assets": "node scripts/fetch-assets.mjs",
@@ -55,6 +59,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@microsoft/api-extractor": "7.60.1",
     "@modelcontextprotocol/client": "2.4.0",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",

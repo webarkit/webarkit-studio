@@ -117,6 +117,39 @@ literal type, and the plugin writes the value: the compiler checks they match (t
 `format` and `version`, `VirtualAssetOrigin`). `tests/unit/jsartoolkit-nft-plugin.test.ts` checks
 these rules for the jsartoolkitNFT plugin.
 
+## The types package
+
+The plugin API's types are the package
+[`@webarkit/studio-plugin-api`](../packages/studio-plugin-api/) (`packages/studio-plugin-api/`). It
+holds one `index.d.ts`, generated from `src/plugin-api/index.ts` when the package is packed, and needs
+nothing else: no dependency, and none of the studio.
+
+It is **not published yet**, because the API is still gaining optional fields. A plugin outside this
+repository installs a tarball:
+
+```bash
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.0.0.tgz into the plugin's folder.
+npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
+# In the plugin:
+npm install -D ./webarkit-studio-plugin-api-1.0.0.tgz
+```
+
+`npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
+without them, or with old ones.
+
+Its imports are the same as inside this repository. A plugin's `tsconfig.json` needs `DOM` in `lib`,
+since some values are DOM types (`VideoValue`, `RuntimeContext`). Without it, `skipLibCheck: true`
+hides the errors and those types silently become `any`.
+
+Plugins inside this repository keep the `tsconfig.json` `paths` alias, which reads
+`src/plugin-api/index.ts` directly, so typechecking needs no build first.
+
+**Versions.** The package's major version is `PLUGIN_API_VERSION`, the `apiVersion` a plugin's manifest
+states: a breaking change, such as a change to a shared socket type, bumps both. A new optional field
+bumps the minor version.
+
+The package is `private`, so `npm publish` refuses it until that is decided.
+
 ## Workers and assets
 
 - **Track in a Web Worker**, started with `new Worker(new URL('./my.worker.ts', import.meta.url), { type: 'module' })`,

@@ -2,8 +2,10 @@
  * WebARKit Studio plugin API (#12): the types a plugin is written against.
  *
  * Types only, no runtime code: plugins import it with `import type` (as
- * `@webarkit/studio-plugin-api`, see tsconfig.json `paths`), so nothing of the
- * studio ends up in a plugin's bundle. docs/plugins.md explains how to write one.
+ * `@webarkit/studio-plugin-api`), so nothing of the studio ends up in a plugin's
+ * bundle. In this repository that name is a tsconfig.json `paths` alias for this
+ * file; outside it, the package in packages/studio-plugin-api, generated from
+ * this file. docs/plugins.md explains how to write one.
  *
  * The shared socket types (CoreSocketType) and the values they carry are the
  * contract between plugins: changing one is a breaking change of this API and

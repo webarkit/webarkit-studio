@@ -44,6 +44,7 @@ In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) 
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
 - E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock.
 - Benchmarks: `npm run bench` (tinybench through tsx).
+- Plugin API package: `npm pack -w @webarkit/studio-plugin-api` generates the types in `packages/studio-plugin-api/` and packs them; `npm run build:plugin-api` only generates them. Not published (#29).
 - Agent files: `npm run check:agents`.
 - MCP server: `npm run mcp:studio` (stdio; see `src/mcp/AGENTS.md`).
 - Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
@@ -75,7 +76,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
   - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.
   - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily (and `webarkit-studio.node.config.ts`, the plugins' Node-only parts for the MCP server). A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT node type or package import lives in `src/`, and neither does anything specific to its datasets, which it declares as an asset kind (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
-  - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`).
+  - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`) and the major version of the plugin API package (`packages/studio-plugin-api/`).
 - **A node type, port or param renamed or removed, a changed socket type or param kind, or a change in what a value means is a format change**: bump `GRAPH_VERSION`, update `public/graphs/` and add a `CHANGELOG.md` line.
 - **Naming:**
   - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
