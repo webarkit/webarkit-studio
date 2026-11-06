@@ -16,7 +16,8 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
  * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
- * Older documents are rejected (prototype stage, no migration).
+ * v4 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
+ * formats, stay rejected. A bump ships its migration, and a test that an older document opens.
  */
 export const GRAPH_VERSION = 5;
 
@@ -94,7 +95,8 @@ export class GraphValidationError extends Error {
 }
 
 /**
- * Structural validation: the plugins the graph needs are loaded, known node
+ * Validation of a document of the current format; loadGraphDocument()
+ * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
  * non-multiple inputs, no cycles.
  * Throws GraphValidationError listing every problem found.

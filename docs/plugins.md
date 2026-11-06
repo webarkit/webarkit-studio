@@ -78,6 +78,10 @@ The editor writes `plugins` when it saves. Opening a graph whose plugin is missi
 name ("requires plugin acme ≥ 0.1.0, which is not loaded"), and a graph that uses a plugin's
 nodes without listing it is invalid.
 
+Older documents upgrade when they are loaded (`src/core/migrations.ts`), but those are steps of the
+studio's format. **A plugin cannot declare a migration yet:** a plugin that renames its own node,
+port or param has no path for the graphs that use the old name, and they fail validation.
+
 A string param may set `syntax: 'expression'` only for a `math.expression`-style formula: the
 editor checks it against that node's variables (a–d, t).
 

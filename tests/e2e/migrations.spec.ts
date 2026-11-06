@@ -1,0 +1,111 @@
+// Older documents upgrade on load (#61): a v4 graph, as the v0.1.0 release wrote it, opened in the studio.
+import { expect, test, type Page } from '@playwright/test';
+import { strToU8, zipSync } from 'fflate';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { exportApp, nodeStatus, run } from './helpers';
+
+const AUTOSAVE_KEY = 'webarkit-studio:autosave';
+const V4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
+
+/** A demo of today as v4: the graphs of v0.1.0 and v0.2.0 differ in `version` and `plugins` and nothing else. */
+function downgraded(demo: string) {
+  const { plugins: _plugins, ...doc } = JSON.parse(readFileSync(`public/graphs/${demo}.json`, 'utf8'));
+  return { ...doc, version: 4 };
+}
+
+async function freshStudio(page: Page) {
+  await page.goto('/index.html');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.locator('.studio-node').first()).toBeVisible();
+}
+
+const importGraph = (page: Page, doc: unknown) =>
+  page.setInputFiles('#file-import', { name: 'graph.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) });
+
+const saved = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), AUTOSAVE_KEY);
+
+const v4Graphs = [
+  ['pinball-three, from the v0.1.0 release', V4],
+  ['pinball-babylon', downgraded('pinball-babylon')],
+] as const;
+
+for (const [name, graph] of v4Graphs) {
+  test(`a v4 graph opens, runs, exports and saves as v5: ${name}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await freshStudio(page);
+
+    await importGraph(page, graph);
+    await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
+    await expect(page.locator('.studio-node')).toHaveCount(graph.nodes.length);
+    await expect(page.locator('svg.connection path')).toHaveCount(graph.edges.length);
+    await expect.poll(async () => (await saved(page))?.version).toBe(5);
+    expect((await saved(page)).plugins).toEqual([{ id: 'jsartoolkitNFT', version: expect.any(String) }]);
+
+    await run(page);
+    await expect(nodeStatus(page, 'Inspector')).toContainText('● tracked', { timeout: 20_000 });
+
+    const { dir } = await exportApp(page);
+    const exported = JSON.parse(readFileSync(join(dir, 'graph.json'), 'utf8'));
+    expect(exported.version).toBe(5);
+    expect(exported.plugins).toEqual([{ id: 'jsartoolkitNFT', version: expect.any(String) }]);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('a v4 autosave is upgraded, not replaced by the demo', async ({ page }) => {
+  await freshStudio(page);
+  const named = { ...V4, name: 'My old work' };
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(named)] as const);
+  await page.reload();
+
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
+  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
+  await expect.poll(async () => (await saved(page))?.version).toBe(5);
+  expect((await saved(page)).name).toBe('My old work');
+
+  // Upgraded once: the next start finds a v5 document.
+  await page.reload();
+  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
+  await expect(page.locator('#log')).not.toContainText('upgraded');
+});
+
+test('a v4 project upgrades its graph once, after replacing the assets', async ({ page }) => {
+  await freshStudio(page);
+  const manifest = [{ id: 'p1', name: 'photo.png', kind: 'file', files: { '': 'assets/p1/photo.png' } }];
+  const project = zipSync({
+    'graph.json': strToU8(JSON.stringify(V4)),
+    'assets.json': strToU8(JSON.stringify(manifest)),
+    'assets/p1/photo.png': new Uint8Array([1, 2, 3]),
+  });
+  await page.setInputFiles('#file-import', { name: 'old.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
+  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
+  await expect(page.locator('#assets-panel .asset')).toHaveCount(1);
+  expect((await page.locator('#log').textContent())?.match(/upgraded from/g)).toHaveLength(1);
+});
+
+test('a v3 project is refused before it replaces the assets', async ({ page }) => {
+  await freshStudio(page);
+  await page.setInputFiles('#assets-panel .asset-input', { name: 'keep.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from('glTF') });
+  await expect(page.locator('#assets-panel .asset')).toHaveCount(1);
+  const project = zipSync({ 'graph.json': strToU8(JSON.stringify({ format: 'webarkit-studio/graph', version: 3, nodes: [], edges: [] })), 'assets.json': strToU8('[]') });
+  await page.setInputFiles('#file-import', { name: 'older.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
+  await expect(page.locator('#log')).toContainText(/versions 4 to 5/);
+  await expect(page.locator('#assets-panel .asset:has(.asset-name:text-is("keep.glb"))')).toHaveCount(1);
+});
+
+for (const [version, message] of [
+  [3, /versions 4 to 5/],
+  [99, /made by a newer studio/],
+] as const) {
+  test(`a v${version} document is refused, and the log says why`, async ({ page }) => {
+    await freshStudio(page);
+    const nodes = await page.locator('.studio-node').count();
+    await importGraph(page, { format: 'webarkit-studio/graph', version, nodes: [], edges: [] });
+    await expect(page.locator('#log')).toContainText(message);
+    await expect(page.locator('.studio-node')).toHaveCount(nodes);
+  });
+}

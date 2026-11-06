@@ -67,6 +67,18 @@ describe('export_bundle', () => {
     expect(result.value.log.some((l: string) => l.includes('.zip'))).toBe(true);
   });
 
+  it('exports an older graph as the current version, and logs the upgrade', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'webarkit-mcp-out-')), 'app.zip');
+    const { plugins: _plugins, ...graph } = JSON.parse(readFileSync(GRAPH, 'utf8'));
+    const result = (await call(client, 'export_bundle', { graph: { ...graph, version: 4 }, out, baseDir: fakePublic() })) as { ok: true; value: any };
+    expect(result.ok).toBe(true);
+    expect(result.value.log).toContain('↑ upgraded from v4 to v5');
+    const zip = unzipSync(new Uint8Array(readFileSync(out)));
+    const exported = JSON.parse(strFromU8(zip[`${slugify(graph.name)}/graph.json`]));
+    expect(exported.version).toBe(5);
+    expect(exported.plugins).toEqual([{ id: 'jsartoolkitNFT', version: '0.1.0' }]);
+  });
+
   it('says how to build the player when it is missing', async () => {
     const out = join(mkdtempSync(join(tmpdir(), 'webarkit-mcp-out-')), 'app.zip');
     const result = await call(client, 'export_bundle', { graphPath: GRAPH, out, baseDir: fakePublic(false) });

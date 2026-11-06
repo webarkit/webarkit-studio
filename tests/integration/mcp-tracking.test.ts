@@ -1,5 +1,5 @@
 // tracking_run (#8): the graph's tracker on still images, with the Node build. Needs `npm run assets`.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
@@ -73,6 +73,15 @@ describe('tracking_run', () => {
   it('rejects a controller id that is not a tracker node', async () => {
     const result = await call(client, 'tracking_run', { graphPath: 'public/graphs/multi-three.json', frames: FRAMES, controller: 'nope' });
     expect(result).toEqual({ ok: false, error: 'no tracker node "nope" (tracker nodes: controller)' });
+  });
+
+  it('runs an older graph, upgraded', async () => {
+    const { plugins: _plugins, ...graph } = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8'));
+    const result = (await call(client, 'tracking_run', { graph: { ...graph, version: 4 }, frames: FRAMES, summaryOnly: true })) as { ok: true; value: any };
+    expect(result.ok).toBe(true);
+    expect(result.value.markers[0].foundFrames).toBeGreaterThan(0);
+    const refused = await call(client, 'tracking_run', { graph: { ...graph, version: 3 }, frames: FRAMES, summaryOnly: true });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 5') });
   });
 
   it('writes repo-relative dataset paths and a replayable source for a photo that fills the frame', async () => {

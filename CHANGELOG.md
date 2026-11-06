@@ -19,6 +19,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   `packages/studio-plugin-api/`, so a plugin outside this repository can typecheck: `npm pack` it and
   install the tarball. Not published yet.
 
+- Older graphs upgrade when they are opened (#61): a graph, project or autosave of format v4, the
+  format of v0.1.0, now opens, runs and exports, and saves as v5, where it was refused and an
+  autosave was replaced by the demo. The file you opened is not touched, and the log says
+  `↑ upgraded from v4 to v5`. v2 and v3 stay refused, and a newer document says it needs a newer studio.
+
 ### Changed
 
 - A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).

@@ -7,7 +7,8 @@
 import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as z from 'zod';
-import { resolveParams, validateGraph } from '../../core/graph';
+import { resolveParams } from '../../core/graph';
+import { loadGraphDocument } from '../../core/migrations';
 import { NODE_CATALOG } from '../../nodes/catalog';
 import type { TraceFrame, TraceSource } from '../../runtime/trackers/trace';
 import { blank, letterboxFrame, loadJpeg, type RgbaFrame } from '../frames';
@@ -66,7 +67,7 @@ export const trackingRun = defineTool({
     summaryOnly: z.boolean().default(false).describe('Leave out the per-frame records.'),
   }),
   run: (input, env) => oneAtATime(async () => {
-    const doc = validateGraph(readGraphInput(input, env));
+    const { doc } = loadGraphDocument(readGraphInput(input, env));
     const trackers = doc.nodes.filter((n) => Object.hasOwn(HEADLESS_TRACKERS, n.type));
     const kinds = Object.keys(HEADLESS_TRACKERS).join(', ');
     let node = trackers[0];

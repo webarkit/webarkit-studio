@@ -7,7 +7,8 @@ import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
-import { emptyGraph, validateGraph, type GraphDocument } from '../core/graph';
+import { emptyGraph, type GraphDocument } from '../core/graph';
+import { loadGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
 import { isProjectFile, unpackProject } from '../export/project';
@@ -109,10 +110,17 @@ paletteSearch.oninput = () => {
 };
 
 // ----------------------------------------------------------- graph I/O
+/** Shows a document that loadGraphDocument() took. The file it came from is not touched: saves are of the current version. */
+async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
+  await studio.load(loaded.doc);
+  await studio.zoomToFit();
+  const upgraded = upgradeNote(loaded);
+  if (upgraded) log(upgraded);
+}
+
 async function load(doc: unknown): Promise<boolean> {
   try {
-    await studio.load(validateGraph(doc));
-    await studio.zoomToFit();
+    await show(loadGraphDocument(doc));
     return true;
   } catch (err) {
     log(`✗ ${(err as Error).message}`);
@@ -166,10 +174,10 @@ fileInput.onchange = async () => {
     if (isProjectFile(bytes)) {
       // A project brings its assets: they replace the current ones.
       const project = await unpackProject(bytes);
-      validateGraph(project.graph); // an unusable project must not replace the current assets
+      const loaded = loadGraphDocument(project.graph); // an unusable project must not replace the current assets
       await assetStore.replaceAll(project.assets);
       log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
-      await load(project.graph);
+      await show(loaded);
     } else {
       await load(JSON.parse(new TextDecoder().decode(bytes)));
     }
@@ -252,5 +260,5 @@ try {
 } catch {
   restored = null;
 }
-// An autosave from an older graph version fails validation: fall back to the demo.
+// An older autosave upgrades on load. One that cannot be read says why in the log, and the demo opens.
 if (!(restored?.nodes.length && (await load(restored)))) await loadDemo();

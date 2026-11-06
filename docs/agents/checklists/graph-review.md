@@ -27,6 +27,8 @@ A format change is any of:
 A format change requires all of:
 
 - `GRAPH_VERSION` bumped in `src/core/graph.ts`, with the change described in its comment;
+- its migration in `src/core/migrations.ts`, with literal types and params (it reads neither the
+  catalog nor the loaded plugins), and a test that an older document opens;
 - every graph in `public/graphs/` updated to the new version and still valid;
 - a line under `## [Unreleased]` in `CHANGELOG.md`.
 

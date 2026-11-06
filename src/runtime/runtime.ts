@@ -6,7 +6,8 @@
  * standalone player page.
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
-import { resolveParams, topologicalOrder, validateGraph, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
+import { resolveParams, topologicalOrder, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
+import { loadGraphDocument } from '../core/migrations';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup } from '../assets/asset';
 import { RuntimeAssets } from './assets';
@@ -76,7 +77,7 @@ export class GraphRuntime {
   constructor(doc: unknown, opts: RuntimeOptions) {
     this.catalog = opts.catalog ?? NODE_CATALOG;
     this.registry = opts.registry ?? NODE_REGISTRY;
-    this.doc = validateGraph(doc, this.catalog);
+    this.doc = loadGraphDocument(doc, this.catalog).doc;
     this.opts = opts;
   }
 
