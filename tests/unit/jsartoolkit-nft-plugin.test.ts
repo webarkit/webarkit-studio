@@ -47,7 +47,8 @@ describe('jsartoolkitNFT plugin (#12)', () => {
     for (const file of files('src')) {
       const text = readFileSync(file, 'utf8');
       expect(imports(file).filter(({ from }) => /jsartoolkit-nft|camera-view|\.\.\/\.\.\/plugins\//.test(from)), file).toEqual([]);
-      expect(text.match(/'jsartoolkitNFT\.\w+'/g), file).toBeNull();
+      // A migration writes literal types, as frozen history (#61).
+      if (file.replaceAll('\\', '/') !== 'src/core/migrations.ts') expect(text.match(/'jsartoolkitNFT\.\w+'/g), file).toBeNull();
     }
   });
 

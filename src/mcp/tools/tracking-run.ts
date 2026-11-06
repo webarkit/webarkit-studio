@@ -8,7 +8,7 @@ import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as z from 'zod';
 import { resolveParams } from '../../core/graph';
-import { loadGraphDocument } from '../../core/migrations';
+import { loadGraphDocument, upgradeNote } from '../../core/migrations';
 import { NODE_CATALOG } from '../../nodes/catalog';
 import type { TraceFrame, TraceSource } from '../../runtime/trackers/trace';
 import { blank, letterboxFrame, loadJpeg, type RgbaFrame } from '../frames';
@@ -67,7 +67,8 @@ export const trackingRun = defineTool({
     summaryOnly: z.boolean().default(false).describe('Leave out the per-frame records.'),
   }),
   run: (input, env) => oneAtATime(async () => {
-    const { doc } = loadGraphDocument(readGraphInput(input, env));
+    const loaded = loadGraphDocument(readGraphInput(input, env));
+    const { doc } = loaded;
     const trackers = doc.nodes.filter((n) => Object.hasOwn(HEADLESS_TRACKERS, n.type));
     const kinds = Object.keys(HEADLESS_TRACKERS).join(', ');
     let node = trackers[0];
@@ -126,7 +127,8 @@ export const trackingRun = defineTool({
         ? { kind: 'sequence', photo: repoPath(distinct[0]), sequence: input.frames.map(({ image, count }) => [image === 'blank' ? 'blank' : 'photo', count]), startMs, frameMs }
         : { kind: 'images', frames: input.frames.map(({ image, count }) => [image === 'blank' ? 'blank' : repoPath(image), count]), startMs, frameMs };
 
-    const log: string[] = [];
+    const upgraded = upgradeNote(loaded);
+    const log: string[] = upgraded ? [upgraded] : [];
     const inputs = await evaluateInputs(doc, node.id, tracker.videoInputs, dirUrl(resolve(env.root, input.baseDir)), (m) => log.push(m));
     const params = resolveParams(NODE_CATALOG[node.type], node.params);
     const run = await withPinnedClock((setClock) => tracker.run({ inputs, params, video, frames, source, setClock }));

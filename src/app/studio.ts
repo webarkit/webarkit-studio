@@ -21,6 +21,8 @@ import studioConfig from '../../webarkit-studio.config';
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
 const LEGACY_AUTOSAVE_KEY = 'webar-studio:autosave';
+/** The last autosave the studio could not open: the demo is about to replace it. */
+const SET_ASIDE_KEY = 'webarkit-studio:autosave-set-aside';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const logEl = $<HTMLPreElement>('log');
@@ -253,12 +255,25 @@ stopBtn.onclick = () => {
 };
 
 // ------------------------------------------------------------- startup
-let restored: GraphDocument | null = null;
+let raw: string | null = null;
+let restored: Partial<GraphDocument> | null = null;
 try {
-  const raw = localStorage.getItem(AUTOSAVE_KEY) ?? localStorage.getItem(LEGACY_AUTOSAVE_KEY);
-  restored = raw ? (JSON.parse(raw) as GraphDocument) : null;
+  raw = localStorage.getItem(AUTOSAVE_KEY) ?? localStorage.getItem(LEGACY_AUTOSAVE_KEY);
+  restored = raw ? (JSON.parse(raw) as Partial<GraphDocument>) : null;
 } catch {
   restored = null;
 }
-// An older autosave upgrades on load. One that cannot be read says why in the log, and the demo opens.
-if (!(restored?.nodes.length && (await load(restored)))) await loadDemo();
+// An older autosave upgrades on load. The demo opens otherwise and autosaves over it, so one that
+// held a graph the studio could not open (refused, unfinished, corrupt) is kept for its owner.
+const empty = Array.isArray(restored?.nodes) && restored.nodes.length === 0;
+if (!(restored?.nodes?.length && (await load(restored)))) {
+  if (raw && !empty) {
+    try {
+      localStorage.setItem(SET_ASIDE_KEY, raw);
+      log(`⚠ the last autosave could not be opened: it is kept in localStorage as ${SET_ASIDE_KEY}`);
+    } catch {
+      log('⚠ the last autosave could not be opened, or kept');
+    }
+  }
+  await loadDemo();
+}

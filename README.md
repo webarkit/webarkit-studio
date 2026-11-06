@@ -15,7 +15,7 @@ result is a plain JSON graph that a lightweight **player** executes with
 choice (Three.js or Babylon.js). The graph can be exported as a standalone app.
 
 > **Status: prototype.** The architecture is being validated: the graph format
-> may still change between versions (older graphs are rejected, see
+> may still change between versions (graphs since v0.1.0 upgrade when opened, see
 > [Known issues](#known-issues--notes)). Nothing is published to npm.
 
 ## Quick start
@@ -246,7 +246,7 @@ Krita as MCP servers for markers and models, and walks through the example.
             │  nodes: [{id, type, params, position}]               │
             │  edges: [{from:{node,port}, to:{node,port}}]          │
             └───────────────▲───────────────────────┬──────────────┘
-          load / toDocument │                       │ validateGraph + topologicalOrder
+          load / toDocument │                       │ loadGraphDocument + topologicalOrder
 ┌───────────────────────────┴─────┐   ┌─────────────▼──────────────────────────┐
 │ Editor (Rete.js + lit-html)     │   │ Runtime / player (no Rete)             │
 │ - StudioNode = view of catalog  │   │ - NODE_REGISTRY: type → factory        │
@@ -467,9 +467,13 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
-- Graph format is `webarkit-studio/graph` v5; older versions are rejected, the
-  studio falls back to the demo. Graphs saved by the prototype under its former
-  name (`webar-studio/graph`) still load, and so does its last autosave.
+- Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
+  and the file itself is not touched. v2 and v3, prototype formats, are refused, and
+  a newer document asks for a newer studio. An autosave that cannot be opened,
+  including an unfinished graph with a required input not connected, is kept in
+  localStorage as `webarkit-studio:autosave-set-aside`, and the demo opens. Graphs
+  saved by the prototype under its former name (`webar-studio/graph`) still load,
+  and so does its last autosave.
 - JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light
   client). Since 1.16.0 the One Euro filter keeps poses rigid, so filtered poses
   differ slightly from 1.15.0. Its lens follows

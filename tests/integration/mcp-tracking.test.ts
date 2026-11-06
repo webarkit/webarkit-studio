@@ -75,11 +75,14 @@ describe('tracking_run', () => {
     expect(result).toEqual({ ok: false, error: 'no tracker node "nope" (tracker nodes: controller)' });
   });
 
-  it('runs an older graph, upgraded', async () => {
+  it('tracks an older graph, upgraded, exactly as the current one, and logs the upgrade', async () => {
     const { plugins: _plugins, ...graph } = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8'));
-    const result = (await call(client, 'tracking_run', { graph: { ...graph, version: 4 }, frames: FRAMES, summaryOnly: true })) as { ok: true; value: any };
-    expect(result.ok).toBe(true);
-    expect(result.value.markers[0].foundFrames).toBeGreaterThan(0);
+    const run = async (doc: unknown) => (await call(client, 'tracking_run', { graph: doc, frames: FRAMES })) as { ok: true; value: any };
+    const untimed = ({ log: _log, ...value }: any) => ({ ...value, frames: value.frames.map(({ processMs: _ms, ...f }: any) => f) });
+    const [current, upgraded] = [await run({ ...graph, plugins: _plugins }), await run({ ...graph, version: 4 })];
+    expect(current.value.markers[0].foundFrames).toBeGreaterThan(0);
+    expect(untimed(upgraded.value)).toEqual(untimed(current.value));
+    expect(upgraded.value.log[0]).toBe('↑ upgraded from v4 to v5');
     const refused = await call(client, 'tracking_run', { graph: { ...graph, version: 3 }, frames: FRAMES, summaryOnly: true });
     expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 5') });
   });

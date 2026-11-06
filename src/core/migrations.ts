@@ -10,7 +10,7 @@
  *
  * A format change adds its step to MIGRATIONS, with a test that an older document opens.
  */
-import { GRAPH_VERSION, GraphValidationError, validateGraph, type GraphDocument } from './graph';
+import { GRAPH_FORMAT, GRAPH_VERSION, GraphValidationError, LEGACY_GRAPH_FORMATS, validateGraph, type GraphDocument } from './graph';
 
 export interface RawNode {
   id: string;
@@ -86,7 +86,7 @@ function editorFor(doc: RawGraph): GraphEditor {
   const hasNode = (id: string) => doc.nodes.some((n) => n.id === id);
   return {
     addNode({ type, params = {}, position, id }) {
-      const claimed = claim(id ?? 'migrated');
+      const claimed = claim(id || 'migrated');
       doc.nodes.push({ id: claimed, type, params, ...(position && { position }) });
       return claimed;
     },
@@ -149,8 +149,10 @@ export interface MigrationOptions {
  */
 export function migrateGraph(doc: unknown, { migrations = MIGRATIONS, target = GRAPH_VERSION }: MigrationOptions = {}): MigrationResult {
   checkChain(migrations, target);
-  const version = (doc as { version?: unknown } | null | undefined)?.version;
-  if (typeof version !== 'number') return { doc: doc as RawGraph, from: undefined, applied: [] };
+  const { version, format } = (doc ?? {}) as { version?: unknown; format?: unknown };
+  const ours = format === GRAPH_FORMAT || LEGACY_GRAPH_FORMATS.includes(String(format));
+  // Not one of our documents: its version says nothing, and validation says what is wrong.
+  if (typeof version !== 'number' || !ours) return { doc: doc as RawGraph, from: undefined, applied: [] };
 
   const oldest = migrations[0]?.from ?? target;
   const readable = oldest === target ? `only version ${target}` : `versions ${oldest} to ${target}`;
@@ -163,9 +165,10 @@ export function migrateGraph(doc: unknown, { migrations = MIGRATIONS, target = G
   if (steps.length === 0) return { doc: copy, from: version, applied: [] };
   if (!Array.isArray(copy.nodes) || !Array.isArray(copy.edges)) throw new GraphValidationError(['nodes and edges must be arrays']);
 
-  const edit = editorFor(copy);
+  let edit: GraphEditor | undefined;
   for (const step of steps) {
     try {
+      edit ??= editorFor(copy); // reads every node and wire, which may be malformed
       step.migrate(copy, edit);
     } catch (err) {
       throw new GraphValidationError([`v${step.from} → v${step.to}: ${(err as Error)?.message ?? String(err)}`]);

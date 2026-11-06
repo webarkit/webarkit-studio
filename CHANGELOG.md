@@ -18,10 +18,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - The plugin API's types as a package (#29), `@webarkit/studio-plugin-api` in
   `packages/studio-plugin-api/`, so a plugin outside this repository can typecheck: `npm pack` it and
   install the tarball. Not published yet.
-
-- Older graphs upgrade when they are opened (#61): a graph, project or autosave of format v4, the
-  format of v0.1.0, now opens, runs and exports, and saves as v5, where it was refused and an
-  autosave was replaced by the demo. The file you opened is not touched, and the log says
+- Older graphs upgrade when they are opened (#61): a graph or autosave of format v4, the format of
+  v0.1.0, now opens, runs and exports, and saves as v5, where it was refused and an autosave was
+  replaced by the demo. The file you opened is not touched, and the log says
   `↑ upgraded from v4 to v5`. v2 and v3 stay refused, and a newer document says it needs a newer studio.
 
 ### Changed
@@ -38,6 +37,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- An autosave the studio cannot open, such as an unfinished graph, is no longer lost when the demo
+  opens (#61): it is kept in localStorage as `webarkit-studio:autosave-set-aside`, and the log says so.
 - Project files keep each uploaded file's MIME type (#49). An SVG used by `source.image` failed
   to load after **Import…**; project files saved earlier now get the type from the file's extension.
 

@@ -66,10 +66,34 @@ test('a v4 autosave is upgraded, not replaced by the demo', async ({ page }) => 
   await expect.poll(async () => (await saved(page))?.version).toBe(5);
   expect((await saved(page)).name).toBe('My old work');
 
-  // Upgraded once: the next start finds a v5 document.
+});
+
+const SET_ASIDE_KEY = 'webarkit-studio:autosave-set-aside';
+
+for (const [name, raw, message] of [
+  ['a v3 document', JSON.stringify({ format: 'webarkit-studio/graph', version: 3, name: 'My v3 work', nodes: [{ id: 'a', type: 'x.y', params: {} }], edges: [] }), /versions 4 to 5/],
+  ['an unfinished v4 graph', JSON.stringify({ ...V4, name: 'My v4 work', edges: [] }), /is not connected/],
+  ['a document with no nodes', '{"version":4,"name":"x"}', null],
+  ['text that is not JSON', 'not json {', null],
+] as const) {
+  test(`an autosave the studio cannot open is kept, and the demo opens: ${name}`, async ({ page }) => {
+    await freshStudio(page);
+    await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, raw] as const);
+    await page.reload();
+
+    await expect(page.locator('#log')).toContainText(SET_ASIDE_KEY);
+    if (message) await expect(page.locator('#log')).toContainText(message);
+    await expect(page.locator('.studio-node').first()).toBeVisible();
+    expect(await page.evaluate((key) => localStorage.getItem(key), SET_ASIDE_KEY)).toBe(raw);
+  });
+}
+
+test('an empty autosave is not worth keeping', async ({ page }) => {
+  await freshStudio(page);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify({ format: 'webarkit-studio/graph', version: 5, nodes: [], edges: [] })] as const);
   await page.reload();
-  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
-  await expect(page.locator('#log')).not.toContainText('upgraded');
+  await expect(page.locator('.studio-node').first()).toBeVisible();
+  expect(await page.evaluate((key) => localStorage.getItem(key), SET_ASIDE_KEY)).toBeNull();
 });
 
 test('a v4 project upgrades its graph once, after replacing the assets', async ({ page }) => {

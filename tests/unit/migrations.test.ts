@@ -76,7 +76,21 @@ describe('migrateGraph', () => {
   });
 
   it('reports a document whose nodes or edges cannot be migrated', () => {
-    expect(failure(() => migrateGraph({ version: 1, nodes: {}, edges: [] }, { migrations: chain(2), target: 2 })).problems).toEqual(['nodes and edges must be arrays']);
+    expect(failure(() => migrateGraph({ ...doc(1), nodes: {} }, { migrations: chain(2), target: 2 })).problems).toEqual(['nodes and edges must be arrays']);
+  });
+
+  it('names the step for a malformed node or edge, as a problem', () => {
+    for (const bad of [doc(1, [null]), doc(1, [], [null])]) {
+      expect(failure(() => migrateGraph(bad, { migrations: chain(2), target: 2 })).problems[0]).toMatch(/^v1 → v2: /);
+    }
+  });
+
+  it('leaves a document of another format to validation, whatever its version', () => {
+    for (const version of [1, 99]) {
+      const other = { format: 'someone-else/nodes', version, nodes: [], edges: [] };
+      expect(migrateGraph(other, { migrations: chain(2), target: 2 }).applied).toEqual([]);
+      expect(failure(() => loadGraphDocument(other)).problems).toEqual(['format must be "webarkit-studio/graph"', `unsupported version ${version} (this studio reads version ${GRAPH_VERSION})`]);
+    }
   });
 
   describe('a chain that cannot work', () => {
@@ -161,6 +175,14 @@ describe('GraphEditor', () => {
     expect(out.nodes).toEqual([{ id: 'n', type: 't.b', params: { x: 1 }, position: { x: 2, y: 3 } }]);
   });
 
+  it('takes an empty id as no id: the editor would replace it, and lose its wires', () => {
+    let id = '';
+    run(doc(1), (_d, edit) => {
+      id = edit.addNode({ id: '', type: 't.b' });
+    });
+    expect(id).toBeTruthy();
+  });
+
   it('gives a node with no params an empty set', () => {
     const out = run(doc(1), (_d, edit) => void edit.addNode({ id: 'n', type: 't.b' }));
     expect(out.nodes).toEqual([{ id: 'n', type: 't.b', params: {} }]);
@@ -239,25 +261,21 @@ describe('a migration that adds a node and an edge', () => {
     // validateGraph checks the current version: this one is 6 only in this test.
     expect(() => validateGraph({ ...out, version: GRAPH_VERSION }, catalog, {})).not.toThrow();
   });
-
-  it('leaves GRAPH_VERSION alone', () => {
-    expect(GRAPH_VERSION).toBe(5);
-  });
 });
 
 describe('the real migrations', () => {
   const v4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8'));
-  const demo = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8'));
 
   it('form a chain up to GRAPH_VERSION, with a note on each step', () => {
     expect(MIGRATIONS.at(-1)?.to).toBe(GRAPH_VERSION);
     for (const m of MIGRATIONS) expect(m.note).toBeTruthy();
   });
 
-  it('upgrade the v0.1.0 pinball-three graph to the demo of today', () => {
+  it('upgrade the v0.1.0 pinball-three graph: only `version` and `plugins` change', () => {
     expect(v4.version).toBe(4);
     const { doc: out, from, applied } = migrateGraph(v4);
-    expect(out).toEqual(demo);
+    // Frozen on purpose, not compared with today's demo, which moves on.
+    expect(out).toEqual({ ...v4, version: 5, plugins: [{ id: 'jsartoolkitNFT', version: '0.1.0' }] });
     expect(from).toBe(4);
     expect(applied).toHaveLength(1);
   });
@@ -356,7 +374,7 @@ describe('graph_edit', () => {
       const result = (await call(client, 'graph_edit', { graph: v4, ops: [{ op: 'setName', name: 'Renamed' }] })) as { ok: true; value: any };
       expect(result.value.graph.version).toBe(GRAPH_VERSION);
       expect(result.value.graph.name).toBe('Renamed');
-      expect(result.value.graph.plugins).toEqual([{ id: 'jsartoolkitNFT', version: '0.1.0' }]);
+      expect(result.value.graph.plugins).toEqual([{ id: 'jsartoolkitNFT', version: LOADED_PLUGINS.jsartoolkitNFT }]);
       expect(result.value.valid).toBe(true);
       expect(v4).toEqual(before);
     } finally {
