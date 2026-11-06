@@ -15,7 +15,6 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   several files, which uploads, project files, the runtime and the app export handle. The
   jsartoolkitNFT plugin declares `nftDataset` this way, with the same id and behaviour for its
   datasets.
-
 - The plugin API's types as a package (#29), `@webarkit/studio-plugin-api` in
   `packages/studio-plugin-api/`, so a plugin outside this repository can typecheck: `npm pack` it and
   install the tarball. Not published yet.

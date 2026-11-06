@@ -128,12 +128,19 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-npm pack -w @webarkit/studio-plugin-api    # in this repository: webarkit-studio-plugin-api-1.0.0.tgz
-npm install -D ./webarkit-studio-plugin-api-1.0.0.tgz    # in the plugin
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.0.0.tgz into the plugin's folder.
+npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
+# In the plugin:
+npm install -D ./webarkit-studio-plugin-api-1.0.0.tgz
 ```
 
+`npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
+without them, or with old ones.
+
 Its imports are the same as inside this repository. A plugin's `tsconfig.json` needs `DOM` in `lib`,
-since some values are DOM types (`VideoValue`), and `npm pack` needs this repository installed.
+since some values are DOM types (`VideoValue`, `RuntimeContext`). Without it, `skipLibCheck: true`
+hides the errors and those types silently become `any`.
+
 Plugins inside this repository keep the `tsconfig.json` `paths` alias, which reads
 `src/plugin-api/index.ts` directly, so typechecking needs no build first.
 

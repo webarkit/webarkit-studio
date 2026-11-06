@@ -64,6 +64,7 @@ const BAD_PLUGINS: Record<string, string> = {
   'a socket without its plugin prefix': `const p: StudioPlugin = { id: 'a', version: '1.0.0', apiVersion: 1, nodes: [], factories: {}, sockets: [{ id: 'marker', label: 'm', color: '#000' }] };`,
   'a param of an unknown kind': `const p: NodeDefinition['params'] = { x: { kind: 'nope', label: 'x', default: 1 } };`,
   'a wrong virtual origin': `const p: VirtualAssetOrigin = 'https://elsewhere.invalid';`,
+  'a core socket that does not exist': `const p: CoreSocketType = 'nope';`,
 };
 
 /** The file names in a tarball. */
@@ -125,6 +126,12 @@ describe('the plugin API package', () => {
     expect(dts).not.toMatch(/\bimport\(['"]/);
   });
 
+  it('exports types only: a value would compile, and then not exist', () => {
+    const dts = readFileSync(join(project, `node_modules/${NAME}/index.d.ts`), 'utf8');
+    expect(dts.match(/^export declare (const|let|var|function|class|enum|namespace)\b.*$/gm)).toBeNull();
+  });
+
+
   for (const [name, compiler] of Object.entries(COMPILERS)) {
     for (const resolution of RESOLUTIONS) {
       it(`typechecks a StudioPlugin with ${name}, ${resolution.moduleResolution} resolution`, () => {
@@ -136,7 +143,7 @@ describe('the plugin API package', () => {
   }
 
   it.each(Object.entries(BAD_PLUGINS))('refuses %s', (_name, body) => {
-    const result = typecheck(COMPILERS['TypeScript 7'], RESOLUTIONS[0], `import type { NodeDefinition, StudioPlugin, VirtualAssetOrigin } from '${NAME}';\nexport ${body}\n`);
+    const result = typecheck(COMPILERS['TypeScript 7'], RESOLUTIONS[0], `import type { CoreSocketType, NodeDefinition, StudioPlugin, VirtualAssetOrigin } from '${NAME}';\nexport ${body}\n`);
     expect(result.code, result.out).not.toBe(0);
     expect(result.out).toMatch(/plugin\.ts\(2,/);
   }, 60_000);

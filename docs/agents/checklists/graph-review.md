@@ -52,7 +52,7 @@ key by key; a renamed key looks like one removal plus one addition.
 - A graph that uses a plugin's nodes lists the plugin in `plugins` (format v5), with the
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
-  the plugin API: `PLUGIN_API_VERSION` is bumped.
+  the plugin API: `PLUGIN_API_VERSION` is bumped, and the major version of `packages/studio-plugin-api/`.
 
 ## 3. Naming
 

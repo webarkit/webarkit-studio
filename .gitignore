@@ -17,3 +17,4 @@ out/
 packages/studio-plugin-api/index.d.ts
 packages/studio-plugin-api/LICENSE
 packages/studio-plugin-api/.build/
+*.tgz

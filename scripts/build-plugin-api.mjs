@@ -19,7 +19,8 @@ function fail(message) {
   process.exit(1);
 }
 
-rmSync(build, { recursive: true, force: true });
+// From nothing: a build that fails leaves no old file for `npm pack` to pick up.
+for (const old of [build, join(pkg, 'index.d.ts'), join(pkg, 'LICENSE')]) rmSync(old, { recursive: true, force: true });
 const tsc = spawnSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '--project', join(pkg, 'tsconfig.build.json')], { stdio: 'inherit' });
 if (tsc.status !== 0) fail('tsc could not emit the declarations');
 
@@ -35,7 +36,8 @@ const config = ExtractorConfig.prepare({
     docModel: { enabled: false },
     tsdocMetadata: { enabled: false },
     messages: {
-      // The studio's comments are not TSDoc, and it has no release tags.
+      // The studio's comments are not TSDoc, and it has no release tags. Any warning left fails the
+      // build (localBuild: false), such as one for `{@link Unexported}` in a comment of the API.
       tsdocMessageReporting: { default: { logLevel: 'none' } },
       // Internals a value refers to stay in the file, unexported: the plugin API exports no type for them.
       extractorMessageReporting: { default: { logLevel: 'warning' }, 'ae-missing-release-tag': { logLevel: 'none' }, 'ae-forgotten-export': { logLevel: 'none' } },
