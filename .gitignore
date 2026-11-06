@@ -13,3 +13,7 @@ test-results/
 .claude/settings.local.json
 generated/
 out/
+# Generated from src/plugin-api and the root LICENSE (scripts/build-plugin-api.mjs).
+packages/studio-plugin-api/index.d.ts
+packages/studio-plugin-api/LICENSE
+packages/studio-plugin-api/.build/

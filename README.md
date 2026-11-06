@@ -366,6 +366,8 @@ plugins/
   jsartoolkit-nft/  the jsartoolkitNFT plugin: catalog, factories, NftSession (the graph mapped onto
                     the tracker facade, shared by the browser and the tests), the tracker's
                     worker files (served by its Vite plugin, vite.ts) and virtual-fetch.ts
+packages/
+  studio-plugin-api/  the plugin API's types as a package, generated from src/plugin-api (not published)
 webarkit-studio.config.ts  the plugins this build loads
 public/graphs/ pinball-three.json, pinball-babylon.json, multi-three.json
 scripts/       fetch-assets.mjs, trace-record.mjs / trace-diff.mjs (tracking traces), check-agent-docs.mjs

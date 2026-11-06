@@ -16,6 +16,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   jsartoolkitNFT plugin declares `nftDataset` this way, with the same id and behaviour for its
   datasets.
 
+- The plugin API's types as a package (#29), `@webarkit/studio-plugin-api` in
+  `packages/studio-plugin-api/`, so a plugin outside this repository can typecheck: `npm pack` it and
+  install the tarball. Not published yet.
+
 ### Changed
 
 - A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).
