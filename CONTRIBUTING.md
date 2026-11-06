@@ -41,6 +41,7 @@ A change is not verified until these pass locally. For new nodes, add at least:
 The JSON graph is the source of truth of a project. A change that renames or removes a node type, a port or a param, or changes what a value means, is a format change:
 
 - bump `GRAPH_VERSION` in `src/core/graph.ts` and describe the change in its comment;
+- add its migration to `src/core/migrations.ts`, with a test that an older document opens;
 - update the demo graphs in `public/graphs/`;
 - add a line to `CHANGELOG.md`.
 

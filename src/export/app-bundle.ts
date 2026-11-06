@@ -11,7 +11,8 @@
  *   <app>/README.txt     how to serve it
  */
 import { zipSync, strToU8 } from 'fflate';
-import { validateGraph, type GraphDocument, type GraphNode } from '../core/graph';
+import type { GraphDocument, GraphNode } from '../core/graph';
+import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
@@ -239,7 +240,10 @@ export async function collectPluginFiles(
 }
 
 export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
-  const doc = validateGraph(structuredClone(input));
+  const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
+  const doc = loaded.doc;
+  const upgraded = upgradeNote(loaded);
+  if (upgraded) ctx.log(upgraded);
   const base = new URL(ctx.baseUrl);
   const files: Record<string, Uint8Array> = {};
 

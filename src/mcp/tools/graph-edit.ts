@@ -1,6 +1,7 @@
 /** graph_create and graph_edit: build a graph with ops (src/mcp/graph-ops.ts), then validate it. */
 import * as z from 'zod';
 import { emptyGraph, type GraphDocument } from '../../core/graph';
+import { migrateGraph } from '../../core/migrations';
 import { applyOps, type GraphOp } from '../graph-ops';
 import { graphInput, readGraphInput } from '../graph-input';
 import { defineTool } from '../tool';
@@ -45,7 +46,8 @@ export const graphCreate = defineTool({
 export const graphEdit = defineTool({
   name: 'graph_edit',
   title: 'Edit a graph',
-  description: `Applies ops to a graph and returns the new graph (the input is not changed, nothing is written). ${OPS_HELP}`,
+  description: `Applies ops to a graph and returns the new graph, upgraded to the current format if it is older (the input is not changed, nothing is written). ${OPS_HELP}`,
   inputSchema: z.object({ ...graphInput, ops }),
-  run: (input, env) => result(applyOps(readGraphInput(input, env) as GraphDocument, input.ops as GraphOp[])),
+  // Upgraded first: the ops are checked against today's catalog, and the result is today's format.
+  run: (input, env) => result(applyOps(migrateGraph(readGraphInput(input, env)).doc as unknown as GraphDocument, input.ops as GraphOp[])),
 });

@@ -22,7 +22,7 @@ function checkoutOf(file) {
 
 const isCatalog = (path) => path === 'src/nodes/catalog.ts' || /^plugins\/[^/]+\/catalog\.ts$/.test(path);
 
-const FORMAT_REMINDER = 'A node catalog changed: check it against the format change rule of AGENTS.md (GRAPH_VERSION, public/graphs/, CHANGELOG.md). This is a reminder: a new node type is not a format change.';
+const FORMAT_REMINDER = 'A node catalog changed: check it against the format change rule of AGENTS.md (GRAPH_VERSION, its migration in src/core/migrations.ts, public/graphs/, CHANGELOG.md). This is a reminder: a new node type is not a format change.';
 
 runHook('post-edit', (input) => {
   const path = input.tool_input?.file_path;
