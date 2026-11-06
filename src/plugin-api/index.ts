@@ -11,12 +11,14 @@
  * is not. The `renderer`, `scene` and `sceneObject` values are studio internals,
  * not part of the contract: plugins may only pass them through.
  */
+import type { AssetKindDefinition } from '../core/assets';
 import type { GraphNode, ParamValue } from '../core/graph';
 import type { PluginSocketType } from '../core/sockets';
 import type { NodeDefinition } from '../nodes/catalog';
 import type { NodeFactory, PortValues } from '../runtime/types';
 import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 
+export type { AssetKindDefinition } from '../core/assets';
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
 export type { CoreSocketType, PluginSocketType, SocketType } from '../core/sockets';
 export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
@@ -44,7 +46,7 @@ export type { PoseFilterConfig } from '../runtime/filters/pose-filter';
 export type { TraceFrame, TraceHeader, TraceRecord, TraceSettings, TraceSource } from '../runtime/trackers/trace';
 import type { TraceFrame, TraceHeader, TraceSource } from '../runtime/trackers/trace';
 
-/** Origin of the virtual URLs of uploaded NFT datasets (RuntimeContext.virtualFiles keys), for a worker that serves them. */
+/** Origin of the virtual URLs of uploaded assets with several files (RuntimeContext.virtualFiles keys), for a worker that serves them. */
 export type VirtualAssetOrigin = typeof VIRTUAL_ASSET_ORIGIN;
 
 /** A socket type of the plugin's own, for data only its nodes exchange. */
@@ -83,6 +85,8 @@ export interface StudioPlugin {
   /** One factory per node type. */
   factories: Record<string, NodeFactory>;
   sockets?: SocketDefinition[];
+  /** Asset kinds of its own, for its params' `asset`: uploads and exports handle them like the built-in ones. */
+  assetKinds?: AssetKindDefinition[];
   exportFiles?: ExportFile[];
 }
 

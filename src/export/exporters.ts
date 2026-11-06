@@ -1,7 +1,6 @@
 /**
  * Export formats. Each one turns the current graph into a downloadable file.
- * New formats (e.g. readable jsartoolkitNFT source code) are added here and
- * appear in the studio's Export menu.
+ * New formats are added here and appear in the studio's Export menu.
  */
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
@@ -86,14 +85,4 @@ const project: Exporter = {
   },
 };
 
-const jsartoolkitSource: Exporter = {
-  id: 'jsartoolkitnft-source',
-  label: 'jsartoolkitNFT source code (.zip)',
-  description: 'Planned: readable, editable code (worker + Three.js) generated from the graph.',
-  available: false,
-  run() {
-    return Promise.reject(new Error('Not implemented yet'));
-  },
-};
-
-export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, jsartoolkitSource];
+export const EXPORTERS: Exporter[] = [graphJson, project, appBundle];

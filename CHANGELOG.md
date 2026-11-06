@@ -11,6 +11,19 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - MCP server: `trackability_check` (#44) rates an NFT dataset and returns the report of
   `npm run trackability -- <dataset> --json`. Plugins can provide such a check with a `DatasetCheck`
   (plugin API, optional), listed in `webarkit-studio.node.config.ts`.
+- Plugins can declare asset kinds (#30): `assetKinds` in `StudioPlugin` (optional), a URL prefix with
+  several files, which uploads, project files, the runtime and the app export handle. The
+  jsartoolkitNFT plugin declares `nftDataset` this way, with the same id and behaviour.
+
+### Removed
+
+- The disabled "jsartoolkitNFT source code" entry of the Export menu (#30). The source code export
+  will be a core exporter (#64).
+
+### Changed
+
+- An exported app's `README.txt` no longer names jsartoolkitNFT (#30): it says trackers probe for
+  optional files, without the `.zft` example, and `data/` holds the graph's data files.
 
 ### Fixed
 
