@@ -6,6 +6,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Fixed
+
+- Project files keep each uploaded file's MIME type (#49). An SVG used by `source.image` failed
+  to load after **Import…**; project files saved earlier now get the type from the file's extension.
+
 ## [0.2.0] - 2026-11-03
 
 ### Changed
