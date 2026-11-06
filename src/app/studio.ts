@@ -15,7 +15,7 @@ import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
 import { parseAssetRef } from '../core/assets';
-import { createLoadQueue, type LoadTicket } from './load-queue';
+import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
 
@@ -115,20 +115,23 @@ paletteSearch.oninput = () => {
 // ----------------------------------------------------------- graph I/O
 const loads = createLoadQueue();
 
-/** Shows a document that loadGraphDocument() took, unless a newer load started. The file it came from is not touched: saves are of the current version. */
-function show(loaded: MigrationResult<GraphDocument>, ticket: LoadTicket): Promise<boolean> {
-  return loads.run(ticket, async () => {
-    await studio.load(loaded.doc);
-    await studio.zoomToFit();
-    const upgraded = upgradeNote(loaded);
-    if (upgraded) log(upgraded);
-  });
+let appliedLoads = 0;
+
+/** Shows a document that loadGraphDocument() took. The file it came from is not touched: saves are of the current version. */
+async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
+  await studio.load(loaded.doc);
+  await studio.zoomToFit();
+  const upgraded = upgradeNote(loaded);
+  if (upgraded) log(upgraded);
+  // What the end-to-end tests wait for: a load's graph can look just like the one before it.
+  document.body.dataset.loads = String(++appliedLoads);
 }
 
 /** False if the document was refused. A load that a newer one replaced was not refused: it is true. */
 async function load(doc: unknown, ticket = loads.begin()): Promise<boolean> {
   try {
-    await show(loadGraphDocument(doc), ticket);
+    const loaded = loadGraphDocument(doc);
+    await loads.run(ticket, () => show(loaded));
     return true;
   } catch (err) {
     log(`✗ ${(err as Error).message}`);
@@ -137,8 +140,15 @@ async function load(doc: unknown, ticket = loads.begin()): Promise<boolean> {
 }
 
 async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
-  const res = await fetch(`graphs/${name}.json`);
-  const doc: unknown = await res.json();
+  let doc: unknown;
+  try {
+    const res = await fetch(`graphs/${name}.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    doc = await res.json();
+  } catch (err) {
+    log(`✗ demo ${name}: ${(err as Error).message}`);
+    return;
+  }
   if (ticket.current()) await load(doc, ticket);
 }
 
@@ -185,10 +195,12 @@ fileInput.onchange = async () => {
       // A project brings its assets: they replace the current ones.
       const project = await unpackProject(bytes);
       const loaded = loadGraphDocument(project.graph); // an unusable project must not replace the current assets
-      if (!ticket.current()) return; // nor one that a newer load replaced
-      await assetStore.replaceAll(project.assets);
-      log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
-      await show(loaded, ticket);
+      // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
+      await loads.run(ticket, async () => {
+        await assetStore.replaceAll(project.assets);
+        log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+        await show(loaded);
+      });
     } else {
       await load(JSON.parse(new TextDecoder().decode(bytes)), ticket);
     }

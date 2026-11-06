@@ -25,17 +25,25 @@ export async function openStudio(page: Page) {
 }
 
 /**
- * Loads a demo graph in the studio (fresh autosave) and waits until every node and wire is drawn.
- * Several demos have the same counts, so it also checks the graph's name, as the studio saves it.
+ * Picks a demo and waits for that load to have applied (the studio counts them on the body: the demo
+ * may be the one already shown), then until every node and wire is drawn. Several demos have the same
+ * counts, so it also checks the graph's name, as the studio saves it.
  */
-export async function loadDemo(page: Page, demo: string) {
+export async function pickDemo(page: Page, demo: string) {
   const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
-  await openStudio(page);
+  const loads = Number(await page.locator('body').getAttribute('data-loads'));
   await page.selectOption('#demo-select', demo);
   await page.click('#btn-demo');
+  await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
   await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
   await expect(page.locator('svg.connection path')).toHaveCount(doc.edges.length);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
+}
+
+/** Loads a demo graph in a studio with no autosave. */
+export async function loadDemo(page: Page, demo: string) {
+  await openStudio(page);
+  await pickDemo(page, demo);
 }
 
 /** Runs the preview and waits until the whole graph is initialised. */

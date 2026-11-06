@@ -1,7 +1,8 @@
 // The latest load wins (#77), whichever fetch or file arrives last. Each slow load is slowed here on purpose.
 import { expect, test, type Page } from '@playwright/test';
+import { strToU8, zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
-import { openStudio, startupDone } from './helpers';
+import { openStudio, pickDemo, startupDone } from './helpers';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 const demo = (name: string) => JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
@@ -92,7 +93,7 @@ test('the demo picked last wins, whichever arrives last', async ({ page }) => {
   await expectShown(page, 'pinball-math');
 });
 
-test('two demos picked at once do not mix', async ({ page }) => {
+test('two demos picked at once: the second is shown', async ({ page }) => {
   await openStudio(page);
   await page.selectOption('#demo-select', 'pinball-math');
   await page.evaluate(() => {
@@ -103,6 +104,85 @@ test('two demos picked at once do not mix', async ({ page }) => {
     button.click();
   });
   await expectShown(page, 'multi-three');
+});
+
+/** A project of one asset, with a v4 graph, so that applying its graph shows in the log. */
+function project() {
+  const manifest = [{ id: 'p1', name: 'photo.png', kind: 'file', files: { '': 'assets/p1/photo.png' } }];
+  const zip = zipSync({
+    'graph.json': strToU8(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8')),
+    'assets.json': strToU8(JSON.stringify(manifest)),
+    'assets/p1/photo.png': new Uint8Array([1, 2, 3]),
+  });
+  return { name: 'old.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(zip) };
+}
+
+const assetNames = (page: Page) => page.locator('#assets-panel .asset .asset-name').allTextContents();
+
+async function withAnUpload(page: Page) {
+  await openStudio(page);
+  await page.setInputFiles('#assets-panel .asset-input', { name: 'keep.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from('glTF') });
+  await expect(page.locator('#assets-panel .asset')).toHaveCount(1);
+}
+
+test('a project overtaken while its assets are being written still arrives whole, then the newer demo', async ({ page }) => {
+  await withAnUpload(page);
+  // A demo picked at the moment the project starts replacing the assets.
+  await page.evaluate(() => {
+    const clear = IDBObjectStore.prototype.clear;
+    IDBObjectStore.prototype.clear = function (this: IDBObjectStore) {
+      IDBObjectStore.prototype.clear = clear;
+      setTimeout(() => {
+        document.querySelector<HTMLSelectElement>('#demo-select')!.value = 'pinball-math';
+        document.querySelector<HTMLButtonElement>('#btn-demo')!.click();
+      });
+      return clear.call(this);
+    };
+  });
+  await page.setInputFiles('#file-import', project());
+  await expectShown(page, 'pinball-math');
+  expect(await assetNames(page)).toEqual(['photo.png']);
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
+});
+
+test('a project overtaken before it applies touches nothing', async ({ page }) => {
+  await withAnUpload(page);
+  // A demo picked while the project is still being read.
+  await page.evaluate(() => {
+    const arrayBuffer = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function (this: File) {
+      File.prototype.arrayBuffer = arrayBuffer;
+      document.querySelector<HTMLSelectElement>('#demo-select')!.value = 'pinball-math';
+      document.querySelector<HTMLButtonElement>('#btn-demo')!.click();
+      return arrayBuffer.call(this);
+    };
+  });
+  await page.setInputFiles('#file-import', project());
+  await expectShown(page, 'pinball-math');
+  expect(await assetNames(page)).toEqual(['keep.glb']);
+  await expect(page.locator('#log')).not.toContainText('⇧ project');
+});
+
+test('a demo that cannot be fetched says so, at startup and when picked', async ({ page }) => {
+  await page.route('**/graphs/pinball-three.json', (route) => route.abort());
+  await page.goto('/index.html');
+  await startupDone(page);
+  await expect(page.locator('#log')).toContainText('✗ demo pinball-three');
+
+  await page.route('**/graphs/pinball-math.json', (route) => route.fulfill({ status: 404, body: 'not found' }));
+  await pick(page, 'pinball-math');
+  await expect(page.locator('#log')).toContainText('✗ demo pinball-math');
+});
+
+test('picking the demo already shown waits for its own load', async ({ page }) => {
+  await openStudio(page);
+  const { requested, installed } = delayed(page, 'pinball-three', 500);
+  await installed;
+  const before = await page.locator('body').getAttribute('data-loads');
+  await pickDemo(page, 'pinball-three');
+  await requested;
+  // pickDemo returned after the slow load applied, with the same name and counts as before it.
+  expect(await page.locator('body').getAttribute('data-loads')).toBe(String(Number(before) + 1));
 });
 
 test('New, pressed while a demo is arriving, stays empty', async ({ page }) => {
