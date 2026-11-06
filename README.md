@@ -419,7 +419,7 @@ Planned split once the format stabilises (npm workspaces):
 | `webarkit.nftTracker` | planned | video, cvBackend, target, filter? → pose, found, … |
 | `filter.ema`, `filter.kalman` | planned | → poseFilter |
 | `scene.text`, `scene.video` | planned | scene → sceneObject |
-| AR Camera near / far override | idea | renderer-side override, for trackers that do not own their planes |
+| AR Camera near / far override | planned | renderer-side override, for trackers that do not own their planes |
 | `playcanvas.renderer`, `aframe.renderer` | idea | → renderer |
 | `logic.and` / `not` / `timer` / `toggle` | planned | boolean / event |
 | `action.playAnimation` / `playSound` / `openUrl` | planned | event → |
@@ -484,7 +484,8 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 
 ## Roadmap
 
-The source of truth for the roadmap is [#1](https://github.com/webarkit/webarkit-studio/issues/1). This list follows it.
+The source of truth for the roadmap is
+[#1](https://github.com/webarkit/webarkit-studio/issues/1). This list follows it.
 
 **Phase 1 — Foundation (this prototype)**
 - [x] Graph format v1 + validation
@@ -539,7 +540,8 @@ The source of truth for the roadmap is [#1](https://github.com/webarkit/webarkit
 
 **Unscheduled**
 - [ ] WebARKit integration ([#4](https://github.com/webarkit/webarkit-studio/issues/4)): no phase and no version; it starts when webarkit/webarkit publishes `@webarkit/nft-tracker`
-- [ ] Not planned for a release yet: artoolkit5-ts as the first external plugin ([#31](https://github.com/webarkit/webarkit-studio/issues/31)), loading plugins from a URL ([#32](https://github.com/webarkit/webarkit-studio/issues/32))
+- [ ] Not planned for a release yet: artoolkit5-ts as the first external plugin ([#31](https://github.com/webarkit/webarkit-studio/issues/31))
+- [ ] Not planned for a release yet: loading plugins from a URL ([#32](https://github.com/webarkit/webarkit-studio/issues/32))
 
 ## History
 
