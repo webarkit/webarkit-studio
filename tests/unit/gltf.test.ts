@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { cubeGlb } from '../helpers/cube-glb';
+import { cubeAnimatedGlb, cubeGlb, type CubeClip } from '../helpers/cube-glb';
 import { GLTF_TRANSFORM_PARAMS, gltf, isGlb } from '../../src/runtime/nodes/scene';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
-import { transformMatrix, Y_UP_TO_Z_UP, type ModelSpec, type SceneHandle, type SceneObject } from '../../src/runtime/renderers/adapter';
+import { gltfClipNames, transformMatrix, Y_UP_TO_Z_UP, type AnimationState, type ModelSpec, type SceneHandle, type SceneObject } from '../../src/runtime/renderers/adapter';
 import type { RuntimeContext } from '../../src/runtime/types';
 
 /** Reads a GLB container: header, JSON chunk and BIN chunk. */
@@ -44,6 +44,57 @@ describe('test model (cube.glb)', () => {
   });
 });
 
+describe('animated test model (cube-animated.glb)', () => {
+  it('is the file shipped in public/models/', () => {
+    expect(new Uint8Array(readFileSync('public/models/cube-animated.glb'))).toEqual(cubeAnimatedGlb());
+  });
+
+  it('has one rotation channel of two keyframes, LINEAR, with the min and max an animation input needs', () => {
+    const glb = readGlb(cubeAnimatedGlb());
+    expect(glb.length).toBe(cubeAnimatedGlb().byteLength);
+    const [animation] = glb.json.animations;
+    expect(animation.name).toBeUndefined();
+    expect(animation.channels).toEqual([{ sampler: 0, target: { node: 0, path: 'rotation' } }]);
+    const sampler = animation.samplers[0];
+    expect(sampler.interpolation).toBe('LINEAR');
+    expect(glb.json.accessors[sampler.input]).toMatchObject({ count: 2, type: 'SCALAR', min: [0], max: [2] });
+    expect(glb.json.accessors[sampler.output]).toMatchObject({ count: 2, type: 'VEC4' });
+    for (const v of glb.json.bufferViews) expect(v.byteOffset + v.byteLength).toBeLessThanOrEqual(glb.binLength);
+  });
+
+  it('is small: our own file, with no licence question', () => {
+    expect(cubeAnimatedGlb().byteLength).toBeLessThan(3 * 1024);
+  });
+});
+
+describe('gltfClipNames', () => {
+  const buffer = (bytes: Uint8Array) => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const glb = (clips: CubeClip[]) => ({ data: buffer(cubeAnimatedGlb(clips)), binary: true });
+  const json = (value: object) => ({ data: buffer(new TextEncoder().encode(JSON.stringify(value))), binary: false });
+
+  it('reads the names of a GLB, in glTF order', () => {
+    expect(gltfClipNames(glb([{ name: 'spin', seconds: 1, degrees: 90 }, { name: 'wobble', seconds: 1, degrees: 45 }]))).toEqual(['spin', 'wobble']);
+  });
+
+  it('calls an unnamed clip animation<i>, on its index', () => {
+    expect(gltfClipNames(glb([{ name: 'spin', seconds: 1, degrees: 90 }, { seconds: 1, degrees: 45 }]))).toEqual(['spin', 'animation1']);
+    expect(gltfClipNames(json({ animations: [{ name: '' }] }))).toEqual(['animation0']);
+  });
+
+  it('reads a JSON glTF', () => {
+    expect(gltfClipNames(json({ animations: [{ name: 'spin' }] }))).toEqual(['spin']);
+  });
+
+  it('has no names for a model with no clips', () => {
+    expect(gltfClipNames({ data: buffer(cubeGlb()), binary: true })).toEqual([]);
+    expect(gltfClipNames(json({ asset: { version: '2.0' } }))).toEqual([]);
+  });
+
+  it('keeps cube.glb as it was: the animated variant does not change its bytes', () => {
+    expect(readGlb(cubeGlb()).json).not.toHaveProperty('animations');
+  });
+});
+
 describe('transformMatrix', () => {
   const round = (m: ArrayLike<number>) => Array.from(m, (v) => Math.round(v * 1e6) / 1e6 + 0);
 
@@ -64,17 +115,126 @@ describe('transformMatrix', () => {
 });
 
 describe('scene.gltf', () => {
-  function fakeScene() {
+  function fakeScene(clips: string[] = []) {
     const calls: Array<[string, unknown]> = [];
     const model = { scene: null, native: 'model' } as unknown as SceneObject;
+    let state: AnimationState | null = null;
     const scene = {
       loadModel: async (spec: ModelSpec) => (calls.push(['loadModel', spec]), model),
       setMatrix: (_o: SceneObject, m: ArrayLike<number>) => void calls.push(['setMatrix', Array.from(m)]),
+      animations: () => clips,
+      playAnimation(_o: SceneObject, clip: string, options: object) {
+        calls.push(['play', { clip, ...options }]);
+        state = { clip, time: 0, playing: true };
+      },
+      stopAnimation() {
+        calls.push(['stop', null]);
+        if (state) state = { ...state, time: 0, playing: false };
+      },
+      animationState: () => state,
     } as unknown as SceneHandle;
-    return { scene, calls, model };
+    return { scene, calls, model, setTime: (time: number) => void (state = state && { ...state, time }) };
   }
-  const ctx = { baseUrl: 'http://localhost/studio/', log: () => {} } as unknown as RuntimeContext;
-  const params = { url: 'models/cube.glb', scale: 100, position: [0, 0, 0], rotation: [0, 0, 0] };
+  const reports: string[] = [];
+  const logs: string[] = [];
+  const ctx = { baseUrl: 'http://localhost/studio/', log: (m: string) => logs.push(m), report: (t: string) => reports.push(t) } as unknown as RuntimeContext;
+  const params = { url: 'models/cube.glb', scale: 100, position: [0, 0, 0], rotation: [0, 0, 0], autoplay: false };
+  const frame = { time: 0, delta: 0, frame: 0 };
+  beforeEach(() => {
+    reports.length = 0;
+    logs.length = 0;
+  });
+
+  describe('autoplay', () => {
+    const start = async (autoplay: boolean, clips = ['spin', 'wobble']) => {
+      vi.stubGlobal('fetch', async () => new Response(cubeGlb() as BodyInit));
+      const fake = fakeScene(clips);
+      const p = { ...params, autoplay };
+      const node = gltf(p, ctx);
+      await node.init!({ scene: fake.scene });
+      return { ...fake, p, node };
+    };
+    const played = (calls: Array<[string, unknown]>) => calls.filter(([what]) => what === 'play' || what === 'stop');
+
+    it('plays nothing by default', async () => {
+      const { calls } = await start(false);
+      expect(played(calls)).toEqual([]);
+    });
+
+    it('plays the first clip in a loop', async () => {
+      const { calls } = await start(true);
+      expect(played(calls)).toEqual([['play', { clip: 'spin', loop: true }]]);
+    });
+
+    it('has nothing to play on a model with no clips, and says so', async () => {
+      const { calls } = await start(true, []);
+      expect(played(calls)).toEqual([]);
+      expect(logs.join()).toMatch(/autoplay.*no clips/);
+    });
+
+    it('is live: on plays, off stops, with no restart', async () => {
+      const { calls, p, node } = await start(false);
+      p.autoplay = true;
+      node.onParamChange!('autoplay', true);
+      p.autoplay = false;
+      node.onParamChange!('autoplay', false);
+      expect(played(calls)).toEqual([['play', { clip: 'spin', loop: true }], ['stop', null]]);
+    });
+
+    it('stays still when turned off without ever having played, on a model with no clips', async () => {
+      const { calls, p, node } = await start(false, []);
+      p.autoplay = false;
+      node.onParamChange!('autoplay', false);
+      expect(played(calls)).toEqual([]);
+    });
+  });
+
+  describe('log and status', () => {
+    const start = async (clips: string[], autoplay = false) => {
+      vi.stubGlobal('fetch', async () => new Response(cubeGlb() as BodyInit));
+      const fake = fakeScene(clips);
+      const node = gltf({ ...params, autoplay }, ctx);
+      await node.init!({ scene: fake.scene });
+      return { ...fake, node };
+    };
+
+    it('lists the clips in the load log', async () => {
+      await start(['spin', 'wobble']);
+      expect(logs[0]).toMatch(/^glTF model loaded \(GLB, \d+ KB\), clips: spin, wobble$/);
+    });
+
+    it('logs and reports as before for a model with no clips', async () => {
+      const { node } = await start([]);
+      expect(logs[0]).toMatch(/^glTF model loaded \(GLB, \d+ KB\)$/);
+      node.update?.({}, frame);
+      expect(reports).toEqual([]);
+    });
+
+    it('lists the clips in the status, and with one playing, its time', async () => {
+      const { node, setTime } = await start(['spin', 'wobble'], true);
+      setTime(1.26);
+      node.update!({}, frame);
+      expect(reports.at(-1)).toBe('▶ spin 1.3 s\nclips: spin, wobble');
+    });
+
+    it('shows no time with none playing', async () => {
+      const { node } = await start(['spin']);
+      node.update!({}, frame);
+      expect(reports.at(-1)).toBe('clips: spin');
+    });
+
+    it('reports only when the text changes, not every frame', async () => {
+      const { node, setTime } = await start(['spin'], true);
+      setTime(0.51);
+      node.update!({}, frame);
+      setTime(0.52);
+      node.update!({}, frame);
+      expect(reports).toEqual(['▶ spin 0.5 s\nclips: spin']);
+      setTime(0.61);
+      node.update!({}, frame);
+      expect(reports.at(-1)).toBe('▶ spin 0.6 s\nclips: spin');
+    });
+  });
 
   afterEach(() => vi.unstubAllGlobals());
 
@@ -101,9 +261,10 @@ describe('scene.gltf', () => {
     expect(calls.at(-1)).toEqual(['setMatrix', Array.from(transformMatrix({ position: [0, 0, 25], rotation: [0, 0, 0], scale: 100 }))]);
   });
 
-  it('applies every live catalog param of scene.gltf, and nothing else, as a transform', () => {
+  it('applies every live catalog param of scene.gltf: the transform, and autoplay', () => {
     const live = Object.entries(NODE_CATALOG['scene.gltf'].params).filter(([, s]) => s.live).map(([k]) => k);
-    expect([...GLTF_TRANSFORM_PARAMS].sort()).toEqual(live.sort());
+    expect([...GLTF_TRANSFORM_PARAMS, 'autoplay'].sort()).toEqual(live.sort());
+    expect(NODE_CATALOG['scene.gltf'].params.autoplay).toMatchObject({ kind: 'boolean', default: false });
   });
 
   it('never builds a singular matrix from a zero or negative scale (hand-edited graphs)', async () => {

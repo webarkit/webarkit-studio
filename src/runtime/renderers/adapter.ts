@@ -41,6 +41,38 @@ export interface ModelSpec {
   binary: boolean;
 }
 
+export interface AnimationOptions {
+  /** Default true. */
+  loop?: boolean;
+  /** Default 1. */
+  speed?: number;
+}
+
+/** A model's current clip. `time` is in seconds, read from the engine. */
+export interface AnimationState {
+  clip: string;
+  time: number;
+  playing: boolean;
+}
+
+/**
+ * The clip names of a glTF, in glTF order: an unnamed clip is `animation<i>`. Read from the file,
+ * because each engine's loader names unnamed clips its own way; an adapter finds a clip by its index
+ * here. With two clips of the same name, the first is the one played.
+ */
+export function gltfClipNames({ data, binary }: Pick<ModelSpec, 'data' | 'binary'>): string[] {
+  let text: string;
+  if (binary) {
+    // A GLB: a 12-byte header, then the JSON chunk's length and type, then the JSON.
+    const length = new DataView(data).getUint32(12, true);
+    text = new TextDecoder().decode(new Uint8Array(data, 20, length));
+  } else {
+    text = new TextDecoder().decode(data);
+  }
+  const { animations = [] } = JSON.parse(text) as { animations?: Array<{ name?: string }> };
+  return animations.map((a, i) => a.name || `animation${i}`);
+}
+
 /** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and uniform scale. */
 export interface Transform {
   position: [number, number, number];
@@ -103,6 +135,26 @@ export interface SceneHandle {
   /** [r, g, b, a] in sRGB 0–1; on a mesh, alpha below 1 makes it transparent (a light ignores alpha). */
   setColor(object: SceneObject, color: readonly number[]): void;
   setIntensity(light: SceneObject, intensity: number): void;
+
+  /**
+   * glTF animations, with the same semantics on every adapter. One clip plays at a time per model.
+   * Time advances inside render(), on the engine's clock, whether or not the model is visible:
+   * pausing a model on a hidden anchor is the graph's choice.
+   */
+  /** The clip names of a model, in glTF order (gltfClipNames); [] for any other object. */
+  animations(object: SceneObject): string[];
+  /**
+   * Starts a clip; playing another stops the one playing. A paused clip resumes where it held, and one
+   * that is playing keeps its time and takes the new options. Throws if the model has no such clip.
+   * A clip that is not looping holds its last frame when it ends, not playing; playing it again restarts it.
+   */
+  playAnimation(object: SceneObject, clip: string, options?: AnimationOptions): void;
+  /** Holds the current time. Nothing happens if no clip is playing. */
+  pauseAnimation(object: SceneObject): void;
+  /** Stops, and goes back to the clip's first frame. */
+  stopAnimation(object: SceneObject): void;
+  /** Null until a clip has been played on it. */
+  animationState(object: SceneObject): AnimationState | null;
 
   /** Draws the scene with the given projection (column-major 4x4). */
   render(projection: ArrayLike<number> | null): void;

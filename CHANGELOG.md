@@ -23,6 +23,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   replaced by the demo. The file you opened is not touched, and the log says
   `↑ upgraded from v4 to v5`. v2 and v3 stay refused, and a newer document says it needs a newer studio.
 
+- glTF animations on both renderers (#58): Autoplay on the glTF Model node (`autoplay`, live, off by
+  default) plays the model's first clip in a loop. Its log and status list the clips and show the time
+  of the one playing. Exported apps play it too.
+
 ### Changed
 
 - A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).

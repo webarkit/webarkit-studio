@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import {
   assertOwned,
+  gltfClipNames,
   Y_UP_TO_Z_UP,
+  type AnimationOptions,
   type LightSpec,
   type ModelSpec,
   type PrimitiveSpec,
@@ -12,6 +14,14 @@ import {
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
+
+/** A model's clips, by the index of `names`, and the one it holds. */
+interface ModelClips {
+  names: string[];
+  clips: THREE.AnimationClip[];
+  mixer: THREE.AnimationMixer;
+  current: { name: string; action: THREE.AnimationAction; stopped: boolean } | null;
+}
 
 export function createThreeAdapter(opts: { antialias: boolean }): RendererAdapter {
   const canvas = document.createElement('canvas');
@@ -48,6 +58,12 @@ function createThreeScene(
   const adoptedHemis = new Map<THREE.HemisphereLight, THREE.Object3D>();
   const scratch = new THREE.Vector3();
   const obj = (o: SceneObject) => (assertOwned(handle, o), o.native as THREE.Object3D);
+  const modelClips = new WeakMap<THREE.Object3D, ModelClips>();
+  const mixers = new Set<THREE.AnimationMixer>();
+  /** When render() last advanced the mixers; Babylon's scene.render() keeps the same clock, with no limit on a step. */
+  let lastRender: number | null = null;
+  /** A one-shot clip clamped at its end holds its last frame, paused: that is a clip that has ended. */
+  const ended = ({ action }: NonNullable<ModelClips['current']>) => action.loop === THREE.LoopOnce && action.time >= action.getClip().duration;
 
   const handle: SceneHandle = {
     renderer: adapter,
@@ -85,6 +101,18 @@ function createThreeScene(
       const model = new THREE.Group();
       model.matrixAutoUpdate = false;
       model.add(upright);
+      if (gltf.animations.length) {
+        const mixer = new THREE.AnimationMixer(gltf.scene);
+        modelClips.set(model, { names: gltfClipNames(spec), clips: gltf.animations, mixer, current: null });
+        mixers.add(mixer);
+        disposables.add({
+          dispose() {
+            mixers.delete(mixer);
+            mixer.stopAllAction();
+            mixer.uncacheRoot(gltf.scene);
+          },
+        });
+      }
       return wrap(model);
     },
     createGroup() {
@@ -152,7 +180,49 @@ function createThreeScene(
     },
     setIntensity: (o, i) => void ((obj(o) as THREE.Light).intensity = i),
 
+    animations: (o) => [...(modelClips.get(obj(o))?.names ?? [])],
+    playAnimation(o, clip, { loop = true, speed = 1 }: AnimationOptions = {}) {
+      const model = modelClips.get(obj(o));
+      const index = model?.names.indexOf(clip) ?? -1;
+      if (!model || index < 0) throw new Error(`this model has no clip "${clip}" (clips: ${model?.names.join(', ') || 'none'})`);
+      let { current } = model;
+      if (!current || current.name !== clip || current.stopped || ended(current)) {
+        current?.action.stop();
+        current = model.current = { name: clip, action: model.mixer.clipAction(model.clips[index]).reset(), stopped: false };
+      }
+      const { action } = current;
+      action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+      action.clampWhenFinished = true;
+      action.timeScale = speed;
+      action.paused = false;
+      action.play();
+    },
+    pauseAnimation(o) {
+      const current = modelClips.get(obj(o))?.current;
+      if (current && !current.stopped) current.action.paused = true;
+    },
+    stopAnimation(o) {
+      const model = modelClips.get(obj(o));
+      if (!model?.current) return;
+      // A stopped action would leave the node where it is, or at its bind pose: this one holds the first frame.
+      const { action } = model.current;
+      action.reset().play();
+      action.paused = true;
+      model.mixer.update(0);
+      model.current.stopped = true;
+    },
+    animationState(o) {
+      const current = modelClips.get(obj(o))?.current;
+      if (!current) return null;
+      const { action, name, stopped } = current;
+      return { clip: name, time: stopped ? 0 : action.time, playing: !stopped && !action.paused };
+    },
+
     render(projection) {
+      const now = performance.now();
+      const delta = lastRender === null ? 0 : (now - lastRender) / 1000;
+      lastRender = now;
+      for (const mixer of mixers) mixer.update(delta);
       if (projection) {
         camera.projectionMatrix.fromArray(Array.from(projection));
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
