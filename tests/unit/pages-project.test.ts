@@ -36,7 +36,7 @@ describe('the GitHub Pages project', () => {
     expect(strFromU8(project()['site/data/_ext/cube.glb'])).toBe('glb');
   });
 
-  it('commits every file byte for byte, whatever the line-ending setting of the machine', () => {
+  it('asks git to leave every file as it is, whatever the line-ending setting of the machine', () => {
     expect(strFromU8(project()['.gitattributes']).trim()).toBe('* -text');
   });
 
@@ -91,12 +91,47 @@ describe('the GitHub Pages project', () => {
       expect(readme()).toContain('https://<you>.github.io/<repo>/');
     });
 
+    it('sets the source before the push, and gives the commands in the order they run', () => {
+      const order = ['Create a', 'Settings → Pages', 'git init', 'git add -A', 'git commit', 'git branch -M main', 'git remote add origin', 'git push -u origin main', 'Actions tab'];
+      const places = order.map((text) => readme().indexOf(text));
+      expect(places).not.toContain(-1);
+      expect(places).toEqual([...places].sort((a, b) => a - b));
+    });
+
+    it('says what to replace in the commands, and where to run them', () => {
+      expect(readme()).toMatch(/Replace\s+`<you>` and `<repo>`/);
+      expect(readme()).toMatch(/folder that holds this README\.md/);
+    });
+
+    it('says the suggested workflows are not needed: one of them would make the push fail', () => {
+      expect(readme()).toMatch(/suggest.*workflows.*not need/is);
+    });
+
+    it('gives the way out of each failure a first deploy can meet', () => {
+      expect(readme()).toContain('is not allowed to deploy to github-pages');
+      expect(readme()).toMatch(/Re-run all jobs/);
+      expect(readme()).toMatch(/Settings → Environments → github-pages/);
+      expect(readme()).toMatch(/Pages was not set up/);
+      expect(readme()).toMatch(/personal access token.*`workflow` scope/is);
+    });
+
+    it('says that what it publishes is public', () => {
+      expect(readme()).toMatch(/anyone can (read|see)/i);
+    });
+
     it('says that a camera on a phone needs the HTTPS URL', () => {
       expect(readme()).toMatch(/camera.*HTTPS/s);
     });
 
     it("writes the graph's name as plain text", () => {
       expect(readme().split('\n')[0]).toBe('# My app');
+    });
+
+    it('has a title when the graph has no name', () => {
+      for (const name of [undefined, '', ' <> ']) {
+        const files = assemblePagesProject({}, { name } as GraphDocument);
+        expect(strFromU8(files['README.md']).split('\n')[0]).toBe('# WebAR app');
+      }
     });
   });
 });

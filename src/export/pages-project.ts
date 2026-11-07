@@ -53,14 +53,20 @@ jobs:
 const readme = (title: string) => `# ${title}
 
 An AR app exported from WebARKit Studio, ready to publish on GitHub Pages. The app is in \`site/\`, and
-\`.github/workflows/deploy-pages.yml\` deploys it each time you push. It needs no token or password
-beyond your usual access to GitHub.
+\`.github/workflows/deploy-pages.yml\` deploys it each time you push. Nothing in this folder holds a token
+or a password: you push with your usual access to GitHub.
+
+Once published, anyone can read everything in this folder, including your graph and the files it uses.
 
 ## Publish it
 
+Unzip this project with your system's own Extract command: some command-line tools garble names with accents.
+
 1. Create a new, empty repository on GitHub. Make it public: Pages on a private repository needs a paid plan.
 2. In the repository, open Settings → Pages, and under "Build and deployment" set Source to **GitHub Actions**.
-3. In this folder, run:
+   GitHub then suggests some workflows. You do not need them: this project brings its own.
+3. Open a terminal in the folder that holds this README.md, which becomes the root of the repository. Replace
+   \`<you>\` and \`<repo>\` with your user name and the repository's name, and run:
 
    \`\`\`
    git init
@@ -71,11 +77,18 @@ beyond your usual access to GitHub.
    git push -u origin main
    \`\`\`
 
-4. Wait for the "Deploy to GitHub Pages" run to finish in the repository's Actions tab. If it failed because
-   Pages was not set up yet, do step 2 and press "Re-run all jobs", or start it with "Run workflow".
-5. Open the URL the run shows: \`https://<you>.github.io/<repo>/\`.
+4. Wait for the "Deploy to GitHub Pages" run to finish in the repository's Actions tab.
+5. Open the URL the run shows, usually \`https://<you>.github.io/<repo>/\`.
 
 A camera on a phone needs a secure page, and the HTTPS URL that Pages gives is one.
+
+## If it fails
+
+- **The push is refused, and it names a workflow:** if you push with a personal access token, it needs the
+  \`workflow\` scope.
+- **The run fails because Pages was not set up:** do step 2, then press "Re-run all jobs".
+- **The run says \`Branch "main" is not allowed to deploy to github-pages\`:** open
+  Settings → Environments → github-pages, allow the branch \`main\`, then press "Re-run all jobs".
 
 ## Update it
 
@@ -88,12 +101,12 @@ export function assemblePagesProject(app: Record<string, Uint8Array>, doc: Graph
   for (const [path, data] of Object.entries(app)) {
     // actions/upload-pages-artifact leaves out what starts with a dot, with no error. Only .nojekyll may: a deploy runs no Jekyll.
     if (path !== '.nojekyll' && path.split('/').some((part) => part.startsWith('.'))) {
-      throw new Error(`${path}: a file or folder whose name starts with a dot does not reach GitHub Pages. Rename it and export again.`);
+      throw new Error(`${path}: a file or folder whose name starts with a dot does not reach GitHub Pages. Use a copy with another name, and export again.`);
     }
     files[`site/${path}`] = data;
   }
   files['.github/workflows/deploy-pages.yml'] = strToU8(WORKFLOW);
-  files['README.md'] = strToU8(readme((doc.name ?? 'WebAR app').replace(/[<>&"]/g, '').replace(/ +/g, ' ').trim()));
+  files['README.md'] = strToU8(readme((doc.name ?? '').replace(/[<>&"]/g, '').replace(/ +/g, ' ').trim() || 'WebAR app'));
   files['.gitattributes'] = strToU8('* -text\n');
   return files;
 }
