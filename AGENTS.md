@@ -80,7 +80,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - **A node type, port or param renamed or removed, a changed socket type or param kind, or a change in what a value means is a format change**: bump `GRAPH_VERSION`, add its migration to `src/core/migrations.ts` with a test that an older document opens, update `public/graphs/` and add a `CHANGELOG.md` line. A migration writes literal types and params, and never reads the catalog or the loaded plugins, because it must give the same result forever. A document from outside enters through `loadGraphDocument()`, not `validateGraph()`.
 - **Naming:**
   - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
-  - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`.
+  - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`.
   - `webarkit.*` is reserved for webarkit/webarkit trackers.
   - Do not name nodes after packages they do not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 - **Units and space:**

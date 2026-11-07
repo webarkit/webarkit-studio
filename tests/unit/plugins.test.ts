@@ -61,6 +61,12 @@ describe('validatePlugin', () => {
     for (const ns of new Set(CORE_NODES.map((d) => d.type.split('.')[0]))) expect(RESERVED_NAMESPACES).toContain(ns);
   });
 
+  it('refuses a plugin named logic or action, though no action node exists yet', () => {
+    for (const ns of ['logic', 'action']) {
+      expect(problemsOf(plugin({ id: ns, nodes: [], factories: {}, sockets: [] }))).toContainEqual(expect.stringMatching(/reserved/));
+    }
+  });
+
   it('reports malformed node types and socket ids instead of crashing', () => {
     const p = plugin({ sockets: [{ id: 7 as unknown as PluginSocketType, label: 'M', color: '#fff' }] });
     p.nodes[0] = { ...p.nodes[0], type: undefined as unknown as string };

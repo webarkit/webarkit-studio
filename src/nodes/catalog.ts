@@ -54,7 +54,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'logic' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -469,6 +469,124 @@ export const CORE_NODES: NodeDefinition[] = [
       a: { type: 'number', label: 'A' },
     },
     params: {},
+  },
+
+  // --------------------------------------------------------------- logic
+  {
+    type: 'logic.and',
+    label: 'And',
+    category: 'logic',
+    provider: 'core',
+    description: 'True when both inputs are true. An input with no value counts as false.',
+    inputs: { a: { type: 'boolean', label: 'A' }, b: { type: 'boolean', label: 'B' } },
+    outputs: { value: { type: 'boolean', label: 'Value' } },
+    params: {},
+  },
+  {
+    type: 'logic.or',
+    label: 'Or',
+    category: 'logic',
+    provider: 'core',
+    description: 'True when either input is true. An input with no value counts as false.',
+    inputs: { a: { type: 'boolean', label: 'A' }, b: { type: 'boolean', label: 'B' } },
+    outputs: { value: { type: 'boolean', label: 'Value' } },
+    params: {},
+  },
+  {
+    type: 'logic.not',
+    label: 'Not',
+    category: 'logic',
+    provider: 'core',
+    description: 'The opposite of its input. An input with no value counts as false, so the output is true.',
+    inputs: { value: { type: 'boolean', label: 'Value' } },
+    outputs: { value: { type: 'boolean', label: 'Value' } },
+    params: {},
+  },
+  {
+    type: 'logic.toggle',
+    label: 'Toggle',
+    category: 'logic',
+    provider: 'core',
+    description: 'A boolean that flips when Trigger fires. Reset goes back to Initial, and wins when both fire in the same frame.',
+    inputs: { trigger: { type: 'event', label: 'Trigger' }, reset: { type: 'event', label: 'Reset', optional: true } },
+    outputs: { value: { type: 'boolean', label: 'Value' } },
+    params: { initial: { kind: 'boolean', label: 'Initial', default: false } },
+  },
+  {
+    type: 'logic.timer',
+    label: 'Timer',
+    category: 'logic',
+    provider: 'core',
+    description:
+      'Fires onDone a duration after Start, counted in frames\' time. A Start while running restarts it. Cancel stops it without firing, and wins when both fire ' +
+      'in the same frame. Repeat keeps it running, firing at most once per frame.',
+    inputs: {
+      start: { type: 'event', label: 'Start' },
+      cancel: { type: 'event', label: 'Cancel', optional: true },
+      duration: { type: 'number', label: 'Duration', optional: true },
+    },
+    outputs: { onDone: { type: 'event', label: 'onDone' }, running: { type: 'boolean', label: 'Running' } },
+    params: {
+      duration: { kind: 'number', label: 'Duration (s)', default: 1, min: 0, step: 0.1, live: true },
+      repeat: { kind: 'boolean', label: 'Repeat', default: false, live: true },
+    },
+  },
+  {
+    type: 'logic.compare',
+    label: 'Compare',
+    category: 'logic',
+    provider: 'core',
+    description:
+      'A boolean from two numbers: A op B. An input with no finite number falls back to its param, so set the param, before wiring, to a value that is safe for ' +
+      'that case. Tolerance applies to == and != only, for measured values. False when an operand has no finite number at all.',
+    inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
+    outputs: { value: { type: 'boolean', label: 'Value' } },
+    params: {
+      a: { kind: 'number', label: 'A', default: 0, step: 1, live: true },
+      b: { kind: 'number', label: 'B', default: 0, step: 1, live: true },
+      op: { kind: 'select', label: 'Operator', default: '<', options: { '==': '==', '!=': '!=', '<': '<', '<=': '<=', '>': '>', '>=': '>=' }, live: true },
+      tolerance: { kind: 'number', label: 'Tolerance', default: 0, min: 0, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'logic.edge',
+    label: 'Edge',
+    category: 'logic',
+    provider: 'core',
+    description: 'Events from a boolean: onRise when it goes from false to true, onFall the other way. The value at the start fires nothing.',
+    inputs: { value: { type: 'boolean', label: 'Value' } },
+    outputs: { onRise: { type: 'event', label: 'onRise' }, onFall: { type: 'event', label: 'onFall' } },
+    params: {},
+  },
+  {
+    type: 'logic.branch',
+    label: 'Branch',
+    category: 'logic',
+    provider: 'core',
+    description:
+      'If / else for events: when Trigger fires, fires onTrue or onFalse, from Condition in the same frame and keeping the event\'s data. ' +
+      'An unwired Condition counts as false. An else if is a second Branch on onFalse.',
+    inputs: { trigger: { type: 'event', label: 'Trigger' }, condition: { type: 'boolean', label: 'Condition', optional: true } },
+    outputs: { onTrue: { type: 'event', label: 'onTrue' }, onFalse: { type: 'event', label: 'onFalse' } },
+    params: {},
+  },
+  {
+    type: 'logic.switch',
+    label: 'Switch',
+    category: 'logic',
+    provider: 'core',
+    description:
+      'Routes Trigger to the case of its index, keeping the event\'s data. An index that is not an integer from 0 to 3 fires onDefault. ' +
+      'For more cases, chain a second Switch on onDefault.',
+    inputs: { trigger: { type: 'event', label: 'Trigger' }, index: { type: 'number', label: 'Index', optional: true } },
+    outputs: {
+      case0: { type: 'event', label: 'Case 0' },
+      case1: { type: 'event', label: 'Case 1' },
+      case2: { type: 'event', label: 'Case 2' },
+      case3: { type: 'event', label: 'Case 3' },
+      onDefault: { type: 'event', label: 'onDefault' },
+    },
+    params: { index: { kind: 'number', label: 'Index', default: 0, step: 1, live: true } },
   },
 
   // --------------------------------------------------------------- debug
