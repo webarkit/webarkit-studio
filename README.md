@@ -485,9 +485,11 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   warm-up poses pass through unfiltered but are fed to the filter.
 - Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
   and the file itself is not touched. v2 and v3, prototype formats, are refused, and
-  a newer document asks for a newer studio. An autosave that cannot be opened,
-  including an unfinished graph with a required input not connected, is kept in
-  localStorage as `webarkit-studio:autosave-set-aside`, and the demo opens. Graphs
+  a newer document asks for a newer studio. An unfinished autosave, with a required
+  input not connected, reopens: **Run** and the standalone app export report what it
+  lacks. A file with such a graph is still refused on **Import…**. One that
+  cannot be opened is kept in localStorage as
+  `webarkit-studio:autosave-set-aside`, and the demo opens. Graphs
   saved by the prototype under its former name (`webar-studio/graph`) still load,
   and so does its last autosave.
 - JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light

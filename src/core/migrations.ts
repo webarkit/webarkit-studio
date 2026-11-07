@@ -179,12 +179,21 @@ export function migrateGraph(doc: unknown, { migrations = MIGRATIONS, target = G
 }
 
 /**
- * A document from outside (a file, an autosave, a tool's argument): upgraded,
- * then validated. `catalog` and `loaded` are validateGraph()'s, injectable for tests.
+ * A document from outside (a file, a tool's argument): upgraded, then
+ * validated. An autosave is loadUnfinishedGraphDocument()'s. `catalog` and `loaded` are validateGraph()'s, injectable for tests.
  */
 export function loadGraphDocument(doc: unknown, catalog?: Parameters<typeof validateGraph>[1], loaded?: Parameters<typeof validateGraph>[2]): MigrationResult<GraphDocument> {
   const result = migrateGraph(doc);
   return { ...result, doc: validateGraph(result.doc, catalog, loaded) };
+}
+
+/**
+ * An autosave, which is work in progress: as loadGraphDocument(), but its required inputs may be
+ * unconnected. Run and the standalone app export still refuse such a graph, through loadGraphDocument().
+ */
+export function loadUnfinishedGraphDocument(doc: unknown): MigrationResult<GraphDocument> {
+  const result = migrateGraph(doc);
+  return { ...result, doc: validateGraph(result.doc, undefined, undefined, { unfinished: true }) };
 }
 
 /** The log line for an upgrade, or null if there was none. */

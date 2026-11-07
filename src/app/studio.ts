@@ -8,7 +8,7 @@ import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument } from '../core/graph';
-import { loadGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
+import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
 import { isProjectFile, unpackProject } from '../export/project';
@@ -43,14 +43,32 @@ const showInspector = () => {
   renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value));
 };
 
+const autosave = () => {
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(studio.toDocument()));
+  } catch {
+    /* autosave is best effort */
+  }
+};
+/**
+ * While a graph is being loaded, node by node. An autosave then would hold a piece of it: after a reload, that
+ * would reopen as if it were the user's unfinished work. So a load saves once, when it is whole.
+ */
+let loadingGraph = false;
+async function loadIntoEditor(doc: GraphDocument): Promise<void> {
+  loadingGraph = true;
+  try {
+    await studio.load(doc);
+  } finally {
+    loadingGraph = false;
+  }
+  autosave();
+}
+
 const studio = await createStudioEditor($('editor'), {
   onChange() {
     showInspector(); // params may have changed (in the node, by undo)
-    try {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(studio.toDocument()));
-    } catch {
-      /* autosave is best effort */
-    }
+    if (!loadingGraph) autosave();
   },
   // While the preview runs, live params reach the running node immediately.
   onParamChange(nodeId, key, value) {
@@ -117,9 +135,9 @@ const loads = createLoadQueue();
 
 let appliedLoads = 0;
 
-/** Shows a document that loadGraphDocument() took. The file it came from is not touched: saves are of the current version. */
+/** Shows a document that passed its checks. The file it came from is not touched: saves are of the current version. */
 async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
-  await studio.load(loaded.doc);
+  await loadIntoEditor(loaded.doc);
   await studio.zoomToFit();
   const upgraded = upgradeNote(loaded);
   if (upgraded) log(upgraded);
@@ -128,9 +146,9 @@ async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
 }
 
 /** False if the document was refused. A load that a newer one replaced was not refused: it is true. */
-async function load(doc: unknown, ticket = loads.begin()): Promise<boolean> {
+async function load(doc: unknown, ticket = loads.begin(), check = loadGraphDocument): Promise<boolean> {
   try {
-    const loaded = loadGraphDocument(doc);
+    const loaded = check(doc);
     await loads.run(ticket, () => show(loaded));
     return true;
   } catch (err) {
@@ -156,7 +174,7 @@ const demoSelect = $<HTMLSelectElement>('demo-select');
 $('btn-demo').onclick = () => void loadDemo();
 $('btn-new').onclick = () => {
   // An empty graph is not runnable, so it is loaded without validation.
-  void loads.run(loads.begin(), () => studio.load(emptyGraph()));
+  void loads.run(loads.begin(), () => loadIntoEditor(emptyGraph()));
 };
 // ---------------------------------------------------------------- export
 const exportMenu = $<HTMLDetailsElement>('export-menu');
@@ -286,10 +304,11 @@ try {
 } catch {
   restored = null;
 }
-// An older autosave upgrades on load. The demo opens otherwise and autosaves over it, so one that
-// held a graph the studio could not open (refused, unfinished, corrupt) is kept for its owner.
+// An older autosave upgrades on load, and an unfinished one opens: Run and export report what it lacks. The demo
+// opens otherwise and autosaves over it, so one that held a graph the studio could not open (refused, corrupt) is
+// kept for its owner.
 const empty = Array.isArray(restored?.nodes) && restored.nodes.length === 0;
-if (!(restored?.nodes?.length && (await load(restored, startup)))) {
+if (!(restored?.nodes?.length && (await load(restored, startup, loadUnfinishedGraphDocument)))) {
   if (raw && !empty) {
     try {
       localStorage.setItem(SET_ASIDE_KEY, raw);

@@ -98,14 +98,16 @@ export class GraphValidationError extends Error {
  * Validation of a document of the current format; loadGraphDocument()
  * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles.
+ * non-multiple inputs, no cycles, required inputs connected.
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
+ * `unfinished`: a graph still being built may leave required inputs unconnected. Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
   catalog: Record<string, NodeDefinition> = NODE_CATALOG,
   loaded: Record<string, string> = LOADED_PLUGINS,
+  { unfinished = false }: { unfinished?: boolean } = {},
 ): GraphDocument {
   const problems: string[] = [];
   const g = doc as GraphDocument;
@@ -183,7 +185,7 @@ export function validateGraph(
         problems.push(`node ${n.id} (${def.label}): param "${key}" must be ${length} numbers`);
       }
     }
-    for (const [port, spec] of Object.entries(def.inputs)) {
+    for (const [port, spec] of unfinished ? [] : Object.entries(def.inputs)) {
       if (!spec.optional && !inputUse.has(`${n.id}:${port}`)) {
         problems.push(`node ${n.id} (${def.label}): required input "${spec.label}" is not connected`);
       }
