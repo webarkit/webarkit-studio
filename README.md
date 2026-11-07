@@ -223,7 +223,8 @@ its tracking traces.
 
 glTF Model (`scene.gltf`) stands models up on the marker with their front
 (glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
-the Z of *Rotation*. It plays no animations. Compressed models (Draco,
+the Z of *Rotation*. *Autoplay* plays the model's first clip in a loop, on
+both renderers, and its status lists the clips. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
@@ -399,7 +400,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
-| `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
+| `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`) |

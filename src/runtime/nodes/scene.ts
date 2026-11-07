@@ -212,13 +212,24 @@ export const anchor: NodeFactory = (params) => {
 /** True for a GLB container ("glTF" magic), false for glTF JSON. */
 export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView(data).getUint32(0, true) === 0x46546c67;
 
-/** The live params of scene.gltf, all applied as its transform (checked against the catalog in tests). */
+/** The live params of scene.gltf applied as its transform; `autoplay` is the other (checked against the catalog in tests). */
 export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'position', 'rotation'];
 
 /** scene.gltf — a glTF / GLB model, placed in marker space (millimetres, Z-up). */
 export const gltf: NodeFactory = (params, ctx) => {
   let scene: SceneValue | null = null;
   let model: SceneObjectValue | null = null;
+  let clips: string[] = [];
+  let status = '';
+  const applyAutoplay = () => {
+    if (!scene || !model) return;
+    if (params.autoplay) {
+      if (clips.length) scene.playAnimation(model, clips[0], { loop: true });
+      else ctx.log(`${ctx.nodeId}: autoplay is on, but the model has no clips`);
+    } else if (clips.length) {
+      scene.stopAnimation(model);
+    }
+  };
   const applyTransform = () => {
     if (!scene || !model) return;
     scene.setMatrix(
@@ -244,12 +255,22 @@ export const gltf: NodeFactory = (params, ctx) => {
       const data = await res.arrayBuffer();
       const binary = isGlb(data);
       model = await scene.loadModel({ data, url, binary });
-      ctx.log(`glTF model loaded (${binary ? 'GLB' : 'glTF JSON'}, ${Math.round(data.byteLength / 1024)} KB)`);
+      clips = scene.animations(model);
+      ctx.log(`glTF model loaded (${binary ? 'GLB' : 'glTF JSON'}, ${Math.round(data.byteLength / 1024)} KB)${clips.length ? `, clips: ${clips.join(', ')}` : ''}`);
       applyTransform();
+      if (params.autoplay) applyAutoplay();
       return { object: model };
+    },
+    update() {
+      if (!scene || !model || !clips.length) return;
+      const state = scene.animationState(model);
+      const text = `${state?.playing ? `▶ ${state.clip} ${state.time.toFixed(1)} s\n` : ''}clips: ${clips.join(', ')}`;
+      // Rounded and only on a change: the status is DOM, and this runs every frame.
+      if (text !== status) ctx.report((status = text));
     },
     onParamChange(key) {
       if (GLTF_TRANSFORM_PARAMS.includes(key)) applyTransform();
+      if (key === 'autoplay') applyAutoplay();
     },
   };
 };

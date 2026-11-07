@@ -240,7 +240,8 @@ export const CORE_NODES: NodeDefinition[] = [
     description:
       'A glTF 2.0 model: a .glb, or a .gltf with embedded resources (a .gltf loading other files works from a URL in the studio, ' +
       'but uploads and exported apps need it self-contained). Its front (glTF +Z) faces the marker bottom edge. ' +
-      'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm).',
+      'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm). ' +
+      'Autoplay plays its first clip in a loop; its status lists the clips.',
     inputs: { scene: { type: 'scene', label: 'Scene' } },
     outputs: { object: { type: 'sceneObject', label: 'Model' } },
     params: {
@@ -248,6 +249,7 @@ export const CORE_NODES: NodeDefinition[] = [
       scale: { kind: 'number', label: 'Scale (mm / unit)', default: 80, min: 0.001, max: 100000, step: 1, live: true },
       position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
       rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+      autoplay: { kind: 'boolean', label: 'Autoplay first clip', default: false, live: true },
     },
   },
   {
