@@ -511,7 +511,9 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   not (see "Export"), and upstream calls it experimental; on `td`, `dispose()` skips the
   native teardown (jsartoolkitNFT#695), and ending the worker frees the memory. It is
   also heavy on memory: upstream notes that each threaded module reserves 1 GB of
-  shared memory, so keep to one Threaded or Auto controller per graph. *Auto*
+  shared memory, so keep to one Threaded or Auto controller per graph. Its poses match
+  SIMD's within run-to-run noise, but it may report the first found a few frames later
+  (it detects on a separate thread), which is expected for this opt-in build. *Auto*
   picks `td` on an isolated page, then SIMD, then standard; the facade does not report
   which one it picked, so the log says only which build was asked for and whether the
   page is isolated.
