@@ -14,7 +14,8 @@ import { buildAppFiles } from './app-bundle';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
 
 /**
- * The versions GitHub's documentation names, in "Using custom workflows with GitHub Pages".
+ * Each action at a major version that runs on Node 24 (checked in each tag's action.yml). The
+ * Pages actions' documentation named configure-pages@v5 and deploy-pages@v4, which run on Node 20.
  * `$default-branch` only works in starter templates, so the workflow names both usual branches:
  * a push to one that is not the default fails the environment's rule and deploys nothing.
  */
@@ -42,12 +43,12 @@ jobs:
       url: \${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 `;
 
 const readme = (title: string) => `# ${title}
@@ -63,7 +64,8 @@ Once published, anyone can read everything in this folder, including your graph 
 Unzip this project with your system's own Extract command: some command-line tools garble names with accents.
 
 1. Create a new, empty repository on GitHub. Make it public: Pages on a private repository needs a paid plan.
-2. In the repository, open Settings → Pages, and under "Build and deployment" set Source to **GitHub Actions**.
+2. Before you push, in the repository, open Settings → Pages, and under "Build and deployment" set Source to
+   **GitHub Actions**. The push starts the deploy, and without this its first run fails.
    GitHub then suggests some workflows. You do not need them: this project brings its own.
 3. Open a terminal in the folder that holds this README.md, which becomes the root of the repository. Replace
    \`<you>\` and \`<repo>\` with your user name and the repository's name, and run:

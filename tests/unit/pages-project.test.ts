@@ -53,13 +53,13 @@ describe('the GitHub Pages project', () => {
       expect('workflow_dispatch' in workflow().on).toBe(true);
     });
 
-    it("pins each action to the version GitHub's documentation names, in order", () => {
+    it('pins each action to a major version that runs on Node 24, in order', () => {
       // Written here as well, so that changing a version means changing this list on purpose.
       expect(steps().map((s) => s.uses)).toEqual([
         'actions/checkout@v6',
-        'actions/configure-pages@v5',
-        'actions/upload-pages-artifact@v4',
-        'actions/deploy-pages@v4',
+        'actions/configure-pages@v6',
+        'actions/upload-pages-artifact@v5',
+        'actions/deploy-pages@v5',
       ]);
     });
 
@@ -96,6 +96,11 @@ describe('the GitHub Pages project', () => {
       const places = order.map((text) => readme().indexOf(text));
       expect(places).not.toContain(-1);
       expect(places).toEqual([...places].sort((a, b) => a - b));
+    });
+
+    it('says the Pages source must be set before the push, because the first run fails without it', () => {
+      expect(readme()).toMatch(/before you push/i);
+      expect(readme()).toMatch(/first run fails/i);
     });
 
     it('says what to replace in the commands, and where to run them', () => {
