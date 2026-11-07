@@ -12,7 +12,7 @@ import type { NodeFactory, PortValues, RuntimeNode } from '../types';
 type Params = Record<string, ParamValue>;
 
 /** The connected input if it is a finite number, else the param. */
-const numberOf = (inputs: PortValues, params: Params, key: string): number => {
+export const numberOf = (inputs: PortValues, params: Params, key: string): number => {
   const input = inputs[key];
   return typeof input === 'number' && Number.isFinite(input) ? input : Number(params[key]);
 };
@@ -36,7 +36,7 @@ const sameOutputs = (a: PortValues, b: PortValues) =>
   });
 
 /** A node whose outputs are `compute(inputs)`: on init, every frame and on live param changes, returned when they change. */
-function computed(compute: (inputs: PortValues) => PortValues): RuntimeNode {
+export function computed(compute: (inputs: PortValues) => PortValues): RuntimeNode {
   let inputs: PortValues = {};
   let last: PortValues = {};
   const next = (): PortValues | void => {

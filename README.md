@@ -290,7 +290,8 @@ Key decisions:
    the Settings node becomes a new settings value, the controller sees it and
    calls its tracker's `configure()`.
 9. **Events are values.** An event output carries `{count, time, data}` and a
-   new object each time it fires; consumers detect it by reference. `onFound` /
+   new object each time it fires, though a new object is not always a firing
+   ([Events](docs/plugins.md#events) says how to detect one). `onFound` /
    `onLost` come from the tracker's per-frame `transitions` (`found` on the
    first tracked frame, `lost` once after `lostTimeout`, 200 ms by default);
    a marker's `found` output is the raw per-frame tracking.
@@ -305,7 +306,8 @@ Key decisions:
 
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
-use generic namespaces (`source.*`, `filter.*`, `scene.*`, `output.*`).
+use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
+`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
@@ -413,6 +415,14 @@ Planned split once the format stabilises (npm workspaces):
 | `math.time` | ✅ ⚡ | → seconds since start (× speed) |
 | `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
 | `color.split` | ✅ | color → r, g, b, a |
+| `logic.and` / `logic.or` | ✅ | a, b (boolean) → value |
+| `logic.not` | ✅ | value → value |
+| `logic.toggle` | ✅ | trigger, reset? (event) → value (flips on trigger; *initial*) |
+| `logic.timer` | ✅ ⚡ | start, cancel? (event), duration? → onDone, running (*duration* in s, *repeat*) |
+| `logic.compare` | ✅ ⚡ | a?, b? → value (`==`, `!=`, `<`, `<=`, `>`, `>=`, with a tolerance for `==` and `!=`) |
+| `logic.edge` | ✅ | value → onRise, onFall |
+| `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
+| `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
