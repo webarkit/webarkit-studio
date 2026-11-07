@@ -24,8 +24,6 @@ import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { CreateTorusKnot } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
-// Registers scene.beginDirectAnimation and the animatables that an animation group runs on.
-import '@babylonjs/core/Animations/animatable';
 import {
   assertOwned,
   gltfClipNames,

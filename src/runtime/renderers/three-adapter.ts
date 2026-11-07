@@ -204,11 +204,10 @@ function createThreeScene(
     stopAnimation(o) {
       const model = modelClips.get(obj(o));
       if (!model?.current) return;
-      // A stopped action would leave the node where it is, or at its bind pose: this one holds the first frame.
+      // A stopped action would leave the node at its bind pose: this one holds the first frame, from the next render().
       const { action } = model.current;
       action.reset().play();
       action.paused = true;
-      model.mixer.update(0);
       model.current.stopped = true;
     },
     animationState(o) {
