@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { exportApp, nodeStatus, openStudio, run, startupDone } from './helpers';
+import { exportApp, nodeStatus, openStudio, pickDemo, run, startupDone } from './helpers';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 const V4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
@@ -103,7 +103,11 @@ for (const [name, graph, upgraded] of [
     if (upgraded) await expect(log).toContainText('↑ upgraded from v4 to v5');
     await expect(log).not.toContainText('could not be opened');
     expect(await page.evaluate((key) => localStorage.getItem(key), SET_ASIDE_KEY)).toBeNull();
-    await expect.poll(async () => (await saved(page))?.name).toBe('My unfinished work');
+    // Written back whole, and at the current version.
+    const back = await saved(page);
+    expect(back).toMatchObject({ name: 'My unfinished work', version: 5 });
+    expect(back.nodes).toHaveLength(graph.nodes.length);
+    expect(back.edges).toHaveLength(unfinished.edges.length);
 
     await page.click('#btn-run');
     await expect(log).toContainText('is not connected');
@@ -114,6 +118,37 @@ for (const [name, graph, upgraded] of [
     await expect(log).toContainText(/export failed[^]*is not connected/);
   });
 }
+
+test('a load never autosaves part of a graph: a reload during one must not reopen a piece of it', async ({ page }) => {
+  await freshStudio(page);
+  const demo = JSON.parse(readFileSync('public/graphs/pinball-babylon.json', 'utf8')) as typeof V5;
+  // Records the size of every autosave, from before the page's own code runs.
+  await page.addInitScript((key) => {
+    const writes: Array<[number, number]> = [];
+    (window as unknown as { writes: typeof writes }).writes = writes;
+    const { setItem } = Storage.prototype;
+    Storage.prototype.setItem = function (name: string, value: string) {
+      if (name === key) {
+        const { nodes, edges } = JSON.parse(value);
+        writes.push([nodes.length, edges.length]);
+      }
+      return setItem.call(this, name, value);
+    };
+  }, AUTOSAVE_KEY);
+  const writes = () => page.evaluate(() => (window as unknown as { writes: Array<[number, number]> }).writes);
+
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(V5)] as const);
+  await page.reload();
+  await startupDone(page);
+  await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
+  expect(await writes()).toEqual([[V5.nodes.length, V5.edges.length]]);
+
+  await pickDemo(page, 'pinball-babylon');
+  expect(await writes()).toEqual([
+    [V5.nodes.length, V5.edges.length],
+    [demo.nodes.length, demo.edges.length],
+  ]);
+});
 
 test('a graph left unfinished in the editor reopens after a reload', async ({ page }) => {
   await freshStudio(page);
