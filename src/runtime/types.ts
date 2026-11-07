@@ -33,8 +33,8 @@ export interface MarkerInfoValue {
   heightMM: number;
 }
 /**
- * event: a new object every time the event fires, so consumers detect it by
- * reference. `count` = times fired since start.
+ * event: a new object every time the event fires, but a new object is not always a firing: see
+ * docs/plugins.md, "Events". `count` = times fired since start; `time` = Date.now() when it fired.
  */
 export interface EventValue {
   count: number;

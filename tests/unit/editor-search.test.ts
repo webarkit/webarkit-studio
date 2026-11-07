@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
-import { searchNodes } from '../../src/editor/node-search';
+import { CATEGORY_ORDER, searchNodes } from '../../src/editor/node-search';
 
 const defs = Object.values(NODE_CATALOG);
 const types = (query: string) => searchNodes(query, defs).map((d) => d.type);
 
 describe('node search', () => {
+  it('orders every category of the catalog: the palette only shows those it lists', () => {
+    for (const def of defs) expect(CATEGORY_ORDER).toContain(def.category);
+  });
+
   it('lists every node, grouped by category, for an empty query', () => {
     const all = types('  ');
     expect(all).toHaveLength(defs.length);

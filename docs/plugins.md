@@ -32,9 +32,9 @@ When the plugin is installed, the studio checks it (`validatePlugin`, `src/core/
 and refuses it with the list of problems if:
 
 - `id` is not a plain identifier (letters and digits), is one of the built-in namespaces
-  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `debug`), is
-  `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT is taken by the
-  bundled plugin);
+  (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `logic`,
+  `action`, `debug`), is `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT
+  is taken by the bundled plugin);
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
 - a node type or socket id does not start with `<id>.`, or is defined twice;
 - a node has no factory, or a factory has no node;
@@ -106,6 +106,80 @@ of its own, `<id>.<name>`, so it cannot be wired into another tracker.
 Two connections are possible only between equal socket types (or into `any`). Units and spaces
 are the studio's: marker space in millimetres, marker on the XY plane with +Z up, column-major
 matrices, the camera looking down −Z.
+
+## Events
+
+An `event` socket carries an `EventValue`: `{ count, time, data? }`.
+
+- **`count`** is how many times this event has fired since the graph started.
+- **`time`** is `Date.now()` when it fired, in epoch milliseconds. `FrameInfo.time` is
+  `performance.now()`, a different clock: never compare the two.
+- **`data`** is whatever the producer attaches, or nothing. For a tracker's `onFound` and `onLost`, it is
+  `{ index, name }`, the marker that changed.
+
+**Before the first firing,** an event is a real object, `{ count: 0, time: 0 }`, not `undefined`. An input
+can still be `undefined`: it is unwired, or Select Marker has no such marker.
+
+**A new object is not always a firing.** Each firing is a new object, but changing Select Marker's `marker`
+while the graph runs hands over the other marker's event, a different object with its own `count` and
+`time`. The other marker may have fired later than this one, or exactly once more, so comparing `count` or
+`time` with the last event seen fires falsely. What tells them apart is that a real firing happened after
+your node last looked.
+
+**Several firings can arrive in one frame.** A tracker that finds two markers fires its `onFound` twice in one
+result, and `count` jumps by 2. If your node counts firings, use the difference in `count`. The logic nodes
+react once per frame, however many there were: a Toggle flips once.
+
+### Consuming an event
+
+Look once at init, whose value is the baseline, and once every frame, even in a frame where you do not
+need the answer. A plugin cannot import the studio's code, so it keeps its own copy of this:
+
+```ts
+import type { EventValue, NodeFactory } from '@webarkit/studio-plugin-api';
+
+/** Did this input fire since the last call? The first call is the baseline. */
+function eventWatcher() {
+  let seen: unknown;
+  let lastLook: number | null = null;
+  return (value: unknown): boolean => {
+    const since = lastLook;
+    const previous = seen;
+    lastLook = Date.now();
+    seen = value;
+    const event = value as EventValue | null | undefined;
+    return since !== null && value !== previous && typeof event?.count === 'number' && event.count > 0 && event.time >= since;
+  };
+}
+
+const myNode: NodeFactory = () => {
+  const trigger = eventWatcher();
+  return {
+    init: (inputs) => void trigger(inputs.trigger),
+    update(inputs) {
+      if (trigger(inputs.trigger)) {
+        const { data } = inputs.trigger as EventValue;
+        // ... react to it, once
+      }
+    },
+  };
+};
+```
+
+So the value seen at init does not fire, whatever its `count`, and neither do `count: 0`, `undefined`
+or the marker switch. Nodes run in topological order, so a chain of nodes reacts within one frame.
+
+### Producing an event
+
+Start from `{ count: 0, time: 0 }`, and output a new object for each firing:
+
+```ts
+const fire = (previous: EventValue, data?: unknown): EventValue => ({ count: previous.count + 1, time: Date.now(), data });
+```
+
+**Stamp `time` with `Date.now()` on the main thread, when the object becomes visible to the graph,** not when
+something happened in a worker. Consumers rely on this: an event stamped before their last look does not
+fire. Between firings, keep outputting the same object.
 
 ## Imports
 

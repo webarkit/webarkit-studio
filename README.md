@@ -305,7 +305,8 @@ Key decisions:
 
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
-use generic namespaces (`source.*`, `filter.*`, `scene.*`, `output.*`).
+use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
+`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
@@ -413,6 +414,14 @@ Planned split once the format stabilises (npm workspaces):
 | `math.time` | ✅ ⚡ | → seconds since start (× speed) |
 | `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
 | `color.split` | ✅ | color → r, g, b, a |
+| `logic.and` / `logic.or` | ✅ | a, b (boolean) → value |
+| `logic.not` | ✅ | value → value |
+| `logic.toggle` | ✅ | trigger, reset? (event) → value (flips on trigger; *initial*) |
+| `logic.timer` | ✅ ⚡ | start, cancel? (event), duration? → onDone, running (*duration* in s, *repeat*) |
+| `logic.compare` | ✅ ⚡ | a?, b? → value (`==`, `!=`, `<`, `<=`, `>`, `>=`, with a tolerance for `==` and `!=`) |
+| `logic.edge` | ✅ | value → onRise, onFall |
+| `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
+| `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
