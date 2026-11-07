@@ -8,7 +8,7 @@ import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument } from '../core/graph';
-import { loadGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
+import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
 import { isProjectFile, unpackProject } from '../export/project';
@@ -128,9 +128,9 @@ async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
 }
 
 /** False if the document was refused. A load that a newer one replaced was not refused: it is true. */
-async function load(doc: unknown, ticket = loads.begin()): Promise<boolean> {
+async function load(doc: unknown, ticket = loads.begin(), check = loadGraphDocument): Promise<boolean> {
   try {
-    const loaded = loadGraphDocument(doc);
+    const loaded = check(doc);
     await loads.run(ticket, () => show(loaded));
     return true;
   } catch (err) {
@@ -286,10 +286,11 @@ try {
 } catch {
   restored = null;
 }
-// An older autosave upgrades on load. The demo opens otherwise and autosaves over it, so one that
-// held a graph the studio could not open (refused, unfinished, corrupt) is kept for its owner.
+// An older autosave upgrades on load, and an unfinished one opens: Run and export report what it lacks. The demo
+// opens otherwise and autosaves over it, so one that held a graph the studio could not open (refused, corrupt) is
+// kept for its owner.
 const empty = Array.isArray(restored?.nodes) && restored.nodes.length === 0;
-if (!(restored?.nodes?.length && (await load(restored, startup)))) {
+if (!(restored?.nodes?.length && (await load(restored, startup, loadUnfinishedGraphDocument)))) {
   if (raw && !empty) {
     try {
       localStorage.setItem(SET_ASIDE_KEY, raw);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { GRAPH_VERSION, GraphValidationError, validateGraph } from '../../src/core/graph';
-import { loadGraphDocument, migrateGraph, MIGRATIONS, type GraphMigration, type RawGraph } from '../../src/core/migrations';
+import { loadGraphDocument, loadUnfinishedGraphDocument, migrateGraph, MIGRATIONS, type GraphMigration, type RawGraph } from '../../src/core/migrations';
 import { LOADED_PLUGINS } from '../../src/core/plugins';
 import type { NodeDefinition } from '../../src/nodes/catalog';
 import { checkGraph } from '../../src/mcp/tools/graph-validate';
@@ -346,6 +346,81 @@ describe('loadGraphDocument', () => {
 
   it('leaves validateGraph strict: it still takes the current version only', () => {
     expect(failure(() => validateGraph(v4)).problems.join()).toMatch(/unsupported version 4/);
+  });
+});
+
+describe('loadUnfinishedGraphDocument', () => {
+  const v4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8'));
+  const v5 = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8'));
+  /** The graph with the wire into the camera's consumer gone: a required input is left unconnected. */
+  const unfinished = (graph: typeof v5) => ({ ...structuredClone(graph), edges: graph.edges.slice(1) });
+
+  it.each([
+    ['v4', v4],
+    ['v5', v5],
+  ])('takes an unfinished %s graph, whole, which loadGraphDocument refuses', (_name, graph) => {
+    const open = unfinished(graph);
+    expect(failure(() => loadGraphDocument(open)).problems.join()).toMatch(/is not connected/);
+    const { doc: out } = loadUnfinishedGraphDocument(open);
+    expect(out.version).toBe(GRAPH_VERSION);
+    expect(out.nodes).toHaveLength(graph.nodes.length);
+    expect(out.edges).toHaveLength(open.edges.length);
+  });
+
+  it('says what it upgraded', () => {
+    expect(loadUnfinishedGraphDocument(unfinished(v4))).toMatchObject({ from: 4, applied: [{ from: 4, to: 5 }] });
+  });
+
+  it('leaves validateGraph strict by default', () => {
+    expect(failure(() => validateGraph(unfinished(v5))).problems.join()).toMatch(/is not connected/);
+  });
+
+  describe('still refuses, with the required input left out of what it reports', () => {
+    const broken = (change: (graph: typeof v5) => void) => {
+      const graph = unfinished(v5);
+      change(graph);
+      return failure(() => loadUnfinishedGraphDocument(graph)).problems.join('\n');
+    };
+
+    it.each([
+      ['an unknown node type', (g: typeof v5) => void (g.nodes[0].type = 'nowhere.node'), /unknown type "nowhere\.node"/],
+      ['an output that does not exist', (g: typeof v5) => void (g.edges[0].from.port = 'nope'), /has no output "nope"/],
+      ['an input that does not exist', (g: typeof v5) => void (g.edges[0].to.port = 'nope'), /has no input "nope"/],
+      ['a wire to a missing node', (g: typeof v5) => void (g.edges[0].to.node = 'nobody'), /references a missing node/],
+      ['two nodes with one id', (g: typeof v5) => void (g.nodes[1].id = g.nodes[0].id), /duplicate node id/],
+      ['a plugin that is not loaded', (g: typeof v5) => void g.plugins.push({ id: 'nowhere', version: '1.0.0' }), /requires plugin nowhere/],
+      ['a bad vector param', (g: typeof v5) => void (g.nodes.find((n: { type: string }) => n.type === 'scene.primitive').params.position = [1]), /must be 3 numbers/],
+    ])('%s', (_name, change, message) => {
+      const problems = broken(change);
+      expect(problems).toMatch(message);
+      expect(problems).not.toMatch(/is not connected/);
+    });
+
+    it('a cycle', () => {
+      const graph = {
+        format: 'webarkit-studio/graph',
+        version: GRAPH_VERSION,
+        nodes: [
+          { id: 'a', type: 'logic.not', params: {} },
+          { id: 'b', type: 'logic.not', params: {} },
+        ],
+        edges: [
+          { id: 'e1', from: { node: 'a', port: 'value' }, to: { node: 'b', port: 'value' } },
+          { id: 'e2', from: { node: 'b', port: 'value' }, to: { node: 'a', port: 'value' } },
+        ],
+      };
+      expect(failure(() => loadUnfinishedGraphDocument(graph)).problems).toEqual(['graph contains a cycle']);
+    });
+
+    it('a version it cannot read, and what is not a graph', () => {
+      expect(failure(() => loadUnfinishedGraphDocument(doc(3))).problems[0]).toMatch(/version 3/);
+      expect(failure(() => loadUnfinishedGraphDocument(doc(99))).problems[0]).toMatch(/newer studio/);
+      expect(failure(() => loadUnfinishedGraphDocument(null)).problems).toEqual(['document is not an object']);
+    });
+  });
+
+  it('an unfinished graph does not run: the runtime keeps the check', () => {
+    expect(() => new GraphRuntime(unfinished(v5), { stage: {} as HTMLElement })).toThrow(/is not connected/);
   });
 });
 

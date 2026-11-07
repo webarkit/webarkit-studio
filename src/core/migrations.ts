@@ -187,6 +187,15 @@ export function loadGraphDocument(doc: unknown, catalog?: Parameters<typeof vali
   return { ...result, doc: validateGraph(result.doc, catalog, loaded) };
 }
 
+/**
+ * An autosave, which is work in progress: as loadGraphDocument(), but its required inputs may be
+ * unconnected. Run and export still refuse such a graph, through loadGraphDocument().
+ */
+export function loadUnfinishedGraphDocument(doc: unknown): MigrationResult<GraphDocument> {
+  const result = migrateGraph(doc);
+  return { ...result, doc: validateGraph(result.doc, undefined, undefined, { unfinished: true }) };
+}
+
 /** The log line for an upgrade, or null if there was none. */
 export function upgradeNote({ from, applied }: MigrationResult<unknown>): string | null {
   return applied.length ? `↑ upgraded from v${from} to v${applied.at(-1)!.to}` : null;
