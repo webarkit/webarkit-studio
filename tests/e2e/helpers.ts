@@ -7,16 +7,43 @@ import { unzipSync } from 'fflate';
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
-/** Loads a demo graph in the studio (fresh autosave) and waits until every node and wire is drawn. */
-export async function loadDemo(page: Page, demo: string) {
-  const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { nodes: unknown[]; edges: unknown[] };
+/** Waits until the studio has finished opening what it opens at startup: an autosave, or the demo. */
+export async function startupDone(page: Page) {
+  await expect(page.locator('body[data-startup="done"]')).toBeAttached({ timeout: 30_000 });
+}
+
+/**
+ * Opens the studio with no autosave. It waits for the startup load both times:
+ * a load still running would autosave again after the clear.
+ */
+export async function openStudio(page: Page) {
   await page.goto('/index.html');
+  await startupDone(page);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  await startupDone(page);
+}
+
+/**
+ * Picks a demo and waits for that load to have applied (the studio counts them on the body: the demo
+ * may be the one already shown), then until every node and wire is drawn. Several demos have the same
+ * counts, so it also checks the graph's name, as the studio saves it.
+ */
+export async function pickDemo(page: Page, demo: string) {
+  const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
+  const loads = Number(await page.locator('body').getAttribute('data-loads'));
   await page.selectOption('#demo-select', demo);
   await page.click('#btn-demo');
+  await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
   await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
   await expect(page.locator('svg.connection path')).toHaveCount(doc.edges.length);
+}
+
+/** Loads a demo graph in a studio with no autosave. */
+export async function loadDemo(page: Page, demo: string) {
+  await openStudio(page);
+  await pickDemo(page, demo);
 }
 
 /** Runs the preview and waits until the whole graph is initialised. */

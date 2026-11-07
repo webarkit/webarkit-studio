@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { loadDemo, nodeStatus, run } from './helpers';
+import { loadDemo, nodeStatus, run, startupDone } from './helpers';
 
 test.describe('studio', () => {
   test('loads a demo and rejects incompatible connections', async ({ page }) => {
@@ -487,7 +487,7 @@ test.describe('tracking traces', () => {
     doc.edges.push({ id: 'etrace', from: { node: 'controller', port: 'trace' }, to: { node: 'recorder', port: 'trace' } });
     await page.goto('/index.html');
     // Wait for the startup graph: its autosave would otherwise overwrite this one.
-    await expect(page.locator('.studio-node').first()).toBeVisible();
+    await startupDone(page);
     await page.evaluate((graph) => localStorage.setItem('webarkit-studio:autosave', graph), JSON.stringify(doc));
     await page.reload();
     await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);

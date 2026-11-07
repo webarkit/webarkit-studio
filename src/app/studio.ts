@@ -15,6 +15,7 @@ import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
 import { parseAssetRef } from '../core/assets';
+import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
 
@@ -112,17 +113,25 @@ paletteSearch.oninput = () => {
 };
 
 // ----------------------------------------------------------- graph I/O
+const loads = createLoadQueue();
+
+let appliedLoads = 0;
+
 /** Shows a document that loadGraphDocument() took. The file it came from is not touched: saves are of the current version. */
 async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
   await studio.load(loaded.doc);
   await studio.zoomToFit();
   const upgraded = upgradeNote(loaded);
   if (upgraded) log(upgraded);
+  // What the end-to-end tests wait for: a load's graph can look just like the one before it.
+  document.body.dataset.loads = String(++appliedLoads);
 }
 
-async function load(doc: unknown): Promise<boolean> {
+/** False if the document was refused. A load that a newer one replaced was not refused: it is true. */
+async function load(doc: unknown, ticket = loads.begin()): Promise<boolean> {
   try {
-    await show(loadGraphDocument(doc));
+    const loaded = loadGraphDocument(doc);
+    await loads.run(ticket, () => show(loaded));
     return true;
   } catch (err) {
     log(`✗ ${(err as Error).message}`);
@@ -130,16 +139,24 @@ async function load(doc: unknown): Promise<boolean> {
   }
 }
 
-async function loadDemo(name = demoSelect.value) {
-  const res = await fetch(`graphs/${name}.json`);
-  await load(await res.json());
+async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
+  let doc: unknown;
+  try {
+    const res = await fetch(`graphs/${name}.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    doc = await res.json();
+  } catch (err) {
+    log(`✗ demo ${name}: ${(err as Error).message}`);
+    return;
+  }
+  if (ticket.current()) await load(doc, ticket);
 }
 
 const demoSelect = $<HTMLSelectElement>('demo-select');
 $('btn-demo').onclick = () => void loadDemo();
 $('btn-new').onclick = () => {
   // An empty graph is not runnable, so it is loaded without validation.
-  void studio.load(emptyGraph());
+  void loads.run(loads.begin(), () => studio.load(emptyGraph()));
 };
 // ---------------------------------------------------------------- export
 const exportMenu = $<HTMLDetailsElement>('export-menu');
@@ -171,17 +188,21 @@ fileInput.onchange = async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
   if (!file) return;
+  const ticket = loads.begin();
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (isProjectFile(bytes)) {
       // A project brings its assets: they replace the current ones.
       const project = await unpackProject(bytes);
       const loaded = loadGraphDocument(project.graph); // an unusable project must not replace the current assets
-      await assetStore.replaceAll(project.assets);
-      log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
-      await show(loaded);
+      // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
+      await loads.run(ticket, async () => {
+        await assetStore.replaceAll(project.assets);
+        log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+        await show(loaded);
+      });
     } else {
-      await load(JSON.parse(new TextDecoder().decode(bytes)));
+      await load(JSON.parse(new TextDecoder().decode(bytes)), ticket);
     }
   } catch (err) {
     log(`✗ import failed: ${(err as Error).message}`);
@@ -255,6 +276,8 @@ stopBtn.onclick = () => {
 };
 
 // ------------------------------------------------------------- startup
+// One ticket for the autosave and the demo it may fall back on: anything the user opens meanwhile wins over both.
+const startup = loads.begin();
 let raw: string | null = null;
 let restored: Partial<GraphDocument> | null = null;
 try {
@@ -266,7 +289,7 @@ try {
 // An older autosave upgrades on load. The demo opens otherwise and autosaves over it, so one that
 // held a graph the studio could not open (refused, unfinished, corrupt) is kept for its owner.
 const empty = Array.isArray(restored?.nodes) && restored.nodes.length === 0;
-if (!(restored?.nodes?.length && (await load(restored)))) {
+if (!(restored?.nodes?.length && (await load(restored, startup)))) {
   if (raw && !empty) {
     try {
       localStorage.setItem(SET_ASIDE_KEY, raw);
@@ -275,5 +298,7 @@ if (!(restored?.nodes?.length && (await load(restored)))) {
       log('⚠ the last autosave could not be opened, or kept');
     }
   }
-  await loadDemo();
+  await loadDemo(startup);
 }
+// The startup load is over, or was replaced: what the end-to-end tests wait for before they use the page.
+document.body.dataset.startup = 'done';
