@@ -80,4 +80,14 @@ const project: Exporter = {
   },
 };
 
-export const EXPORTERS: Exporter[] = [graphJson, project, appBundle];
+const pagesProject: Exporter = {
+  id: 'pages-project',
+  label: 'GitHub Pages project (.zip)',
+  description: 'The standalone app and a workflow that deploys it: push it to a repository of your own, with no token. Its README.md has the steps.',
+  async run(doc, ctx) {
+    const { exportPagesProject } = await import('./pages-project');
+    return exportPagesProject(doc, ctx);
+  },
+};
+
+export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, pagesProject];

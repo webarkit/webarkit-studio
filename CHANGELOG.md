@@ -33,6 +33,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - Action nodes (#60), in their own palette category: Play Animation, Set Visible, Play Sound and Open URL
   make a graph act on an event, in the preview and in exported apps. A new demo, "pinball · animated
   model", plays a clip on `onFound` and pauses it on `onLost`. Sounds can be uploaded as assets.
+- **Export → GitHub Pages project (.zip)** (#62): the standalone app with a GitHub Actions workflow and the
+  steps to publish it. You push it to a repository of your own: the studio holds no credential and makes
+  no request to GitHub. The standalone app now has a `.nojekyll`, which keeps paths starting with `_` on a
+  Pages site built from a branch.
 
 ### Changed
 

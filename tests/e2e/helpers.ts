@@ -85,9 +85,12 @@ export async function serveDir(root: string): Promise<{ url: string; close: () =
 }
 
 /** Exports the current graph as a standalone app and unzips it. Returns the app folder. */
-export async function exportApp(page: Page): Promise<{ dir: string; files: string[] }> {
+export const exportApp = (page: Page) => exportZip(page, 'app-bundle');
+
+/** Exports the current graph with this exporter and unzips the result. Returns the folder in the zip. */
+export async function exportZip(page: Page, exporter: string): Promise<{ dir: string; files: string[] }> {
   await page.click('#export-menu summary');
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-exporter=app-bundle]')]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click(`[data-exporter=${exporter}]`)]);
   const entries = unzipSync(new Uint8Array(readFileSync(await download.path())));
   const out = mkdtempSync(join(tmpdir(), 'webar-export-'));
   for (const [name, data] of Object.entries(entries)) {

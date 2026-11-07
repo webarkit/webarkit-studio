@@ -139,6 +139,7 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | Graph (.json) | the node graph only; re-import it in the studio |
 | Project (.zip) | the graph and its uploaded assets; open it with **Import…** |
 | Standalone app (.zip) | player + graph + assets, runs on any static web server |
+| GitHub Pages project (.zip) | the standalone app in `site/`, a GitHub Actions workflow that deploys it, and a README with the steps |
 | Source code (.zip) | planned: readable code generated from the graph ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
 
 The standalone app is the prebuilt player (`npm run build:player`, run
@@ -164,6 +165,26 @@ Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
 404 for missing files (see Known issues).
 Camera access requires a secure context: `localhost` works; on a phone use
 HTTPS or `adb reverse tcp:5173 tcp:5173`.
+
+### GitHub Pages
+
+The GitHub Pages project publishes the app with no credential: the export
+carries a workflow, and you push it to a repository of your own. The studio
+makes no request to GitHub.
+
+```
+pinball-nft-three-js-pages/
+  site/                                the standalone app
+  .github/workflows/deploy-pages.yml   deploys site/ on each push
+  README.md                            the steps
+  .gitattributes                       commits every file byte for byte
+```
+
+Create a public repository, set Settings → Pages → Source to **GitHub
+Actions**, and push. The URL Pages gives is HTTPS, which a camera on a phone
+needs. The deploy leaves out names that start with a dot, so the export refuses
+a file named that way, by name. To publish the plain standalone app from a branch
+instead, it has a `.nojekyll`, without which Jekyll would drop `data/_ext/`.
 
 ## MCP server
 
@@ -365,7 +386,7 @@ src/
     filters/   the pose filter slot's config (applied by the tracker)
     renderers/ RendererAdapter + Three.js / Babylon.js adapters
   app/         studio.ts (editor + live preview), player.ts (standalone)
-  export/      exporters (graph JSON, standalone app bundle)
+  export/      exporters (graph JSON, project, standalone app bundle, GitHub Pages project)
 plugins/
   jsartoolkit-nft/  the jsartoolkitNFT plugin: catalog, factories, NftSession (the graph mapped onto
                     the tracker facade, shared by the browser and the tests), the tracker's

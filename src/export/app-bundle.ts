@@ -9,6 +9,7 @@
  *   <app>/data/…         the data files its nodes read
  *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
+ *   <app>/.nojekyll      for a GitHub Pages site built from a branch
  */
 import { zipSync, strToU8 } from 'fflate';
 import type { GraphDocument, GraphNode } from '../core/graph';
@@ -239,7 +240,8 @@ export async function collectPluginFiles(
   return files;
 }
 
-export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
+/** The app's files as bundle path → bytes, for the exports that package it. */
+export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): Promise<{ files: Record<string, Uint8Array>; doc: GraphDocument }> {
   const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
   const doc = loaded.doc;
   const upgraded = upgradeNote(loaded);
@@ -276,7 +278,13 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
   );
   files['graph.json'] = strToU8(JSON.stringify(doc, null, 2));
   files['README.txt'] = strToU8(readme(doc, title));
+  // A Pages site built from a branch runs Jekyll, which drops paths starting with "_", such as data/_ext/.
+  files['.nojekyll'] = new Uint8Array(0);
+  return { files, doc };
+}
 
+export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
+  const { files, doc } = await buildAppFiles(input, ctx);
   const slug = slugify(doc.name);
   const zipped = zipSync(Object.fromEntries(Object.entries(files).map(([p, data]) => [`${slug}/${p}`, data])), { level: 6 });
   const mb = (zipped.byteLength / 1024 / 1024).toFixed(1);
@@ -311,5 +319,6 @@ index.html   player page (reads graph.json)
 graph.json   the node graph; import it in WebARKit Studio to edit it
 assets/      player, 3D engine and tracker code
 data/        the data files the graph's nodes read
+.nojekyll    keeps paths starting with "_" if you publish this folder on GitHub Pages from a branch
 `;
 }
