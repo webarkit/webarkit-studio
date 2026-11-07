@@ -115,7 +115,7 @@ An `event` socket carries an `EventValue`: `{ count, time, data? }`.
 - **`time`** is `Date.now()` when it fired, in epoch milliseconds. `FrameInfo.time` is
   `performance.now()`, a different clock: never compare the two.
 - **`data`** is whatever the producer attaches, or nothing. For a tracker's `onFound` and `onLost`, it is
-  `{ index, name }`, the marker that changed.
+  `{ index, name }`, the marker that changed. With several firings in one frame, it is the last one's.
 
 **Before the first firing,** an event is a real object, `{ count: 0, time: 0 }`, not `undefined`. An input
 can still be `undefined`: it is unwired, or Select Marker has no such marker.
@@ -166,8 +166,15 @@ const myNode: NodeFactory = () => {
 };
 ```
 
-So the value seen at init does not fire, whatever its `count`, and neither do `count: 0`, `undefined`
-or the marker switch. Nodes run in topological order, so a chain of nodes reacts within one frame.
+So the value seen at init does not fire, whatever its `count`, and neither do `count: 0` or `undefined`.
+Nodes run in topological order, so a chain of nodes reacts within one frame.
+
+The marker switch does not fire either, with one limit: if the other marker fired since your node last
+looked, or in that same millisecond, about one frame's time, the switch counts as that firing. A clock
+stepped backwards can likewise lose a firing, for about one frame.
+
+This is about events. A boolean such as Select Marker's `found` does change with the switch, when the two
+markers differ, so an Edge on it fires.
 
 ### Producing an event
 

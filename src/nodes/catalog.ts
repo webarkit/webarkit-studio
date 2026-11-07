@@ -537,8 +537,8 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'logic',
     provider: 'core',
     description:
-      'A boolean from two numbers: A op B. An input that is not a finite number leaves its param, so give the param a value that is safe for that case. ' +
-      'Tolerance applies to == and != only, for measured values. False when an operand has no finite number at all.',
+      'A boolean from two numbers: A op B. An input with no finite number falls back to its param, so set the param, before wiring, to a value that is safe for ' +
+      'that case. Tolerance applies to == and != only, for measured values. False when an operand has no finite number at all.',
     inputs: { a: { type: 'number', label: 'A', optional: true }, b: { type: 'number', label: 'B', optional: true } },
     outputs: { value: { type: 'boolean', label: 'Value' } },
     params: {

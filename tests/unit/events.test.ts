@@ -131,14 +131,10 @@ describe('eventWatcher', () => {
     expect(watch(at(3, Date.now()))).toBe(true);
   });
 
-  it('fires in a chain within one frame: an event fired by an upstream node this frame', () => {
-    const upstream = eventWatcher();
-    const downstream = eventWatcher();
-    upstream(NOT_FIRED);
-    downstream(NOT_FIRED);
+  it('fires on an event stamped in this frame, after its own last look in the previous one', () => {
+    const watch = eventWatcher();
+    watch(NOT_FIRED);
     vi.advanceTimersByTime(16);
-    const first = fired(NOT_FIRED);
-    expect(upstream(first)).toBe(true);
-    expect(downstream(fired(first))).toBe(true);
+    expect(watch(fired(NOT_FIRED))).toBe(true);
   });
 });

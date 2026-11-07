@@ -20,7 +20,8 @@ const isEvent = (value: unknown): value is EventValue =>
  * A new reference alone is not a firing: Select Marker hands over another marker's event when its
  * `marker` changes live. Neither `count` nor `time` compared with the last event seen tells them apart,
  * as the other marker may have fired later, or once more. What does is that a real firing happened after
- * the last look. Same millisecond counts: a tracker's result can arrive right after a frame.
+ * the last look. Same millisecond counts: a tracker's result can arrive right after a frame. So a switch
+ * to a marker that fired within about the last frame counts as that firing.
  *
  * Answers once for several firings since the last look: `count` has jumped.
  */

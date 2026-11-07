@@ -290,7 +290,8 @@ Key decisions:
    the Settings node becomes a new settings value, the controller sees it and
    calls its tracker's `configure()`.
 9. **Events are values.** An event output carries `{count, time, data}` and a
-   new object each time it fires; consumers detect it by reference. `onFound` /
+   new object each time it fires, though a new object is not always a firing
+   ([Events](docs/plugins.md#events) says how to detect one). `onFound` /
    `onLost` come from the tracker's per-frame `transitions` (`found` on the
    first tracked frame, `lost` once after `lostTimeout`, 200 ms by default);
    a marker's `found` output is the raw per-frame tracking.

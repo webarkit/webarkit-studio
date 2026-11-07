@@ -124,11 +124,12 @@ for (const engine of ['three', 'babylon']) {
         }),
       );
       const toggle = added(page, 1);
-      // Both markers tracked: well inside the 4 s, far from the next onFound of either.
-      await expect(toggle).toHaveText('true', NEXT_FOUND);
+      // Both markers tracked: well inside the 4 s, far from the next onFound of either. Both have fired.
       const markers = added(page, 0);
       await expect(markers).toContainText(/0 pinball\s+● tracked/, NEXT_FOUND);
-      await expect(markers).toContainText(/1 kuva\s+● tracked/);
+      await expect(markers).toContainText(/1 kuva\s+● tracked/, NEXT_FOUND);
+      await page.waitForTimeout(300); // the Inspector reports every 200 ms
+      const before = await toggle.innerText();
 
       const marker = page.locator('.studio-node', { has: page.locator('.title', { hasText: 'Select Marker' }) }).nth(1).locator('.param:has-text("Marker") input');
       await marker.fill('pinball');
@@ -137,10 +138,10 @@ for (const engine of ['three', 'babylon']) {
       // A firing would flip it. Read it once: toHaveText retries, and the next real onFound would flip it back
       // within its timeout. That hid the bug when the watcher treated any new reference as a firing.
       await page.waitForTimeout(1000);
-      expect(await toggle.innerText()).toBe('true');
+      expect(await toggle.innerText()).toBe(before);
       expect((await page.locator('#log').innerText()).match(/init source\.camera/g)).toHaveLength(1);
 
-      await expect(toggle).toHaveText('false', NEXT_FOUND);
+      await expect(toggle).toHaveText(before === 'true' ? 'false' : 'true', NEXT_FOUND);
     });
   });
 }

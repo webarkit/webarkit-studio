@@ -9,7 +9,8 @@ import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from '
 import { NODE_REGISTRY } from '../../src/runtime/registry';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import type { EventValue, NodeFactory, PortValues, RuntimeContext, TrackedMarkerValue } from '../../src/runtime/types';
-import { validateGraph } from '../../src/core/graph';
+import { GRAPH_VERSION, validateGraph } from '../../src/core/graph';
+import { GraphRuntime } from '../../src/runtime/runtime';
 
 const ctx = { nodeId: 'n', log() {}, report() {} } as unknown as RuntimeContext;
 const FRAME_MS = 16;
@@ -350,7 +351,7 @@ describe('logic.branch', () => {
     expect(n.outputs).toMatchObject({ onTrue: { count: 0 }, onFalse: { count: 1 } });
   });
 
-  it('is usable with condition unwired: the graph validates', () => {
+  it('declares condition optional, so it can be unwired', () => {
     expect(NODE_CATALOG['logic.branch'].inputs.condition.optional).toBe(true);
   });
 
@@ -417,6 +418,33 @@ describe('logic.switch', () => {
 });
 
 describe('chains within one frame', () => {
+  it('on the real runtime, compare → edge → toggle → inspector reacts in one tick', async () => {
+    const reports: string[] = [];
+    const node = (id: string, type: string, params = {}) => ({ id, type, params, position: { x: 0, y: 0 } });
+    const edge = (id: string, from: string, fromPort: string, to: string, toPort: string) => ({ id, from: { node: from, port: fromPort }, to: { node: to, port: toPort } });
+    const runtime = new GraphRuntime(
+      {
+        format: 'webarkit-studio/graph',
+        version: GRAPH_VERSION,
+        name: 'chain',
+        plugins: [],
+        nodes: [node('compare', 'logic.compare', { a: 0, b: 1, op: '>' }), node('edge', 'logic.edge'), node('toggle', 'logic.toggle'), node('show', 'debug.inspector')],
+        edges: [edge('e1', 'compare', 'value', 'edge', 'value'), edge('e2', 'edge', 'onRise', 'toggle', 'trigger'), edge('e3', 'toggle', 'value', 'show', 'value')],
+      },
+      { stage: {} as HTMLElement, frameLoop: false, log() {}, onReport: (_id, text) => reports.push(text) },
+    );
+    await runtime.start();
+    expect(reports).toEqual(['false']);
+    runtime.tick(1000);
+    expect(reports).toEqual(['false']);
+
+    runtime.setParam('compare', 'a', 5);
+    vi.advanceTimersByTime(FRAME_MS);
+    runtime.tick(2000);
+    expect(reports).toEqual(['false', 'true']);
+    runtime.stop();
+  });
+
   it('compare → edge → toggle reacts in the frame the number crosses the threshold', () => {
     const c = harness(compare, { a: 0, b: 300, op: '<', tolerance: 0 }, { a: 500 });
     const e = harness(edge, {}, { value: c.outputs.value });

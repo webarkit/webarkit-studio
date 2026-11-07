@@ -27,8 +27,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   default) plays the model's first clip in a loop. Its log and status list the clips and show the time
   of the one playing. Exported apps play it too.
 - Logic nodes (#59), in their own palette category: And, Or, Not, Toggle, Timer, Compare, Edge, Branch and
-  Switch, to work with booleans and route events. "when the marker is closer than 300 mm" is now Compare
-  → Edge. `docs/plugins.md` documents the event model. A plugin can no longer use the id `logic` or
+  Switch, to work with booleans and route events: Compare → Edge fires an event when a number crosses a
+  threshold. `docs/plugins.md` documents the event model. A plugin can no longer use the id `logic` or
   `action`.
 
 ### Changed
