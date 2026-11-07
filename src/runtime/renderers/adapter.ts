@@ -130,6 +130,7 @@ export interface SceneHandle {
   loadModel(spec: ModelSpec): Promise<SceneObject>;
   createGroup(): SceneObject;
   createLight(spec: LightSpec): SceneObject;
+  /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;
   /** Adds a top-level object (anchor, light…) to the rendered scene. */
   addRoot(object: SceneObject): void;

@@ -30,6 +30,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Switch, to work with booleans and route events: Compare → Edge fires an event when a number crosses a
   threshold. `docs/plugins.md` documents the event model. A plugin can no longer use the id `logic` or
   `action`.
+- Action nodes (#60), in their own palette category: Play Animation, Set Visible, Play Sound and Open URL
+  make a graph act on an event, in the preview and in exported apps. A new demo, "pinball · animated
+  model", plays a clip on `onFound` and pauses it on `onLost`. Sounds can be uploaded as assets.
 
 ### Changed
 

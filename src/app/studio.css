@@ -14,6 +14,7 @@
   --cat-output: #ba68c8;
   --cat-math: #ffcc80;
   --cat-logic: #9fa8da;
+  --cat-action: #ffab91;
   --cat-debug: #bdbdbd;
   color-scheme: dark;
 }
@@ -59,6 +60,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-output { --c: var(--cat-output); }
 .cat-math { --c: var(--cat-math); }
 .cat-logic { --c: var(--cat-logic); }
+.cat-action { --c: var(--cat-action); }
 .cat-debug { --c: var(--cat-debug); }
 
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */

@@ -34,7 +34,8 @@ assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
 `math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
 "pinball · one formula" moves it the same way with a single `math.expression`
-(`40 + 30 * sin(t * 180)`). **⟳ Reload** restarts the preview (Stop + Run),
+(`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
+`onFound` and pauses it on `onLost`. **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -423,6 +424,10 @@ Planned split once the format stabilises (npm workspaces):
 | `logic.edge` | ✅ | value → onRise, onFall |
 | `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
 | `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
+| `action.playAnimation` | ✅ ⚡ | target, play?, pause?, stop? (events) → (a clip of a glTF model; *loop*, *speed*) |
+| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a primitive) |
+| `action.playSound` | ✅ ⚡ | play?, stop? (events) → (a sound file; *volume*, *loop*) |
+| `action.openUrl` | ✅ ⚡ | show?, hide? (events) → (a link on the AR view; http and https only; *label*) |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |

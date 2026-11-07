@@ -319,6 +319,11 @@ for (const engine of ENGINES) {
       within(r!.time, 0.6);
     });
 
+    test('adding an object to a parent or to the scene shows it, unless it was made invisible', async ({ page }) => {
+      const r = await withModel(page, engine, [SPIN], async ({ h }) => h.hiddenAfterAdding());
+      expect(r).toEqual({ hiddenChild: true, hiddenRoot: true, plainChild: false, plainRoot: false, shownAgain: true });
+    });
+
     test('a clip the model does not have is an error that names the clips', async ({ page }) => {
       const message = await withModel(page, engine, [SPIN, WOBBLE], async ({ h }) => h.playThrows('nope'));
       expect(message).toBe('this model has no clip "nope" (clips: spin, wobble)');

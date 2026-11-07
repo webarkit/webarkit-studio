@@ -54,7 +54,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'logic' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'logic' | 'action' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -587,6 +587,84 @@ export const CORE_NODES: NodeDefinition[] = [
       onDefault: { type: 'event', label: 'onDefault' },
     },
     params: { index: { kind: 'number', label: 'Index', default: 0, step: 1, live: true } },
+  },
+
+  // -------------------------------------------------------------- action
+  {
+    type: 'action.playAnimation',
+    label: 'Play Animation',
+    category: 'action',
+    provider: 'core',
+    description:
+      "Plays a clip of a glTF Model. Wire the model to this Target as well as to the anchor's Children. Empty Clip = the first. Pause holds the time, Stop goes back " +
+      "to the clip's first frame; in one frame, Stop wins over Pause, and Pause over Play. Its status shows the clip and its time. Loop and Speed reach a clip that " +
+      'is playing; a paused one takes them at the next Play. A target or clip it cannot play is reported here, and the graph goes on.',
+    inputs: {
+      target: { type: 'sceneObject', label: 'Target' },
+      play: { type: 'event', label: 'Play', optional: true },
+      pause: { type: 'event', label: 'Pause', optional: true },
+      stop: { type: 'event', label: 'Stop', optional: true },
+    },
+    outputs: {},
+    params: {
+      clip: { kind: 'string', label: 'Clip (empty = first)', default: '' },
+      loop: { kind: 'boolean', label: 'Loop', default: true, live: true },
+      speed: { kind: 'number', label: 'Speed', default: 1, min: 0.01, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'action.setVisible',
+    label: 'Set Visible',
+    category: 'action',
+    provider: 'core',
+    description:
+      'Shows or hides a model or a primitive. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
+      'In one frame, Hide wins over Show, and Show over Toggle.',
+    inputs: {
+      target: { type: 'sceneObject', label: 'Target' },
+      show: { type: 'event', label: 'Show', optional: true },
+      hide: { type: 'event', label: 'Hide', optional: true },
+      toggle: { type: 'event', label: 'Toggle', optional: true },
+    },
+    outputs: {},
+    params: { visible: { kind: 'boolean', label: 'Visible at start', default: true } },
+  },
+  {
+    type: 'action.playSound',
+    label: 'Play Sound',
+    category: 'action',
+    provider: 'core',
+    description:
+      "Plays a sound file, one at a time: Play restarts it. In one frame, Stop wins. Browsers allow sound after a tap or a click on the page, which the player's Start " +
+      'button and Run give; if it is still not allowed, the sound is dropped and the log says so.',
+    inputs: {
+      play: { type: 'event', label: 'Play', optional: true },
+      stop: { type: 'event', label: 'Stop', optional: true },
+    },
+    outputs: {},
+    params: {
+      url: { kind: 'string', label: 'Sound URL', default: 'sounds/beep.wav', asset: 'file' },
+      volume: { kind: 'number', label: 'Volume', default: 1, min: 0, max: 1, step: 0.05, live: true },
+      loop: { kind: 'boolean', label: 'Loop', default: false, live: true },
+    },
+  },
+  {
+    type: 'action.openUrl',
+    label: 'Open URL',
+    category: 'action',
+    provider: 'core',
+    description:
+      "Shows a link on the AR view, which the user's tap opens in a new tab: a browser blocks opening one from a tracking event. Only http and https links: anything " +
+      'else fails when the graph starts. A relative link is against the page, and what it points to is not in an exported app. In one frame, Hide wins over Show.',
+    inputs: {
+      show: { type: 'event', label: 'Show', optional: true },
+      hide: { type: 'event', label: 'Hide', optional: true },
+    },
+    outputs: {},
+    params: {
+      url: { kind: 'string', label: 'URL', default: 'https://github.com/webarkit/webarkit-studio' },
+      label: { kind: 'string', label: 'Label', default: 'Open link', live: true },
+    },
   },
 
   // --------------------------------------------------------------- debug
