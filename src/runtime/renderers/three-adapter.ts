@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   assertOwned,
+  checkAnimationSpeed,
   gltfClipNames,
   Y_UP_TO_Z_UP,
   type AnimationOptions,
@@ -60,6 +61,8 @@ function createThreeScene(
   const obj = (o: SceneObject) => (assertOwned(handle, o), o.native as THREE.Object3D);
   const modelClips = new WeakMap<THREE.Object3D, ModelClips>();
   const mixers = new Set<THREE.AnimationMixer>();
+  /** Mixers with a clip started since the last render: it starts at its beginning, not with the time before it existed. */
+  const justStarted = new Set<THREE.AnimationMixer>();
   /** When render() last advanced the mixers; Babylon's scene.render() keeps the same clock, with no limit on a step. */
   let lastRender: number | null = null;
   /** A one-shot clip clamped at its end holds its last frame, paused: that is a clip that has ended. */
@@ -185,13 +188,16 @@ function createThreeScene(
       const model = modelClips.get(obj(o));
       const index = model?.names.indexOf(clip) ?? -1;
       if (!model || index < 0) throw new Error(`this model has no clip "${clip}" (clips: ${model?.names.join(', ') || 'none'})`);
+      checkAnimationSpeed(speed);
       let { current } = model;
       if (!current || current.name !== clip || current.stopped || ended(current)) {
-        current?.action.stop();
+        current?.action.stop(); // nodes only it moved go back to their bind pose
         current = model.current = { name: clip, action: model.mixer.clipAction(model.clips[index]).reset(), stopped: false };
+        justStarted.add(model.mixer);
       }
       const { action } = current;
-      action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+      // A clip with no length cannot loop: the mixer would divide by its duration.
+      action.setLoop(loop && action.getClip().duration > 0 ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
       action.clampWhenFinished = true;
       action.timeScale = speed;
       action.paused = false;
@@ -214,14 +220,15 @@ function createThreeScene(
       const current = modelClips.get(obj(o))?.current;
       if (!current) return null;
       const { action, name, stopped } = current;
-      return { clip: name, time: stopped ? 0 : action.time, playing: !stopped && !action.paused };
+      return { clip: name, time: stopped ? 0 : action.time, playing: !stopped && !action.paused && action.getClip().duration > 0 };
     },
 
     render(projection) {
       const now = performance.now();
       const delta = lastRender === null ? 0 : (now - lastRender) / 1000;
       lastRender = now;
-      for (const mixer of mixers) mixer.update(delta);
+      for (const mixer of mixers) mixer.update(justStarted.has(mixer) ? 0 : delta);
+      justStarted.clear();
       if (projection) {
         camera.projectionMatrix.fromArray(Array.from(projection));
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();

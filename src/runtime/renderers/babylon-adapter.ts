@@ -26,6 +26,7 @@ import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
 import {
   assertOwned,
+  checkAnimationSpeed,
   gltfClipNames,
   Y_UP_TO_Z_UP,
   type AnimationOptions,
@@ -48,6 +49,22 @@ interface ModelClips {
   names: string[];
   groups: AnimationGroup[];
   current: { name: string; group: AnimationGroup; state: 'running' | 'stopped' | 'ended' } | null;
+  /** Puts back the bind pose of everything the clips animate. */
+  restoreBindPose: () => void;
+}
+
+/** A value as it is now, and how to put it back; Three.js's mixer does this on its own when a clip stops. */
+function bindPoseOf(groups: AnimationGroup[]): () => void {
+  const saved = groups.flatMap((group) =>
+    group.targetedAnimations.map(({ target, animation }) => {
+      const property = animation.targetProperty;
+      const value = target[property];
+      return { target, property, value: value?.clone ? value.clone() : value };
+    }),
+  );
+  return () => {
+    for (const { target, property, value } of saved) target[property] = value?.clone ? value.clone() : value;
+  };
 }
 
 /** Seconds per frame of an animation group's own timeline (the loader's frame rate, not a constant here). */
@@ -129,7 +146,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       const model = new TransformNode('gltf', scene);
       upright.parent = model;
       if (container.animationGroups.length) {
-        const clips: ModelClips = { names: gltfClipNames(spec), groups: container.animationGroups, current: null };
+        const clips: ModelClips = { names: gltfClipNames(spec), groups: container.animationGroups, current: null, restoreBindPose: bindPoseOf(container.animationGroups) };
         modelClips.set(model, clips);
         for (const group of clips.groups) {
           // A one-shot clip reached its end. The adapter's own stops skip this.
@@ -197,17 +214,32 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       const model = modelClips.get(node(o));
       const index = model?.names.indexOf(clip) ?? -1;
       if (!model || index < 0) throw new Error(`this model has no clip "${clip}" (clips: ${model?.names.join(', ') || 'none'})`);
+      checkAnimationSpeed(speed);
       const { current } = model;
       if (current?.name === clip && current.state === 'running') {
-        current.group.loopAnimation = loop;
-        current.group.speedRatio = speed;
-        if (!current.group.isPlaying) current.group.play(loop);
+        const { group } = current;
+        if (group.loopAnimation && !loop) {
+          // Past its first cycle, a group that stops looping would count as past its end: start it over at the same frame.
+          const frame = group.getCurrentFrame();
+          group.stop(true);
+          group.start(false, speed, group.from, group.to);
+          group.goToFrame(frame);
+          return;
+        }
+        group.loopAnimation = loop;
+        group.speedRatio = speed;
+        if (!group.isPlaying) group.play(loop);
         return;
       }
-      current?.group.stop(true);
+      if (current) {
+        current.group.stop(true);
+        model.restoreBindPose();
+      }
       const group = model.groups[index];
-      model.current = { name: clip, group, state: 'running' };
-      group.start(loop, speed, group.from, group.to);
+      // A clip with no length shows its pose and is over at once.
+      const hasLength = group.to > group.from;
+      model.current = { name: clip, group, state: hasLength ? 'running' : 'ended' };
+      group.start(loop && hasLength, speed, group.from, group.to);
     },
     pauseAnimation(o) {
       const current = modelClips.get(node(o))?.current;
@@ -228,8 +260,10 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       const current = modelClips.get(node(o))?.current;
       if (!current) return null;
       const { group, name, state } = current;
-      const time = state === 'stopped' ? 0 : ((state === 'ended' ? group.to : group.getCurrentFrame()) - group.from) * secondsPerFrame(group);
-      return { clip: name, time, playing: state === 'running' && group.isPlaying };
+      // No length, as a group with no channels, which keeps its unset range: from is above to.
+      const atStart = state === 'stopped' || group.to <= group.from;
+      const time = atStart ? 0 : ((state === 'ended' ? group.to : group.getCurrentFrame()) - group.from) * secondsPerFrame(group);
+      return { clip: name, time, playing: state === 'running' && Boolean(group.isPlaying) };
     },
 
     render(projection) {

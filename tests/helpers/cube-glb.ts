@@ -11,11 +11,15 @@
  *   npx tsx -e "import('./tests/helpers/cube-glb.ts').then(m => require('node:fs').writeFileSync('public/models/cube-animated.glb', m.cubeAnimatedGlb()))"
  */
 
-/** A clip that turns the cube about glTF +Y, from 0 to `degrees`, in `seconds`: one rotation channel, two keyframes, LINEAR. */
+/** A clip that turns the cube about glTF +Y, from `from` (default 0) to `degrees`, in `seconds`: one rotation channel, two keyframes, LINEAR. */
 export interface CubeClip {
   name?: string;
+  /** 0: a single keyframe, a clip with no length. */
   seconds: number;
   degrees: number;
+  from?: number;
+  /** The nodes it animates, by index: default the cube, 0. Naming 1 adds a second node, `lid`. [] is a clip with no channels. */
+  nodes?: number[];
 }
 
 /** The cube with these clips. By default one unnamed clip, which both renderers must call animation0. */
@@ -54,10 +58,13 @@ function buildCube(clips: CubeClip[]): Uint8Array {
   const nor = new Float32Array(normals);
   const idx = new Uint16Array(indices);
   // Each clip: its two times, then its two quaternions, after the geometry.
-  const animationData = clips.map(({ seconds, degrees }) => {
-    const half = (degrees * Math.PI) / 360;
-    return { times: new Float32Array([0, seconds]), turns: new Float32Array([0, 0, 0, 1, 0, Math.sin(half), 0, Math.cos(half)]) };
+  const animationData = clips.map(({ seconds, degrees, from = 0 }) => {
+    const quaternion = (d: number) => [0, Math.sin((d * Math.PI) / 360), 0, Math.cos((d * Math.PI) / 360)];
+    return seconds === 0
+      ? { times: new Float32Array([0]), turns: new Float32Array(quaternion(degrees)) }
+      : { times: new Float32Array([0, seconds]), turns: new Float32Array([...quaternion(from), ...quaternion(degrees)]) };
   });
+  const lid = clips.some((c) => c.nodes?.includes(1));
   const geometryLength = pos.byteLength + nor.byteLength + idx.byteLength + ((4 - (idx.byteLength % 4)) % 4);
   const bin = new Uint8Array(geometryLength + animationData.reduce((n, a) => n + a.times.byteLength + a.turns.byteLength, 0));
   bin.set(new Uint8Array(pos.buffer), 0);
@@ -75,21 +82,21 @@ function buildCube(clips: CubeClip[]): Uint8Array {
     at += times.byteLength + turns.byteLength;
     const input = 3 + i * 2;
     animationAccessors.push(
-      { bufferView: input, componentType: 5126, count: 2, type: 'SCALAR', min: [times[0]], max: [times[1]] },
-      { bufferView: input + 1, componentType: 5126, count: 2, type: 'VEC4' },
+      { bufferView: input, componentType: 5126, count: times.length, type: 'SCALAR', min: [times[0]], max: [times[times.length - 1]] },
+      { bufferView: input + 1, componentType: 5126, count: times.length, type: 'VEC4' },
     );
     animations.push({
       ...(clips[i].name !== undefined && { name: clips[i].name }),
       samplers: [{ input, output: input + 1, interpolation: 'LINEAR' }],
-      channels: [{ sampler: 0, target: { node: 0, path: 'rotation' } }],
+      channels: (clips[i].nodes ?? [0]).map((node) => ({ sampler: 0, target: { node, path: 'rotation' } })),
     });
   });
 
   const json = {
     asset: { version: '2.0', generator: 'webarkit-studio tests/helpers/cube-glb.ts' },
     scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0, name: 'cube' }],
+    scenes: [{ nodes: lid ? [0, 1] : [0] }],
+    nodes: lid ? [{ mesh: 0, name: 'cube' }, { mesh: 0, name: 'lid' }] : [{ mesh: 0, name: 'cube' }],
     meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, material: 0 }] }],
     materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0.33, 1], metallicFactor: 0, roughnessFactor: 0.6 } }],
     buffers: [{ byteLength: bin.byteLength }],

@@ -44,8 +44,13 @@ export interface ModelSpec {
 export interface AnimationOptions {
   /** Default true. */
   loop?: boolean;
-  /** Default 1. */
+  /** Above 0. Default 1. */
   speed?: number;
+}
+
+/** Throws on a speed the engines treat differently: at 0 or below, one plays backwards and the other ends at once. */
+export function checkAnimationSpeed(speed: number): void {
+  if (!(speed > 0)) throw new Error(`animation speed must be above 0, not ${speed}`);
 }
 
 /** A model's current clip. `time` is in seconds, read from the engine. */
@@ -144,9 +149,11 @@ export interface SceneHandle {
   /** The clip names of a model, in glTF order (gltfClipNames); [] for any other object. */
   animations(object: SceneObject): string[];
   /**
-   * Starts a clip; playing another stops the one playing. A paused clip resumes where it held, and one
-   * that is playing keeps its time and takes the new options. Throws if the model has no such clip.
-   * A clip that is not looping holds its last frame when it ends, not playing; playing it again restarts it.
+   * Starts a clip. Playing another stops the one playing, and nodes only that one moved go back to their
+   * bind pose. A paused clip resumes where it held, and one that is playing keeps its time and takes the
+   * new options. A clip that is not looping holds its last frame when it ends, not playing; playing it
+   * again restarts it. A clip with no length shows its pose, at time 0, not playing. Throws if the model
+   * has no such clip, or on a speed that is not above 0.
    */
   playAnimation(object: SceneObject, clip: string, options?: AnimationOptions): void;
   /** Holds the current time. Nothing happens if no clip is playing. */

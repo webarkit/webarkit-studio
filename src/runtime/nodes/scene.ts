@@ -212,7 +212,7 @@ export const anchor: NodeFactory = (params) => {
 /** True for a GLB container ("glTF" magic), false for glTF JSON. */
 export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView(data).getUint32(0, true) === 0x46546c67;
 
-/** The live params of scene.gltf, all applied as its transform (checked against the catalog in tests). */
+/** The live params of scene.gltf applied as its transform; `autoplay` is the other (checked against the catalog in tests). */
 export const GLTF_TRANSFORM_PARAMS: readonly string[] = ['scale', 'position', 'rotation'];
 
 /** scene.gltf — a glTF / GLB model, placed in marker space (millimetres, Z-up). */

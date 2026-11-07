@@ -55,6 +55,7 @@ key by key; a renamed key looks like one removal plus one addition.
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
   the plugin API: `PLUGIN_API_VERSION` is bumped, and the major version of `packages/studio-plugin-api/`.
+  The values of `renderer`, `scene` and `sceneObject` are the exception: they are studio internals.
 
 ## 3. Naming
 
