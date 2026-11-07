@@ -1,7 +1,7 @@
 /**
- * The real renderer adapters in a page, for tests/e2e/animations.spec.ts: pause and stop have no node
- * to reach them until action.playAnimation exists, and the studio has no hook for tests. Bundled and
- * injected by that spec, never part of the studio's build.
+ * The real renderer adapters in a page, for tests/e2e/animations.spec.ts: the same table on both engines,
+ * on exact times, and the studio has no hook for tests. Bundled and injected by that spec, never part of
+ * the studio's build.
  *
  * Time is a manual clock, read by both engines through performance.now: step() moves it and renders,
  * so a test states exact times, and a slow machine cannot change them.
@@ -41,6 +41,8 @@ export interface Harness {
   state(): ReturnType<SceneHandle['animationState']>;
   turn(node?: string): number;
   hide(): void;
+  /** Whether objects made invisible stay so when added: to a parent, and to the scene's root. */
+  hiddenAfterAdding(): { child: boolean; root: boolean };
   /** Moves the clock by `ms` over frames of 1/60 s, rendering each. */
   step(ms: number): void;
   /** One render after a long gap, as after a hidden tab. */
@@ -88,6 +90,19 @@ async function open(engine: 'three' | 'babylon', glbBase64: string): Promise<Har
     state: () => scene.animationState(model),
     turn: (node = 'cube') => turn(renderer.kind, model, node),
     hide: () => scene.setVisible(anchor, false),
+    hiddenAfterAdding() {
+      // Its own flag, whatever its ancestors: each engine holds it its own way.
+      const hidden = (o: SceneObject) => {
+        const n = o.native as { visible?: boolean; isEnabled?(checkAncestors: boolean): boolean };
+        return renderer.kind === 'Three.js' ? n.visible === false : n.isEnabled!(false) === false;
+      };
+      const [child, root] = [scene.createGroup(), scene.createGroup()];
+      scene.setVisible(child, false);
+      scene.setVisible(root, false);
+      scene.addChild(anchor, child);
+      scene.addRoot(root);
+      return { child: hidden(child), root: hidden(root) };
+    },
     step(ms) {
       const frames = Math.max(1, Math.round(ms / FRAME_MS));
       for (let i = 0; i < frames; i++) frame(ms / frames);

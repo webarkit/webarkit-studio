@@ -62,7 +62,13 @@ for (const engine of ['three', 'babylon']) {
       const status = nodeStatus(page, 'Play Animation');
       await expect(status).toHaveText(/^▶ animation0 \d\.\d s$/, NEXT);
       const first = await status.innerText();
-      await expect.poll(() => status.innerText(), { timeout: 3000 }).not.toBe(first);
+      // Still playing, at another time: a `‖` would also change the text.
+      await expect
+        .poll(async () => {
+          const now = await status.innerText();
+          return now.startsWith('▶') && now !== first;
+        }, { timeout: 3000 })
+        .toBe(true);
 
       await expect(status).toHaveText(/^‖ animation0 \d\.\d s$/, NEXT);
       // Read once each, not a retry: the next onFound would hide a clip that kept going.
@@ -110,7 +116,8 @@ for (const engine of ['three', 'babylon']) {
 
       const server = await serveDir(dir);
       try {
-        const app = await browser.newPage();
+        // A phone held sideways: the AR view is taller than the screen, and the link must still be on it.
+        const app = await browser.newPage({ viewport: { width: 844, height: 390 } });
         const errors: string[] = [];
         const missing: string[] = [];
         const marks: Array<{ mark: string; time: number }> = [];
@@ -121,7 +128,8 @@ for (const engine of ['three', 'babylon']) {
           const found = m.text().match(/play: ([▶‖■]) animation0 (\d+\.\d+) s/);
           if (found) marks.push({ mark: found[1], time: Number(found[2]) });
         });
-        // Records what starts, with no flag that would let sound run without a gesture.
+        // Records what starts. Headless Chromium runs a context with no gesture at all, so this shows that the
+        // sound starts on a running clock, not that the Start button unlocks it: that is the check on a phone.
         await app.addInitScript(() => {
           const { start } = AudioBufferSourceNode.prototype;
           const seen = ((window as unknown as { sound: { starts: number; context?: BaseAudioContext } }).sound = { starts: 0 });
@@ -142,6 +150,12 @@ for (const engine of ['three', 'babylon']) {
         await expect(link).toHaveAttribute('href', 'https://example.com/more');
         await expect(link).toHaveAttribute('target', '_blank');
         await expect(link).toHaveAttribute('rel', 'noopener');
+        // What a tap there reaches, with no scrolling: a Playwright click would scroll to it.
+        const tapped = await link.evaluate((a) => {
+          const { left, top, width, height } = a.getBoundingClientRect();
+          return document.elementFromPoint(left + width / 2, top + height / 2) === a;
+        });
+        expect(tapped).toBe(true);
         const sound = () =>
           app.evaluate(() => {
             const { starts, context } = (window as unknown as { sound: { starts: number; context?: BaseAudioContext } }).sound;

@@ -636,7 +636,7 @@ export const CORE_NODES: NodeDefinition[] = [
     provider: 'core',
     description:
       "Plays a sound file, one at a time: Play restarts it. In one frame, Stop wins. Browsers allow sound after a tap or a click on the page, which the player's Start " +
-      'button and Run give; if it is still not allowed, the log says so.',
+      'button and Run give; if it is still not allowed, the sound is dropped and the log says so.',
     inputs: {
       play: { type: 'event', label: 'Play', optional: true },
       stop: { type: 'event', label: 'Stop', optional: true },
@@ -655,7 +655,7 @@ export const CORE_NODES: NodeDefinition[] = [
     provider: 'core',
     description:
       "Shows a link on the AR view, which the user's tap opens in a new tab: a browser blocks opening one from a tracking event. Only http and https links: anything " +
-      'else fails when the graph starts. In one frame, Hide wins over Show.',
+      'else fails when the graph starts. A relative link is against the page, and what it points to is not in an exported app. In one frame, Hide wins over Show.',
     inputs: {
       show: { type: 'event', label: 'Show', optional: true },
       hide: { type: 'event', label: 'Hide', optional: true },

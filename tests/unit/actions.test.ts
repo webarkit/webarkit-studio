@@ -166,6 +166,38 @@ describe('action.playAnimation', () => {
     expect(n.logs).toEqual([]);
   });
 
+  it('logs and shows a clip that ended on its own, and logs when it plays again', async () => {
+    const { model, n } = await start({ loop: false });
+    const play = fired(NOT_FIRED);
+    n.step({ play });
+    model.advance(2);
+    model.state()!.playing = false; // the adapter: a one-shot holds its last frame, not playing
+    n.step({ play });
+    expect(n.reports.at(-1)).toBe('‖ spin 2.0 s');
+    expect(n.logs.at(-1)).toBe('n: ‖ spin 2.00 s');
+    n.step({ play: fired(play) });
+    expect(n.logs.at(-1)).toBe('n: ▶ spin 2.00 s');
+  });
+
+  it('follows what the scene holds, when something else plays the model: autoplay on it', async () => {
+    const { model, n } = await start();
+    const play = fired(NOT_FIRED);
+    n.step({ play });
+    n.step({ play, stop: fired(NOT_FIRED) });
+    expect(n.reports.at(-1)).toBe('■ spin 0.0 s');
+    model.target.scene.playAnimation(model.target, 'wobble', { speed: 1 });
+    n.step({ play });
+    expect(n.reports.at(-1)).toBe('▶ wobble 0.0 s');
+  });
+
+  it('a live change does not switch to its clip while another plays', async () => {
+    const { model, n } = await start();
+    model.target.scene.playAnimation(model.target, 'wobble', { speed: 1 });
+    n.set('speed', 3);
+    expect(model.state()?.clip).toBe('wobble');
+    expect(model.calls).toHaveLength(1);
+  });
+
   it('a pause after a stop keeps showing it stopped', async () => {
     const { n } = await start();
     n.step({ play: fired(NOT_FIRED) });
@@ -351,6 +383,7 @@ describe('action.playSound', () => {
     expect(fetchMock.mock.calls).toEqual([[`${base}sounds/beep.wav`]]);
     expect(audio.contexts).toHaveLength(1);
     expect(audio.contexts[0].gain.gain.value).toBe(0.5);
+    expect(audio.contexts[0].gain.connect).toHaveBeenCalledWith(audio.contexts[0].destination);
     expect(audio.sources).toEqual([]);
   });
 
@@ -424,33 +457,71 @@ describe('action.playSound', () => {
     expect(audio.sources[0].loop).toBe(true);
   });
 
-  it('resumes a suspended context on play, and says nothing when that works', async () => {
+  it('on a suspended context, resumes on play, starts once it runs, and says nothing', async () => {
     const { audio, n } = await start({}, 'suspended');
     n.step({ play: fired(NOT_FIRED) });
     expect(audio.contexts[0].resumed).toBe(1);
+    expect(audio.sources).toEqual([]);
     await vi.advanceTimersByTimeAsync(2000);
+    expect(audio.sources.map((s) => s.started)).toEqual([1]);
     expect(n.logs.filter((l) => l.includes('suspended'))).toEqual([]);
   });
 
-  it('logs once if the context stays suspended', async () => {
+  it('drops the sound and logs once if the context stays suspended, also with plays less than the wait apart', async () => {
     const { audio, n } = await start({}, 'suspended');
     audio.contexts[0].resumesTo = 'suspended';
-    const play = fired(NOT_FIRED);
+    let play = fired(NOT_FIRED);
     n.step({ play });
-    await vi.advanceTimersByTimeAsync(2000);
-    n.step({ play: fired(play) });
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(300);
+      play = fired(play);
+      n.step({ play });
+    }
     await vi.advanceTimersByTimeAsync(2000);
     expect(n.logs.filter((l) => l.includes('suspended'))).toHaveLength(1);
+    expect(audio.sources).toEqual([]);
   });
 
-  it('dispose stops the sound and closes the context, and a pending check stays quiet', async () => {
+  it('a sound does not play long after its event: a resume that comes late starts nothing', async () => {
     const { audio, n } = await start({}, 'suspended');
-    audio.contexts[0].resumesTo = 'suspended';
+    let resumed!: () => void;
+    audio.contexts[0].resume = () =>
+      new Promise<void>((resolve) => {
+        resumed = () => {
+          audio.contexts[0].state = 'running';
+          resolve();
+        };
+      });
+    n.step({ play: fired(NOT_FIRED) });
+    await vi.advanceTimersByTimeAsync(4000);
+    resumed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.sources).toEqual([]);
+  });
+
+  it('a stop before the context runs cancels the play', async () => {
+    const { audio, n } = await start({}, 'suspended');
+    n.step({ play: fired(NOT_FIRED), stop: fired(NOT_FIRED) });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(audio.sources).toEqual([]);
+  });
+
+  it('dispose stops the sound and closes the context', async () => {
+    const { audio, n } = await start();
     n.step({ play: fired(NOT_FIRED) });
     n.node.dispose?.();
     expect(audio.sources[0].stopped).toBe(1);
     expect(audio.contexts[0].closed).toBe(1);
+  });
+
+  it('dispose with a play waiting for the context starts nothing, and a pending check stays quiet', async () => {
+    const { audio, n } = await start({}, 'suspended');
+    audio.contexts[0].resumesTo = 'suspended';
+    n.step({ play: fired(NOT_FIRED) });
+    n.node.dispose?.();
+    expect(audio.contexts[0].closed).toBe(1);
     await vi.advanceTimersByTimeAsync(2000);
+    expect(audio.sources).toEqual([]);
     expect(n.logs.filter((l) => l.includes('suspended'))).toEqual([]);
   });
 

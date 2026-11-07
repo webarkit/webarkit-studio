@@ -33,10 +33,13 @@ export const playAnimation: NodeFactory = (params, ctx) => {
     ctx.log(`✗ ${ctx.nodeId}: ${message}`);
     report(`✗ ${message}`);
   };
-  const showStatus = () => {
-    if (problem || !clip) return;
+  /** What the scene holds, which autoplay on the same model can change: the status and the log follow it. */
+  const showState = () => {
     const state = target.scene.animationState(target);
-    report(state ? `${mark(stopped, state.playing)} ${clip} ${state.time.toFixed(1)} s` : clip);
+    if (!state) return;
+    const now = mark(stopped && !state.playing, state.playing);
+    if (now !== logged) ctx.log(`${ctx.nodeId}: ${(logged = now)} ${state.clip} ${state.time.toFixed(2)} s`);
+    if (!problem) report(`${now} ${state.clip} ${state.time.toFixed(1)} s`);
   };
   const start = () => {
     try {
@@ -46,12 +49,6 @@ export const playAnimation: NodeFactory = (params, ctx) => {
     } catch (err) {
       fail((err as Error).message);
     }
-  };
-  const logChange = () => {
-    const state = target.scene.animationState(target);
-    if (!state) return;
-    const now = mark(stopped, state.playing);
-    if (now !== logged) ctx.log(`${ctx.nodeId}: ${(logged = now)} ${clip} ${state.time.toFixed(2)} s`);
   };
 
   return {
@@ -64,8 +61,7 @@ export const playAnimation: NodeFactory = (params, ctx) => {
       const wanted = String(params.clip);
       if (!names.length) fail('the target has no clips');
       else if (wanted && !names.includes(wanted)) fail(`no clip "${wanted}" (clips: ${names.join(', ')})`);
-      else clip = wanted || names[0];
-      showStatus();
+      else report((clip = wanted || names[0]));
     },
     update(inputs) {
       const [playing, pausing, stopping] = [play(inputs.play), pause(inputs.pause), stop(inputs.stop)];
@@ -76,13 +72,12 @@ export const playAnimation: NodeFactory = (params, ctx) => {
         target.scene.stopAnimation(target);
         stopped = true;
       }
-      if (playing || pausing || stopping) logChange();
-      showStatus();
+      showState();
     },
     onParamChange() {
-      // Only on a clip that is playing: on a paused one, playAnimation would resume it. The next play takes them.
-      if (clip && target.scene.animationState(target)?.playing) start();
-      showStatus();
+      // Only on its clip while it plays: on a paused one, playAnimation would resume it, and the next play takes them.
+      const state = target.scene.animationState(target);
+      if (clip && state?.playing && state.clip === clip) start();
     },
   };
 };
@@ -119,13 +114,13 @@ export const setVisible: NodeFactory = (params, ctx) => {
   };
 };
 
-/** How long a resumed context has to start running before the node says it has not. */
-const RESUME_CHECK_MS = 1000;
+/** How long a suspended context has to start running after a play: later, the sound would no longer belong to its event. */
+const RESUME_WAIT_MS = 1000;
 
 /**
  * action.playSound — plays a file with Web Audio, one voice at a time: a play restarts it. Within a frame:
  * play, then stop. A context needs a user gesture on the page to run: the player's Start button or the
- * studio's Run.
+ * studio's Run. If it does not run in time, the sound is dropped, and the node logs that once.
  */
 export const playSound: NodeFactory = (params, ctx) => {
   const play = eventWatcher();
@@ -135,10 +130,13 @@ export const playSound: NodeFactory = (params, ctx) => {
   let buffer: AudioBuffer | null = null;
   let source: AudioBufferSourceNode | null = null;
   let check: ReturnType<typeof setTimeout> | undefined;
+  /** The play waiting for a suspended context, if any: a later play, a stop or the end of the wait replaces it. */
+  let waiting = 0;
   let warned = false;
   let disposed = false;
 
   const silence = () => {
+    waiting++;
     source?.stop();
     source?.disconnect();
     source = null;
@@ -146,20 +144,31 @@ export const playSound: NodeFactory = (params, ctx) => {
   const start = () => {
     if (!audio || !gain || !buffer) return;
     silence();
-    if (audio.state !== 'running') {
-      // On iOS, also 'interrupted'. The sound below starts when the context does.
-      void audio.resume().catch(() => {});
-      clearTimeout(check);
-      check = setTimeout(() => {
-        if (audio?.state === 'running' || warned) return;
-        warned = true;
-        ctx.log(`${ctx.nodeId}: the audio context stays suspended: no sound until the page gets a tap or a click`);
-      }, RESUME_CHECK_MS);
+    if (audio.state === 'running') {
+      startVoice();
+      return;
     }
-    const voice = audio.createBufferSource();
+    // On iOS, also 'interrupted'.
+    const asked = waiting;
+    audio.resume().then(
+      () => {
+        if (asked === waiting && !disposed && audio?.state === 'running') startVoice();
+      },
+      () => {},
+    );
+    check ??= setTimeout(() => {
+      check = undefined;
+      waiting++;
+      if (audio?.state === 'running' || warned) return;
+      warned = true;
+      ctx.log(`${ctx.nodeId}: the audio context stays suspended, so the sound was dropped: the browser has not allowed sound on this page`);
+    }, RESUME_WAIT_MS);
+  };
+  const startVoice = () => {
+    const voice = audio!.createBufferSource();
     voice.buffer = buffer;
     voice.loop = Boolean(params.loop);
-    voice.connect(gain);
+    voice.connect(gain!);
     voice.onended = () => {
       if (source !== voice) return;
       source = null;
@@ -199,9 +208,10 @@ export const playSound: NodeFactory = (params, ctx) => {
     },
     update(inputs) {
       if (play(inputs.play)) start();
-      if (stop(inputs.stop) && source) {
+      if (stop(inputs.stop)) {
+        const sounding = source;
         silence();
-        ctx.report('■ stopped');
+        if (sounding) ctx.report('■ stopped');
       }
     },
     onParamChange(key) {
@@ -247,7 +257,8 @@ export const openUrl: NodeFactory = (params, ctx) => {
         link.rel = 'noopener';
         link.textContent = String(params.label);
         link.style.cssText =
-          'position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:1;padding:10px 16px;border-radius:6px;background:rgb(0 0 0 / .7);color:#fff;font:14px system-ui,sans-serif';
+          // At the top: on a phone held sideways, the AR view is taller than the screen.
+          'position:absolute;left:50%;top:32px;transform:translateX(-50%);z-index:1;padding:10px 16px;border-radius:6px;background:rgb(0 0 0 / .7);color:#fff;font:14px system-ui,sans-serif';
         (ctx.stage.querySelector<HTMLElement>('.ar-view') ?? ctx.stage).appendChild(link);
         ctx.report('link shown');
       }

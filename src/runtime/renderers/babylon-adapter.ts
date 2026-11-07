@@ -177,12 +177,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     addChild(parent, child) {
       const c = node(child);
       c.parent = node(parent);
-      c.setEnabled(true);
       // HemisphericLight ignores its parent's transform (identity world matrix),
       // so its direction is re-oriented from the parent each frame in render().
       if (c instanceof HemisphericLight) adoptedHemis.set(c, c.direction.clone());
     },
-    addRoot: (o) => node(o).setEnabled(true),
+    // Babylon adds an object to the scene when it creates it: here it is only checked.
+    addRoot: (o) => void node(o),
 
     setPosition: (o, x, y, z) => void transform(o).position.set(x, y, z),
     setMatrix(o, m) {
