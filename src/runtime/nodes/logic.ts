@@ -92,11 +92,16 @@ const COMPARISONS: Record<string, (a: number, b: number, tolerance: number) => b
   '>=': (a, b) => a >= b,
 };
 
-/** logic.compare — false when an operand, from its input or else its param, is not a finite number. */
+/**
+ * logic.compare — false when an operand, from its input or else its param, is not a finite number, or
+ * the operator is not one of COMPARISONS: an imported graph can hold any string in a select param, and
+ * `toString` or `__proto__` would find what the object inherits.
+ */
 export const compare: NodeFactory = (params) =>
   computed((inputs) => {
     const [a, b] = [numberOf(inputs, params, 'a'), numberOf(inputs, params, 'b')];
-    const value = Number.isFinite(a) && Number.isFinite(b) && (COMPARISONS[String(params.op)]?.(a, b, Number(params.tolerance)) ?? false);
+    const op = String(params.op);
+    const value = Number.isFinite(a) && Number.isFinite(b) && Object.hasOwn(COMPARISONS, op) && COMPARISONS[op](a, b, Number(params.tolerance));
     return { value };
   });
 

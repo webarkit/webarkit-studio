@@ -284,6 +284,11 @@ describe('logic.compare', () => {
     }
   });
 
+  // An imported graph can hold anything here: validateGraph does not check a select param's value.
+  it.each(['nope', '', '__proto__', 'toString', 'constructor', 'hasOwnProperty'])('an unsupported op, %j, gives false, and does not throw', (op) => {
+    expect(value(op, 1, 2)).toBe(false);
+  });
+
   it('op, a, b and tolerance apply live', () => {
     const p = { a: 1, b: 2, op: '<', tolerance: 0 };
     const n = harness(compare, p);
