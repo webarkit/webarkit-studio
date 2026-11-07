@@ -136,7 +136,18 @@ export const WORKER_START_TIMEOUT_MS = 30_000;
  * are served from WORKER_DIR next to the page (see worker-files.ts).
  */
 export function workerOptions(build: unknown, pageUrl: string, signal?: AbortSignal): NFTTrackerWorkerOptions {
-  return { build: build === 'simd' ? 'simd' : 'default', workerBase: new URL(WORKER_DIR, pageUrl).href, signal };
+  const known = build === 'simd' || build === 'td' || build === 'auto';
+  return { build: known ? build : 'default', workerBase: new URL(WORKER_DIR, pageUrl).href, signal };
+}
+
+/**
+ * Why the controller's `build` cannot start on this page, or null. The threaded build needs
+ * SharedArrayBuffer, so a cross-origin isolated page: without one, its start fails later with
+ * a misleading error (measured on 1.16.0: the dataset "may be unreadable"), or waits for
+ * WORKER_START_TIMEOUT_MS. `auto` falls back.
+ */
+export function isolationError(build: unknown, crossOriginIsolated: boolean): Error | null {
+  return build === 'td' && !crossOriginIsolated ? new Error('the Threaded build needs a cross-origin isolated page (COOP / COEP)') : null;
 }
 
 /** jsartoolkitNFT.controller */
@@ -232,11 +243,21 @@ export const artkController: NodeFactory = (params, ctx) => {
       canvas.width = geometry.frameWidth;
       canvas.height = geometry.frameHeight;
 
+      // Which build was asked for, and whether the page allows the threaded one. Which build
+      // `auto` picks is the facade's choice, which it does not report.
+      const isolated = globalThis.crossOriginIsolated === true;
+      const options = workerOptions(params.build, document.baseURI, starting.signal);
+      ctx.log(`${ctx.nodeId}: build ${options.build}, page ${isolated ? '' : 'not '}cross-origin isolated`);
+      const refused = isolationError(options.build, isolated);
+      if (refused) {
+        logError(refused);
+        throw refused;
+      }
+
       const timeout = setTimeout(
         () => starting.abort(new Error(`the tracker's worker did not start within ${WORKER_START_TIMEOUT_MS / 1000} s`)),
         WORKER_START_TIMEOUT_MS,
       );
-      const options = workerOptions(params.build, document.baseURI, starting.signal);
       let started: NftSession;
       try {
         const create = async (config: NFTTrackerConfig) => (tracker = await createNFTTrackerWorker(config, options));

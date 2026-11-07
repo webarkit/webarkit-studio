@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { transformWithOxc, type Plugin } from 'vite';
-import { FACADE_DIR, VIRTUAL_FETCH_FILE, WORKER_DIR, WORKER_FILES, workerFiles, workerShim, type WorkerBuild } from './worker-files.ts';
+import { FACADE_DIR, PACKAGE_EXTRA_FILES, VIRTUAL_FETCH_FILE, WORKER_DIR, WORKER_FILES, workerFiles, workerShim, type WorkerBuild } from './worker-files.ts';
 
 const require = createRequire(import.meta.url);
 const BUILDS = Object.keys(WORKER_FILES) as WorkerBuild[];
@@ -22,9 +22,9 @@ async function workerFile(path: string): Promise<string | null> {
   }
   for (const build of BUILDS) {
     if (path === WORKER_FILES[build]) return workerShim(build);
-    if (path === FACADE_DIR + WORKER_FILES[build]) {
-      return readFile(require.resolve(`@webarkit/jsartoolkit-nft/dist/${WORKER_FILES[build]}`), 'utf8');
-    }
+    // The package's own files, unchanged: the facade's worker, and what it starts (the threaded build's pthreads).
+    const own = [FACADE_DIR + WORKER_FILES[build], ...PACKAGE_EXTRA_FILES[build]];
+    if (own.includes(path)) return readFile(require.resolve(`@webarkit/jsartoolkit-nft/dist/${path.slice(path.lastIndexOf('/') + 1)}`), 'utf8');
   }
   return null;
 }

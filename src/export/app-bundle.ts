@@ -10,6 +10,7 @@
  *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
  *   <app>/.nojekyll      for a GitHub Pages site built from a branch
+ *   <app>/coi-sw.js, <app>/_headers  cross-origin isolation, when a plugin asks for it (cross-origin-isolation.ts)
  */
 import { zipSync, strToU8 } from 'fflate';
 import type { GraphDocument, GraphNode } from '../core/graph';
@@ -20,6 +21,7 @@ import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
 import { INSTALLED_PLUGINS } from '../plugins/host';
 import type { ExportFile, StudioPlugin } from '../plugin-api';
+import { HEADERS, README_SECTION, SERVICE_WORKER, SERVICE_WORKER_FILE, withIsolation } from './cross-origin-isolation';
 
 export interface PlayerManifest {
   entry: string;
@@ -54,6 +56,15 @@ function pluginExportFiles(doc: GraphDocument, plugins: Iterable<StudioPlugin>):
     for (const file of plugin.exportFiles ?? []) out.push({ file, needed: nodes.length > 0 && (file.needed?.(nodes) ?? true) });
   }
   return out;
+}
+
+/** Whether a plugin the graph uses asks for cross-origin isolation (StudioPlugin.crossOriginIsolation). Exported for tests. */
+export function needsIsolation(doc: GraphDocument, plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values()): boolean {
+  for (const plugin of plugins) {
+    const nodes = doc.nodes.filter((n) => n.type.startsWith(`${plugin.id}.`));
+    if (nodes.length > 0 && plugin.crossOriginIsolation?.(nodes)) return true;
+  }
+  return false;
 }
 
 class ExportError extends Error {}
@@ -271,13 +282,18 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
 
   // ------------------------------------------------------- page and graph
   const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');
-  files['index.html'] = strToU8(
-    entryHtml
-      .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
-      .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`),
-  );
+  const isolated = needsIsolation(doc);
+  const page = entryHtml
+    .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+    .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`);
+  files['index.html'] = strToU8(isolated ? withIsolation(page) : page);
+  if (isolated) {
+    files[SERVICE_WORKER_FILE] = strToU8(SERVICE_WORKER);
+    files['_headers'] = strToU8(HEADERS);
+    ctx.log(`cross-origin isolation: ${SERVICE_WORKER_FILE} and _headers (see README.txt)`);
+  }
   files['graph.json'] = strToU8(JSON.stringify(doc, null, 2));
-  files['README.txt'] = strToU8(readme(doc, title));
+  files['README.txt'] = strToU8(readme(doc, title) + (isolated ? README_SECTION : ''));
   // A Pages site built from a branch runs Jekyll, which drops paths starting with "_", such as data/_ext/.
   files['.nojekyll'] = new Uint8Array(0);
   return { files, doc };

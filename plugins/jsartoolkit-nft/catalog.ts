@@ -95,7 +95,7 @@ export const NODES: NodeDefinition[] = [
       trace: { type: 'trackingTrace', label: 'Trace' },
     },
     params: {
-      build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default' } },
+      build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default', Threaded: 'td', Auto: 'auto' } },
     },
   },
   {

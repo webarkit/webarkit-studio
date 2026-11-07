@@ -163,6 +163,15 @@ pinball-nft-three-js/
 
 Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
 404 for missing files (see Known issues).
+
+A controller on the **Threaded** build (or **Auto**, which picks it on an
+isolated page) needs a cross-origin isolated page (COOP / COEP). Its export
+adds `coi-sw.js`, a service worker that sets those headers where the host
+cannot (GitHub Pages; the page reloads once on the first visit, over HTTPS
+only), and `_headers` for Netlify and Cloudflare Pages. The studio's own page
+is not isolated: there, Threaded stops at once with a message, and Auto runs
+SIMD. The threaded build is experimental upstream.
+
 Camera access requires a secure context: `localhost` works; on a phone use
 HTTPS or `adb reverse tcp:5173 tcp:5173`.
 
@@ -414,7 +423,7 @@ Planned split once the format stabilises (npm workspaces):
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
-| `jsartoolkitNFT.controller` | ✅ | video, cameraParams, datasets[], settings?, filter? → markers, onFound, onLost, projection, cameraMatrix, stats, trace |
+| `jsartoolkitNFT.controller` | ✅ | video, cameraParams, datasets[], settings?, filter? → markers, onFound, onLost, projection, cameraMatrix, stats, trace (*build*: SIMD, Standard, Threaded, Auto) |
 | `tracking.selectMarker` | ✅ ⚡ | markers → pose, found, onFound, onLost, markerInfo |
 | `jsartoolkitNFT.nativeFilter` | ✅ | → poseFilter (the tracker's `'native'` filter) |
 | `filter.oneEuro` | ✅ | → poseFilter (One Euro, @webarkit/oneeurofilter-ts inside the tracker) |
@@ -453,7 +462,6 @@ Planned split once the format stabilises (npm workspaces):
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
 | `jsartoolkitNFT.datasetZft` | planned | → NFT dataset (`.zft`) |
-| `jsartoolkitNFT.controller` threaded build (`/td`) | planned | needs COOP/COEP headers |
 | `webarkit.cvBackend` | planned | → cvBackend (jsfeatNext / PureCV, @webarkit/cv-backend-spec) |
 | `webarkit.target` | planned | → wnftTarget (`.wnft`) |
 | `webarkit.nftTracker` | planned | video, cvBackend, target, filter? → pose, found, … |
@@ -495,10 +503,18 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   Vite config sets `appType: 'mpa'` for this reason.
 - Each tracker worker embeds its WASM (~716 kB); the page loads only the light
   client (a few kB, in the plugin's chunk) and the worker of the selected build
-  (SIMD or standard). The worker files are served unchanged from
+  (SIMD, standard or threaded). The worker files are served unchanged from
   `jsartoolkit-nft/<version>/` next to the page, outside the Vite pipeline (the plugin's
-  `vite.ts`), and exported apps get only their build's. The threaded build
-  (`td`) and `build: 'auto'` are not offered: they need COOP / COEP headers.
+  `vite.ts`), and exported apps get only their build's: the threaded build adds its
+  pthread file (about 1.5 MB in all), and *Auto* needs the three builds (about 2.9 MB).
+- The **Threaded** build (`td`) needs a cross-origin isolated page, which the studio's is
+  not (see "Export"), and upstream calls it experimental; on `td`, `dispose()` skips the
+  native teardown (jsartoolkitNFT#695), and ending the worker frees the memory. It is
+  also heavy on memory: upstream notes that each threaded module reserves 1 GB of
+  shared memory, so keep to one Threaded or Auto controller per graph. *Auto*
+  picks `td` on an isolated page, then SIMD, then standard; the facade does not report
+  which one it picked, so the log says only which build was asked for and whether the
+  page is isolated.
 - Lazy chunks: Three.js adapter ~530 kB, Babylon.js adapter ~790 kB (deep
   imports from `@babylonjs/core`; the barrel import would be ~5 MB).
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
@@ -572,7 +588,7 @@ The source of truth for the roadmap is
 - [ ] Script nodes: `script.lite` ([#35](https://github.com/webarkit/webarkit-studio/issues/35)), `three.script` ([#36](https://github.com/webarkit/webarkit-studio/issues/36)), `three.renderScript` ([#37](https://github.com/webarkit/webarkit-studio/issues/37))
 - [ ] Graph format migrations: older `version`s upgrade on load ([#61](https://github.com/webarkit/webarkit-studio/issues/61))
 - [ ] Deploy: an export with a GitHub Actions workflow, which you push to your own repository for GitHub Pages; the studio holds no credential ([#62](https://github.com/webarkit/webarkit-studio/issues/62))
-- [ ] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
+- [x] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
 - [ ] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
 **Phase 4 — Scene and editor (v0.4.0)**
