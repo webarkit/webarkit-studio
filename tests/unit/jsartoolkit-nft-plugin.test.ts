@@ -67,8 +67,8 @@ describe('jsartoolkitNFT plugin (#12)', () => {
   });
 
   it('keeps the upload picker as it was', () => {
-    expect(uploadAccept()).toBe('.iset,.fset,.fset3,.glb,.gltf,image/*,video/*,.dat');
-    expect(uploadHint()).toBe('Images, videos, glTF / GLB models and NFT datasets (select the .iset, .fset and .fset3 files together)');
+    expect(uploadAccept()).toBe('.iset,.fset,.fset3,.glb,.gltf,image/*,video/*,audio/*,.dat');
+    expect(uploadHint()).toBe('Images, videos, sounds, glTF / GLB models and NFT datasets (select the .iset, .fset and .fset3 files together)');
   });
 
   it('is listed by every demo graph that uses it', () => {

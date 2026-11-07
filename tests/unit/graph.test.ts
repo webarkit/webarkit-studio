@@ -77,7 +77,7 @@ describe('validateGraph', () => {
     expect(problems(doc)).toContain('graph contains a cycle');
   });
 
-  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image', 'pinball-math', 'pinball-expression'])('demo graph %s is valid against the real catalog', (name) => {
+  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image', 'pinball-math', 'pinball-expression', 'pinball-animated'])('demo graph %s is valid against the real catalog', (name) => {
     const doc = JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
     expect(doc.version).toBe(GRAPH_VERSION);
     expect(() => validateGraph(doc)).not.toThrow();

@@ -13,7 +13,7 @@ export const catalogList = defineTool({
     'with their socket types (multiple = several connections, optional = may stay unconnected), params with kind, default ' +
     'and live (applied without a restart). Also the graph format version and the loaded plugins, to put in a graph.',
   inputSchema: z.object({
-    category: z.string().optional().describe('Only this category (source, tracking, filter, renderer, scene, output, math, logic, debug).'),
+    category: z.string().optional().describe('Only this category (source, tracking, filter, renderer, scene, output, math, logic, action, debug).'),
     types: z.array(z.string()).optional().describe('Only these node types.'),
   }),
   run({ category, types }) {
