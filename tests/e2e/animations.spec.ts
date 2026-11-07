@@ -319,9 +319,9 @@ for (const engine of ENGINES) {
       within(r!.time, 0.6);
     });
 
-    test('an object made invisible stays so when it is added to a parent or to the scene', async ({ page }) => {
+    test('adding an object to a parent or to the scene shows it, unless it was made invisible', async ({ page }) => {
       const r = await withModel(page, engine, [SPIN], async ({ h }) => h.hiddenAfterAdding());
-      expect(r).toEqual({ child: true, root: true });
+      expect(r).toEqual({ hiddenChild: true, hiddenRoot: true, plainChild: false, plainRoot: false, shownAgain: true });
     });
 
     test('a clip the model does not have is an error that names the clips', async ({ page }) => {

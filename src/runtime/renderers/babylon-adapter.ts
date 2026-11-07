@@ -103,6 +103,14 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   };
   const node = (o: SceneObject) => (assertOwned(handle, o), o.native as BabylonNode);
   const transform = (o: SceneObject) => node(o) as TransformNode;
+  /** Wired to the scene or to a parent, and made invisible: an object shows when it is the first and not the second. */
+  const wired = new WeakSet<BabylonNode>();
+  const hidden = new WeakSet<BabylonNode>();
+  const applyVisibility = (n: BabylonNode) => n.setEnabled(wired.has(n) && !hidden.has(n));
+  const wire = (n: BabylonNode) => {
+    wired.add(n);
+    applyVisibility(n);
+  };
   const scratch = { s: new Vector3(), r: new Quaternion(), t: new Vector3() };
   /** Hemispheric lights standing in for ambient ones: their ground follows their colour. */
   const ambients = new WeakSet<Light>();
@@ -177,12 +185,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     addChild(parent, child) {
       const c = node(child);
       c.parent = node(parent);
+      wire(c);
       // HemisphericLight ignores its parent's transform (identity world matrix),
       // so its direction is re-oriented from the parent each frame in render().
       if (c instanceof HemisphericLight) adoptedHemis.set(c, c.direction.clone());
     },
-    // Babylon adds an object to the scene when it creates it: here it is only checked.
-    addRoot: (o) => void node(o),
+    addRoot: (o) => wire(node(o)),
 
     setPosition: (o, x, y, z) => void transform(o).position.set(x, y, z),
     setMatrix(o, m) {
@@ -192,7 +200,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       n.rotationQuaternion = (n.rotationQuaternion ?? new Quaternion()).copyFrom(scratch.r);
       n.position.copyFrom(scratch.t);
     },
-    setVisible: (o, v) => node(o).setEnabled(v),
+    setVisible(o, v) {
+      const n = node(o);
+      if (v) hidden.delete(n);
+      else hidden.add(n);
+      applyVisibility(n);
+    },
     setColor(o, [r, g, b, a]) {
       const n = node(o);
       // sRGB values, as Color3.FromHexString gives them for the params.

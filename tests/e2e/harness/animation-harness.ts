@@ -41,8 +41,8 @@ export interface Harness {
   state(): ReturnType<SceneHandle['animationState']>;
   turn(node?: string): number;
   hide(): void;
-  /** Whether objects made invisible stay so when added: to a parent, and to the scene's root. */
-  hiddenAfterAdding(): { child: boolean; root: boolean };
+  /** Whether objects are hidden once added, to a parent and to the scene's root, by what setVisible() last said. */
+  hiddenAfterAdding(): { hiddenChild: boolean; hiddenRoot: boolean; plainChild: boolean; plainRoot: boolean; shownAgain: boolean };
   /** Moves the clock by `ms` over frames of 1/60 s, rendering each. */
   step(ms: number): void;
   /** One render after a long gap, as after a hidden tab. */
@@ -96,12 +96,16 @@ async function open(engine: 'three' | 'babylon', glbBase64: string): Promise<Har
         const n = o.native as { visible?: boolean; isEnabled?(checkAncestors: boolean): boolean };
         return renderer.kind === 'Three.js' ? n.visible === false : n.isEnabled!(false) === false;
       };
-      const [child, root] = [scene.createGroup(), scene.createGroup()];
+      const [child, root, plainChild, plainRoot] = [scene.createGroup(), scene.createGroup(), scene.createGroup(), scene.createGroup()];
       scene.setVisible(child, false);
       scene.setVisible(root, false);
       scene.addChild(anchor, child);
       scene.addRoot(root);
-      return { child: hidden(child), root: hidden(root) };
+      scene.addChild(anchor, plainChild);
+      scene.addRoot(plainRoot);
+      const before = { hiddenChild: hidden(child), hiddenRoot: hidden(root), plainChild: hidden(plainChild), plainRoot: hidden(plainRoot) };
+      scene.setVisible(child, true);
+      return { ...before, shownAgain: !hidden(child) };
     },
     step(ms) {
       const frames = Math.max(1, Math.round(ms / FRAME_MS));
