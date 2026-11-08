@@ -61,8 +61,8 @@ describe('validatePlugin', () => {
     for (const ns of new Set(CORE_NODES.map((d) => d.type.split('.')[0]))) expect(RESERVED_NAMESPACES).toContain(ns);
   });
 
-  it('refuses a plugin named logic, action or page', () => {
-    for (const ns of ['logic', 'action', 'page']) {
+  it('refuses a plugin named logic, action, page or ui', () => {
+    for (const ns of ['logic', 'action', 'page', 'ui']) {
       expect(problemsOf(plugin({ id: ns, nodes: [], factories: {}, sockets: [] }))).toContainEqual(expect.stringMatching(/reserved/));
     }
   });

@@ -11,7 +11,7 @@ Follow the "Adding a node" steps in `AGENTS.md`. This skill adds the details.
 
 Before writing code, settle:
 
-- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker.
+- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker.
 - **Ports:** socket types from `src/core/sockets.ts`. Mark inputs `optional` or `multiple` where it applies.
 - **Params:** kind, default, range. Mark `live: true` only if the factory can apply the change in `onParamChange` without a restart. A param the graph can drive gets an optional input of the same name (`AGENTS.md`, "Inputs override params").
 

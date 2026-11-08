@@ -47,6 +47,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   to it, with a named `CustomEvent` in the same page or `postMessage` across an iframe, to and from one
   origin only. Names need a colon, and only plain values cross. `page` is a reserved namespace for
   plugins. See "Talking to the page" in the README.
+- UI controls (#83): **Button**, **Switch**, **Slider**, **Colour Picker** and **Choice** drive a graph from
+  a control, drawn in a panel on the AR view or bound by id to an element of the page that holds the app.
+  Only those kinds of element are taken: a text field or a textarea is refused by name. `ui` is a reserved
+  namespace for plugins. See "UI controls" in the README.
 
 ### Changed
 
