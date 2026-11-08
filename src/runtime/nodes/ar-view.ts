@@ -28,10 +28,12 @@ export const arView: NodeFactory = (params, ctx) => {
       renderer.setSize(video.width * window.devicePixelRatio, video.height * window.devicePixelRatio);
 
       const badge = document.createElement('div');
+      badge.className = 'ar-view-badge'; // kept clear of by ui.* panels
       badge.style.cssText = 'position:absolute;top:6px;right:8px;font:11px monospace;color:#fff;opacity:.7;text-shadow:0 0 2px #000';
       badge.textContent = renderer.kind;
       wrapper.appendChild(badge);
       fpsLabel = document.createElement('div');
+      fpsLabel.className = 'ar-view-fps'; // kept clear of by ui.* panels
       fpsLabel.style.cssText = 'position:absolute;top:6px;left:8px;font:12px monospace;color:#0f0;text-shadow:0 0 2px #000';
       fpsLabel.hidden = !params.stats;
       wrapper.appendChild(fpsLabel);

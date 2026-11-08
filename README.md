@@ -262,8 +262,14 @@ change sets `value` and fires `onChange` on the next frame; the value a control
 has when the graph starts is the first value, and fires nothing.
 
 - **Drawn:** with *Element id* empty, the node draws its control with its
-  *Label* in a panel on the AR view, shared by all of them, in the studio's
-  preview and in an exported app. A tap on the panel does not reach the scene.
+  *Label* in a panel on the AR view, in the studio's preview and in an exported
+  app. A tap on the panel does not reach the scene. *Position* (live) picks the
+  panel: `top-right` (the default), `top-left`, `bottom-left`, `bottom-right` or
+  `bottom-center` (controls in a row). Controls with the same position share a
+  panel. Each position has its own part of the view, so panels never cover one
+  another, nor the renderer badge, the FPS label, Debug Stats' overlay or Open
+  URL's link. A panel takes at most its part of the view and scrolls beyond:
+  a slider may wrap under its label on a phone held upright.
 - **Bound:** with *Element id* set, the node uses that element of the page that
   holds the app, a site's own control, and leaves it as it found it. It must be
   of the node's kind: a `<button>` or `<input type="button">`, an
@@ -498,11 +504,11 @@ Planned split once the format stabilises (npm workspaces):
 | `source.image` | ✅ | → video (a still image: testing without a camera) |
 | `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
 | `page.event` | ✅ | → onEvent, number (a named event from the page: DOM or postMessage; see "Talking to the page") |
-| `ui.button` | ✅ | → onClick (a button of the page, or drawn on the view; see "UI controls") |
-| `ui.toggle` | ✅ | → value (boolean), onChange (a checkbox) |
-| `ui.slider` | ✅ | → value (number, within *min* and *max*), onChange (a range or number input) |
-| `ui.colorPicker` | ✅ | → value (color), onChange (a colour input) |
-| `ui.select` | ✅ | → value (number: the option's index), onChange (a select; drawn with *options*) |
+| `ui.button` | ✅ ⚡ | → onClick (a button of the page, or drawn on the view; see "UI controls") |
+| `ui.toggle` | ✅ ⚡ | → value (boolean), onChange (a checkbox) |
+| `ui.slider` | ✅ ⚡ | → value (number, within *min* and *max*), onChange (a range or number input) |
+| `ui.colorPicker` | ✅ ⚡ | → value (color), onChange (a colour input) |
+| `ui.select` | ✅ ⚡ | → value (number: the option's index), onChange (a select; drawn with *options*) |
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |

@@ -3,7 +3,21 @@
  * The nodes themselves need a page: tests/e2e/ui-controls.spec.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { checkElement, colorValue, sameValue, selectIndex, selectOptions, sliderValue, UI_KINDS, type UiKind } from '../../src/runtime/ui-controls';
+import {
+  checkElement,
+  colorValue,
+  PANEL_POSITIONS,
+  panelPlacement,
+  sameValue,
+  selectIndex,
+  selectOptions,
+  sliderValue,
+  UI_KINDS,
+  type Box,
+  type Overlays,
+  type PanelPosition,
+  type UiKind,
+} from '../../src/runtime/ui-controls';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { NODE_REGISTRY } from '../../src/runtime/registry';
 
@@ -74,6 +88,103 @@ describe('values', () => {
   });
 });
 
+describe("the panels' places (#93)", () => {
+  /** The box a panel may take at most, in the view's pixels. */
+  function maxBox(position: PanelPosition, view: { width: number; height: number }, overlays: Overlays, used?: readonly PanelPosition[]): Box {
+    const p = panelPlacement(position, view, overlays, used);
+    const left = p.x.side === 'left' ? p.x.offset : p.x.side === 'right' ? view.width - p.x.offset - p.maxWidth : view.width / 2 - p.maxWidth / 2;
+    const top = p.y.side === 'top' ? p.y.offset : view.height - p.y.offset - p.maxHeight;
+    return { left, top, right: left + p.maxWidth, bottom: top + p.maxHeight };
+  }
+  const overlap = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const inside = (a: Box, v: { width: number; height: number }) => a.left >= 0 && a.top >= 0 && a.right <= v.width && a.bottom <= v.height;
+
+  // What the AR view draws, measured on a 640 × 480 view: the badge and the FPS label (top right and left),
+  // debug.stats (bottom left, its five lines), and Open URL's link (top centre).
+  const view = { width: 640, height: 480 };
+  const all: Overlays = {
+    badge: { left: 594, top: 6, right: 632, bottom: 20 },
+    fps: { left: 8, top: 6, right: 70, bottom: 21 },
+    stats: { left: 8, top: 388, right: 150, bottom: 472 },
+    link: { left: 270, top: 32, right: 370, bottom: 70 },
+  };
+
+  it('has five positions, top right first: the place of #83', () => {
+    expect(PANEL_POSITIONS).toEqual(['top-right', 'top-left', 'bottom-left', 'bottom-right', 'bottom-center']);
+  });
+
+  it('keeps top right where #83 put it: 8 px from the right, below the badge', () => {
+    const p = panelPlacement('top-right', view, { badge: all.badge });
+    expect(p.x).toEqual({ side: 'right', offset: 8 });
+    expect(p.y).toEqual({ side: 'top', offset: 26 });
+  });
+
+  it('puts each position at its corner, bottom centre in a row', () => {
+    const at = (position: PanelPosition) => panelPlacement(position, view, {});
+    expect([at('top-left').x.side, at('top-left').y.side]).toEqual(['left', 'top']);
+    expect([at('bottom-left').x.side, at('bottom-left').y.side]).toEqual(['left', 'bottom']);
+    expect([at('bottom-right').x.side, at('bottom-right').y.side]).toEqual(['right', 'bottom']);
+    expect([at('bottom-center').x.side, at('bottom-center').y.side]).toEqual(['center', 'bottom']);
+    expect(at('bottom-center').row).toBe(true);
+    expect(PANEL_POSITIONS.filter((p) => p !== 'bottom-center').map((p) => at(p).row)).toEqual([false, false, false, false]);
+  });
+
+  for (const [name, v, overlays] of [
+    ['a 640 × 480 view with every overlay', view, all],
+    ['the same with none', view, {}],
+    ['a phone held upright, with a wide link', { width: 360, height: 640 }, { ...all, stats: { left: 8, top: 548, right: 150, bottom: 632 }, link: { left: 40, top: 32, right: 320, bottom: 70 } }],
+    ['a wide stats overlay reaching the middle', view, { ...all, stats: { left: 8, top: 388, right: 300, bottom: 472 } }],
+  ] as Array<[string, { width: number; height: number }, Overlays]>) {
+    it(`on ${name}: no panel covers an overlay or another panel, and each stays in the view`, () => {
+      const boxes = PANEL_POSITIONS.map((p) => [p, maxBox(p, v, overlays)] as const);
+      for (const [p, box] of boxes) {
+        expect(inside(box, v), `${p} ${JSON.stringify(box)}`).toBe(true);
+        expect(box.right - box.left, `${p} width`).toBeGreaterThan(0);
+        expect(box.bottom - box.top, `${p} height`).toBeGreaterThan(0);
+        for (const [key, o] of Object.entries(overlays)) if (o) expect(overlap(box, o), `${p} over ${key}`).toBe(false);
+      }
+      for (const [p, a] of boxes) for (const [q, b] of boxes) if (p < q) expect(overlap(a, b), `${p} over ${q}`).toBe(false);
+    });
+  }
+
+  it('puts bottom left above debug.stats, and top left below the FPS label', () => {
+    expect(panelPlacement('bottom-left', view, all).y).toEqual({ side: 'bottom', offset: 480 - 388 + 6 });
+    expect(panelPlacement('bottom-left', view, {}).y).toEqual({ side: 'bottom', offset: 8 });
+    expect(panelPlacement('top-left', view, all).y).toEqual({ side: 'top', offset: 21 + 6 });
+  });
+
+  it('leaves a drawn control room on a phone held upright: the top in halves, the bottom too when the centre is unused', () => {
+    const phone = { width: 360, height: 640 };
+    const ROOM = 160; // a label and a slider (Chrome's range input is about 130 px), less the panel's padding
+    // Every position in use: the top still has its halves.
+    for (const p of ['top-right', 'top-left'] as const) expect(panelPlacement(p, phone, {}).maxWidth, p).toBeGreaterThanOrEqual(ROOM);
+    // Bottom left and right in use, the centre not: halves too.
+    const sides: PanelPosition[] = ['bottom-left', 'bottom-right', 'top-right'];
+    for (const p of ['bottom-left', 'bottom-right'] as const) expect(panelPlacement(p, phone, {}, sides).maxWidth, p).toBeGreaterThanOrEqual(ROOM);
+    // With the centre in use, the bottom is in thirds, and the three still keep clear of each other.
+    expect(panelPlacement('bottom-left', phone, {}).maxWidth).toBeLessThan(ROOM);
+    const bottom = (['bottom-left', 'bottom-right', 'bottom-center'] as const).map((p) => maxBox(p, phone, {}));
+    for (const a of bottom) for (const b of bottom) if (a !== b) expect(overlap(a, b)).toBe(false);
+    // Halves keep clear of each other as well.
+    expect(overlap(maxBox('bottom-left', phone, {}, sides), maxBox('bottom-right', phone, {}, sides))).toBe(false);
+    expect(overlap(maxBox('top-left', phone, {}), maxBox('top-right', phone, {}))).toBe(false);
+  });
+
+  it('never gives a negative size, even on a view too short for its overlays', () => {
+    const short = { width: 320, height: 120 };
+    const tall: Overlays = { ...all, stats: { left: 8, top: 10, right: 150, bottom: 112 } };
+    for (const p of PANEL_POSITIONS) {
+      const { maxWidth, maxHeight } = panelPlacement(p, short, tall);
+      expect(maxWidth, p).toBeGreaterThanOrEqual(0);
+      expect(maxHeight, p).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('takes an unknown position as top right', () => {
+    expect(panelPlacement('middle' as PanelPosition, view, all)).toEqual(panelPlacement('top-right', view, all));
+  });
+});
+
 describe('the catalog and the registry', () => {
   const OUTPUTS: Record<string, string[]> = {
     'ui.button': ['onClick'],
@@ -91,6 +202,13 @@ describe('the catalog and the registry', () => {
       expect(NODE_CATALOG[type].params, type).toHaveProperty('elementId');
       expect(NODE_CATALOG[type].params, type).toHaveProperty('label');
       expect(NODE_REGISTRY[type], type).toBeTypeOf('function');
+    }
+  });
+
+  it('gives each a live position, top right by default, so a graph saved before #93 keeps its place (#93)', () => {
+    for (const type of Object.keys(OUTPUTS)) {
+      expect(NODE_CATALOG[type].params.position, type).toMatchObject({ kind: 'select', default: 'top-right', live: true });
+      expect(Object.values((NODE_CATALOG[type].params.position as { options: Record<string, string> }).options), type).toEqual([...PANEL_POSITIONS]);
     }
   });
 

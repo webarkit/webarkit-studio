@@ -51,6 +51,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   a control, drawn in a panel on the AR view or bound by id to an element of the page that holds the app.
   Only those kinds of element are taken: a text field or a textarea is refused by name. `ui` is a reserved
   namespace for plugins. See "UI controls" in the README.
+- A position for drawn controls (#93): *Position* on the five UI control nodes puts their panel at the top
+  right (as before), top left, bottom left, bottom right or bottom centre, live. Each position has its own
+  panel, kept clear of the AR view's badge, FPS label, Debug Stats' overlay and Open URL's link.
 
 ### Changed
 
