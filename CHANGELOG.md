@@ -37,6 +37,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   steps to publish it. You push it to a repository of your own: the studio holds no credential and makes
   no request to GitHub. The standalone app now has a `.nojekyll`, which keeps paths starting with `_` on a
   Pages site built from a branch.
+- **Threaded** and **Auto** builds on the jsartoolkitNFT controller (#63); SIMD stays the default. An
+  exported app that uses them gets a service worker that makes the page cross-origin isolated where the
+  host cannot send the headers (GitHub Pages; the page reloads once on the first visit), and `_headers`
+  for Netlify and Cloudflare Pages. In the studio, whose page is not isolated, Threaded stops at once
+  with a message and Auto runs SIMD. Plugins ask for this with `crossOriginIsolation` (plugin API,
+  optional).
 
 ### Changed
 

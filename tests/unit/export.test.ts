@@ -82,6 +82,39 @@ describe('selectPlayerFiles', () => {
     }
   });
 
+  it('copies the threaded build with its pthread file, and every build for Auto (#63)', async () => {
+    vi.stubGlobal('fetch', async () => new Response('JS'));
+    try {
+      const base = new URL('http://localhost:5173/index.html');
+      const threaded = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'td' }]]), base);
+      expect(Object.keys(threaded).sort()).toEqual([
+        `${WORKER_DIR}NFTTracker_td.pthread.js`,
+        `${WORKER_DIR}NFTTracker_td.worker.js`,
+        `${WORKER_DIR}facade/NFTTracker_td.worker.js`,
+        `${WORKER_DIR}virtual-fetch.js`,
+      ]);
+      // The facade picks the build on the page, so the app needs the three.
+      const auto = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'auto' }]]), base);
+      expect(Object.keys(auto).sort()).toEqual(
+        [
+          'NFTTracker.worker.js',
+          'NFTTracker_simd.worker.js',
+          'NFTTracker_td.pthread.js',
+          'NFTTracker_td.worker.js',
+          'facade/NFTTracker.worker.js',
+          'facade/NFTTracker_simd.worker.js',
+          'facade/NFTTracker_td.worker.js',
+          'virtual-fetch.js',
+        ].map((f) => WORKER_DIR + f),
+      );
+      // SIMD stays as it was: no threaded file.
+      const simd = await collectPluginFiles(doc([['jsartoolkitNFT.controller', { build: 'simd' }]]), base);
+      expect(Object.keys(simd).some((f) => f.includes('_td'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('bundles the glTF loaders only for graphs with a glTF Model', () => {
     const withLoaders: PlayerManifest = structuredClone(manifest);
     withLoaders.chunks['assets/three-adapter.js'].dynamicImports.push('assets/GLTFLoader.js');

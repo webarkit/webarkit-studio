@@ -24,6 +24,7 @@ const plugin: StudioPlugin = {
   sockets: [{ id: 'acme.marker', label: 'Acme marker', color: '#ffb74d' }],
   assetKinds: [/* see "Asset kinds" */],
   exportFiles: [/* see below */],
+  crossOriginIsolation: (nodes) => false, // optional, see "Cross-origin isolation"
 };
 export default plugin;
 ```
@@ -213,10 +214,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.0.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.1.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.0.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.1.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
@@ -313,6 +314,31 @@ The player build's manifest keeps every module under `src/` and `plugins/`, and 
 every chunk (what a dynamic `import()` or a worker loads), so a package's on-demand build or a
 plugin installed from npm is found by its entry. The export fails, naming the plugin and the
 module, when a needed `module` or `worker` is not in the build.
+
+### Cross-origin isolation
+
+SharedArrayBuffer, and so WASM threads, needs a cross-origin isolated page: one served with
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. An export
+file cannot change the page, so a plugin that needs isolation says so instead:
+
+```ts
+crossOriginIsolation: (nodes) => nodes.some((n) => n.type === 'acme.tracker' && n.params.threads === true),
+```
+
+It receives the graph's nodes of this plugin, and is asked only when the graph uses the plugin. When
+one plugin says yes, the export adds to the app (`src/export/cross-origin-isolation.ts`):
+
+- `coi-sw.js`, a service worker that adds the two headers to what the app loads, its workers
+  included, and its registration as the first script of `index.html`. On a page that is not
+  isolated, the page registers it and reloads once. It does nothing on a page that is isolated
+  already, or where a service worker cannot run (no HTTPS);
+- `_headers`, which sets the headers on Netlify and Cloudflare Pages;
+- a section of `README.txt` on both.
+
+The studio's own page is never isolated: `require-corp` would block a model or an image loaded from
+another origin without CORP. So in the studio's preview, a node that needs isolation must say so
+itself (read `globalThis.crossOriginIsolated` in `init`), rather than wait for a worker that cannot
+start. The jsartoolkitNFT plugin does this for its Threaded build.
 
 ## Testing with the Node build
 

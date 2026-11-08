@@ -7,8 +7,9 @@ import { LOADED_PLUGINS } from '../../src/core/plugins';
 import { CORE_NODES, NODE_CATALOG } from '../../src/nodes/catalog';
 import config from '../../webarkit-studio.config';
 import plugin from '../../plugins/jsartoolkit-nft';
-import { workerOptions } from '../../plugins/jsartoolkit-nft/nodes';
-import { workerShim } from '../../plugins/jsartoolkit-nft/worker-files';
+import { isolationError, workerOptions } from '../../plugins/jsartoolkit-nft/nodes';
+import { workerFiles, workerShim } from '../../plugins/jsartoolkit-nft/worker-files';
+import type { GraphNode } from '../../src/core/graph';
 import { version } from '@webarkit/jsartoolkit-nft/package.json';
 
 const files = (dir: string): string[] =>
@@ -88,6 +89,45 @@ describe('jsartoolkitNFT plugin (#12)', () => {
       signal,
     });
     expect(workerOptions('default', 'http://localhost/').build).toBe('default');
+  });
+
+  it('offers the Threaded and Auto builds, with SIMD still the default (#63)', () => {
+    const controller = plugin.nodes.find((d) => d.type === 'jsartoolkitNFT.controller')!;
+    expect(controller.params.build).toEqual({
+      kind: 'select',
+      label: 'Build',
+      default: 'simd',
+      options: { SIMD: 'simd', Standard: 'default', Threaded: 'td', Auto: 'auto' },
+    });
+  });
+
+  it('passes Threaded and Auto on to createNFTTrackerWorker, and anything else as the standard build (#63)', () => {
+    expect(workerOptions('td', 'http://localhost/').build).toBe('td');
+    expect(workerOptions('auto', 'http://localhost/').build).toBe('auto');
+    expect(workerOptions('threaded', 'http://localhost/').build).toBe('default');
+    expect(workerOptions(undefined, 'http://localhost/').build).toBe('default');
+  });
+
+  it('refuses the Threaded build on a page that is not cross-origin isolated, and nothing else (#63)', () => {
+    expect(isolationError('td', false)?.message).toBe('the Threaded build needs a cross-origin isolated page (COOP / COEP)');
+    expect(isolationError('td', true)).toBeNull();
+    // Auto falls back, as the facade documents.
+    for (const build of ['auto', 'simd', 'default', undefined]) expect(isolationError(build, false), String(build)).toBeNull();
+  });
+
+  it("serves the threaded build's pthread file at the worker folder's root, where the facade's worker looks for it (#63)", () => {
+    // The worker passes new URL('NFTTracker_td.pthread.js', workerBase) to its WASM module, not a URL next to itself.
+    expect(workerFiles('td')).toEqual(['NFTTracker_td.worker.js', 'facade/NFTTracker_td.worker.js', 'NFTTracker_td.pthread.js', 'virtual-fetch.js']);
+    expect([...workerShim('td').matchAll(/^import '([^']+)';$/gm)].map((m) => m[1])).toEqual(['./virtual-fetch.js', './facade/NFTTracker_td.worker.js']);
+  });
+
+  it('asks the export for cross-origin isolation only for a Threaded or Auto controller (#63)', () => {
+    const nodes = (...builds: Array<string | undefined>): GraphNode[] =>
+      builds.map((build, i): GraphNode => ({ id: `c${i}`, type: 'jsartoolkitNFT.controller', params: build === undefined ? {} : { build } }));
+    expect(plugin.crossOriginIsolation?.(nodes('td'))).toBe(true);
+    expect(plugin.crossOriginIsolation?.(nodes('simd', 'auto'))).toBe(true);
+    expect(plugin.crossOriginIsolation?.(nodes('simd', 'default', undefined))).toBe(false);
+    expect(plugin.crossOriginIsolation?.([{ id: 'd', type: 'jsartoolkitNFT.dataset', params: {} }])).toBe(false);
   });
 
   it('serves virtual-fetch.ts unbundled: it imports types only', () => {

@@ -90,6 +90,13 @@ export interface StudioPlugin {
   /** Asset kinds of its own, for its params' `asset`: uploads and exports handle them like the built-in ones. */
   assetKinds?: AssetKindDefinition[];
   exportFiles?: ExportFile[];
+  /**
+   * Whether an exported app of a graph using this plugin must be cross-origin isolated (COOP /
+   * COEP), for SharedArrayBuffer or WASM threads. `nodes`: the graph's nodes of this plugin. When
+   * one plugin says yes, the export adds a service worker that sets the headers where the host
+   * cannot, and a `_headers` file for hosts that can. The studio's own page is never isolated.
+   */
+  crossOriginIsolation?: (nodes: GraphNode[]) => boolean;
 }
 
 /** RGBA pixels, row by row (an ImageData without the DOM). */

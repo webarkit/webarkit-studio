@@ -65,15 +65,15 @@ const TYPES: Record<string, string> = {
   '.txt': 'text/plain',
 };
 
-/** Minimal static server with 404 for missing files, like a plain web host. */
-export async function serveDir(root: string): Promise<{ url: string; close: () => Promise<void> }> {
+/** Minimal static server with 404 for missing files, like a plain web host. `headers` go on every file it serves. */
+export async function serveDir(root: string, headers: Record<string, string> = {}): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer(async (req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^([/\\])+/, '');
     const file = join(root, path || 'index.html');
     try {
       const s = await stat(file);
       const target = s.isDirectory() ? join(file, 'index.html') : file;
-      res.writeHead(200, { 'content-type': TYPES[extname(target)] ?? 'application/octet-stream' });
+      res.writeHead(200, { ...headers, 'content-type': TYPES[extname(target)] ?? 'application/octet-stream' });
       res.end(await readFile(target));
     } catch {
       res.writeHead(404).end('not found');
