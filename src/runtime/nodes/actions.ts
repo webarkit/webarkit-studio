@@ -285,6 +285,7 @@ export const openUrl: NodeFactory = (params, ctx) => {
         link.href = href;
         link.target = '_blank';
         link.rel = 'noopener';
+        link.className = 'open-url-link'; // kept clear of by ui.* panels
         link.textContent = String(params.label);
         link.style.cssText =
           // At the top: on a phone held sideways, the AR view is taller than the screen.
