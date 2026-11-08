@@ -49,7 +49,7 @@ Adding an optional param with a default, or a new node type, is not a format cha
 
 ## Naming
 
-Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
+Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
 
 ## Commit messages
 

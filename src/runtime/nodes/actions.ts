@@ -3,7 +3,8 @@
  * what they do. Within a frame they apply in a fixed order, so the last one wins, as each description says.
  */
 import { eventWatcher } from '../events';
-import type { NodeFactory, SceneObjectValue } from '../types';
+import { checkEventName, checkOrigin, plainValue } from '../page-events';
+import type { EventValue, NodeFactory, SceneObjectValue } from '../types';
 
 /** A clip's state as text: playing, held, or stopped. */
 const mark = (stopped: boolean, playing: boolean | undefined) => (stopped ? '■' : playing ? '▶' : '‖');
@@ -223,6 +224,35 @@ export const playSound: NodeFactory = (params, ctx) => {
       clearTimeout(check);
       silence();
       void audio?.close();
+    },
+  };
+};
+
+/**
+ * action.dispatchEvent — tells the page that holds the graph: a bubbling CustomEvent on the stage (`dom`),
+ * which the page hears on the stage, the document or the window, or a message to the parent page of an
+ * iframe (`postMessage`), to one origin only. The detail is `{ data, time }`: the trigger's data reduced to
+ * plain values (page-events.ts), and when it fired.
+ */
+export const dispatchEvent: NodeFactory = (params, ctx) => {
+  const trigger = eventWatcher();
+  let name = '';
+  let targetOrigin = '';
+  let sent = 0;
+  return {
+    init(inputs) {
+      trigger(inputs.trigger);
+      name = checkEventName(params.name);
+      if (params.channel === 'postMessage') targetOrigin = checkOrigin(params.targetOrigin);
+      ctx.report(targetOrigin ? `${name} → ${targetOrigin}` : name);
+    },
+    update(inputs) {
+      if (!trigger(inputs.trigger)) return;
+      const event = inputs.trigger as EventValue;
+      const detail = { data: plainValue(event.data) ?? null, time: event.time };
+      if (targetOrigin) window.parent.postMessage({ type: name, detail }, targetOrigin);
+      else ctx.stage.dispatchEvent(new CustomEvent(name, { detail, bubbles: true }));
+      ctx.report(`${name} ×${++sent}`);
     },
   };
 };

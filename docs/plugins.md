@@ -34,7 +34,7 @@ and refuses it with the list of problems if:
 
 - `id` is not a plain identifier (letters and digits), is one of the built-in namespaces
   (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `logic`,
-  `action`, `debug`), is `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT
+  `action`, `page`, `debug`), is `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT
   is taken by the bundled plugin);
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
 - a node type or socket id does not start with `<id>.`, or is defined twice;
