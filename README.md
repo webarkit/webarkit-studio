@@ -252,6 +252,26 @@ Here the graph's Dispatch Event has the target origin
 `https://shop.example.com`, and its Page Event the origin
 `https://shop.example.com`.
 
+## UI controls
+
+Five nodes give a graph a few controls: **Button** (`ui.button`, fires
+`onClick`), **Switch** (`ui.toggle`, a boolean), **Slider** (`ui.slider`, a
+number within *min* and *max*), **Colour Picker** (`ui.colorPicker`, a colour
+`[r, g, b, a]`) and **Choice** (`ui.select`, the index of an option). Each
+change sets `value` and fires `onChange` on the next frame; the value a control
+has when the graph starts is the first value, and fires nothing.
+
+- **Drawn:** with *Element id* empty, the node draws its control with its
+  *Label* in a panel on the AR view, shared by all of them, in the studio's
+  preview and in an exported app. A tap on the panel does not reach the scene.
+- **Bound:** with *Element id* set, the node uses that element of the page that
+  holds the app, a site's own control, and leaves it as it found it. It must be
+  of the node's kind: a `<button>` or `<input type="button">`, an
+  `<input type="checkbox">`, an `<input type="range">` or `type="number"`, an
+  `<input type="color">`, a `<select>`. Anything else is refused by name when
+  the graph starts, so a graph never reads what is typed in the page. An id
+  that names nothing draws the control instead, and the node says so.
+
 ## MCP server
 
 An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
@@ -395,7 +415,7 @@ Key decisions:
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
 use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
-`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`).
+`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
@@ -478,6 +498,11 @@ Planned split once the format stabilises (npm workspaces):
 | `source.image` | ✅ | → video (a still image: testing without a camera) |
 | `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
 | `page.event` | ✅ | → onEvent, number (a named event from the page: DOM or postMessage; see "Talking to the page") |
+| `ui.button` | ✅ | → onClick (a button of the page, or drawn on the view; see "UI controls") |
+| `ui.toggle` | ✅ | → value (boolean), onChange (a checkbox) |
+| `ui.slider` | ✅ | → value (number, within *min* and *max*), onChange (a range or number input) |
+| `ui.colorPicker` | ✅ | → value (color), onChange (a colour input) |
+| `ui.select` | ✅ | → value (number: the option's index), onChange (a select; drawn with *options*) |
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
@@ -528,8 +553,6 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.text`, `scene.video` | planned | scene → sceneObject |
 | AR Camera near / far override | planned | renderer-side override, for trackers that do not own their planes |
 | `playcanvas.renderer`, `aframe.renderer` | idea | → renderer |
-| `logic.and` / `not` / `timer` / `toggle` | planned | boolean / event |
-| `action.playAnimation` / `playSound` / `openUrl` | planned | event → |
 | `debug.featurePoints` | planned | → overlay |
 
 `?` = optional input, `[]` = accepts several connections, ⚡ = live params.

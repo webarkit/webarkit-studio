@@ -126,6 +126,90 @@ export const CORE_NODES: NodeDefinition[] = [
       origin: { kind: 'string', label: 'Origin (postMessage)', default: '' },
     },
   },
+  {
+    type: 'ui.button',
+    label: 'Button',
+    category: 'source',
+    provider: 'core',
+    description:
+      'A button that fires onClick. Element id: bind to a <button> or <input type="button"> of the page; empty, or naming nothing, draws one with this Label in ' +
+      'a panel on the AR view. Any other element is refused: a graph never reads what is typed in the page.',
+    inputs: {},
+    outputs: { onClick: { type: 'event', label: 'onClick' } },
+    params: {
+      label: { kind: 'string', label: 'Label', default: 'Next' },
+      elementId: { kind: 'string', label: 'Element id', default: '' },
+    },
+  },
+  {
+    type: 'ui.toggle',
+    label: 'Switch',
+    category: 'source',
+    provider: 'core',
+    description:
+      'A checkbox: Value is whether it is checked, and onChange fires on each change. Element id: bind to an <input type="checkbox"> of the page (its own ' +
+      'state is the first value); empty, or naming nothing, draws one in a panel on the AR view, checked as Initial says.',
+    inputs: {},
+    outputs: { value: { type: 'boolean', label: 'Value' }, onChange: { type: 'event', label: 'onChange' } },
+    params: {
+      label: { kind: 'string', label: 'Label', default: 'Switch' },
+      elementId: { kind: 'string', label: 'Element id', default: '' },
+      initial: { kind: 'boolean', label: 'Initial', default: false },
+    },
+  },
+  {
+    type: 'ui.slider',
+    label: 'Slider',
+    category: 'source',
+    provider: 'core',
+    description:
+      'A slider: Value is its number, clamped to Min and Max, and onChange fires on each change. Element id: bind to an <input type="range"> or ' +
+      '<input type="number"> of the page (its own value is the first value, or Initial when it has none); empty, or naming nothing, draws one in a panel ' +
+      'on the AR view.',
+    inputs: {},
+    outputs: { value: { type: 'number', label: 'Value' }, onChange: { type: 'event', label: 'onChange' } },
+    params: {
+      label: { kind: 'string', label: 'Label', default: 'Value' },
+      elementId: { kind: 'string', label: 'Element id', default: '' },
+      min: { kind: 'number', label: 'Min', default: 0 },
+      max: { kind: 'number', label: 'Max', default: 100 },
+      step: { kind: 'number', label: 'Step', default: 1, min: 0.001 },
+      initial: { kind: 'number', label: 'Initial', default: 50 },
+    },
+  },
+  {
+    type: 'ui.colorPicker',
+    label: 'Colour Picker',
+    category: 'source',
+    provider: 'core',
+    description:
+      'A colour: Value is [r, g, b, a], 0–1, and onChange fires on each change. Element id: bind to an <input type="color"> of the page (its own value is ' +
+      'the first value); empty, or naming nothing, draws one in a panel on the AR view.',
+    inputs: {},
+    outputs: { value: { type: 'color', label: 'Value' }, onChange: { type: 'event', label: 'onChange' } },
+    params: {
+      label: { kind: 'string', label: 'Label', default: 'Colour' },
+      elementId: { kind: 'string', label: 'Element id', default: '' },
+      initial: { kind: 'color', label: 'Initial', default: '#ffffff' },
+    },
+  },
+  {
+    type: 'ui.select',
+    label: 'Choice',
+    category: 'source',
+    provider: 'core',
+    description:
+      'A choice: Value is the index of the selected option (0 for the first), and onChange fires on each change. Element id: bind to a <select> of the ' +
+      'page (its own options and selection); empty, or naming nothing, draws one in a panel on the AR view with these Options (comma-separated).',
+    inputs: {},
+    outputs: { value: { type: 'number', label: 'Value' }, onChange: { type: 'event', label: 'onChange' } },
+    params: {
+      label: { kind: 'string', label: 'Label', default: 'Choice' },
+      elementId: { kind: 'string', label: 'Element id', default: '' },
+      options: { kind: 'string', label: 'Options (drawn)', default: 'One, Two, Three' },
+      initial: { kind: 'number', label: 'Initial (index)', default: 0, min: 0, step: 1 },
+    },
+  },
 
   // ---------------------------------------------------------- tracking
   {

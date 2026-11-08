@@ -15,6 +15,7 @@ import { expression } from './nodes/expression';
 import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
 import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
 import { pageEvent } from './nodes/page';
+import { button, colorPicker, select, slider, toggle as uiToggle } from './nodes/ui';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
@@ -60,6 +61,11 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'action.openUrl': openUrl,
   'action.dispatchEvent': dispatchEvent,
   'page.event': pageEvent,
+  'ui.button': button,
+  'ui.toggle': uiToggle,
+  'ui.slider': slider,
+  'ui.colorPicker': colorPicker,
+  'ui.select': select,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
   'debug.trace': traceNode,
