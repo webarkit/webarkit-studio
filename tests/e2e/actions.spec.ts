@@ -29,7 +29,7 @@ async function openGraph(page: Page, doc: { nodes: unknown[] }) {
 
 test('the palette lists the action nodes under their own category', async ({ page }) => {
   await openStudio(page);
-  await expect(page.locator('.palette-group:has(h3:text-is("action")) button')).toHaveText(['Play Animation', 'Set Visible', 'Play Sound', 'Open URL']);
+  await expect(page.locator('.palette-group:has(h3:text-is("action")) button')).toHaveText(['Play Animation', 'Set Visible', 'Play Sound', 'Open URL', 'Dispatch Event']);
 });
 
 test('a sound can be uploaded: it is a file asset', async ({ page }) => {

@@ -195,6 +195,63 @@ needs. The deploy leaves out names that start with a dot, so the export refuses
 a file named that way, by name. To publish the plain standalone app from a branch
 instead, it has a `.nojekyll`, without which Jekyll would drop `data/_ext/`.
 
+## Talking to the page
+
+A graph and the page that holds it (the studio's preview, or the page of an
+exported app) talk through named events, in both directions:
+
+- **Dispatch Event** (`action.dispatchEvent`) tells the page each time its
+  Trigger fires;
+- **Page Event** (`page.event`) fires its `onEvent` for each event of its name
+  from the page, on the next frame, and keeps in `number` the last detail that
+  was a number (or a number `value` in it), so a page can drive a value.
+
+Rules, for both: a name needs a colon (`shop:coupon`, `studio:next`), so a
+graph can neither hear nor fake the browser's own events such as `click`.
+Only plain values cross: strings, finite numbers, booleans, `null`, and arrays
+and plain objects of those, four levels deep. Anything else, a DOM node or a
+function included, is dropped. Events follow the graph's frames: several in
+one frame fire Page Event's `onEvent` once, with the last detail, and a
+trigger that fires several times in one frame sends once.
+
+**In the same page** (channel *DOM*). The graph's event is a `CustomEvent`
+that bubbles from the stage to `window`; its `detail` is `{ data, time }`, the
+trigger's data and when it fired (`Date.now()`, in milliseconds). Found, with
+Select Marker's `onFound` on the Trigger:
+
+```js
+window.addEventListener('shop:found', (e) => showCoupon(e.detail.data.name));
+```
+
+The page drives the graph with a `CustomEvent` on `window`; its `detail` is
+the event's data in the graph:
+
+```js
+window.dispatchEvent(new CustomEvent('shop:next', { detail: { value: 2 } }));
+```
+
+A graph's own Dispatch Event reaches its Page Events of the same name too,
+with `{ data, time }` as their detail: wiring one into the other repeats it
+every frame, so give each direction its own name.
+
+**From an iframe** (channel *postMessage*), for an export embedded in another
+site. Each node names the other page's origin exactly; `*` is refused, so a
+graph neither sends to nor hears from any page that frames it. The graph sends
+`{ type, detail }` to its parent, and hears messages of that shape:
+
+```js
+// In the page that frames the app, served from https://shop.example.com.
+const app = document.querySelector('iframe').contentWindow;
+window.addEventListener('message', (e) => {
+  if (e.origin === 'https://ar.example.com' && e.data?.type === 'shop:found') showCoupon(e.data.detail.data.name);
+});
+app.postMessage({ type: 'shop:next', detail: { value: 2 } }, 'https://ar.example.com');
+```
+
+Here the graph's Dispatch Event has the target origin
+`https://shop.example.com`, and its Page Event the origin
+`https://shop.example.com`.
+
 ## MCP server
 
 An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
@@ -338,7 +395,7 @@ Key decisions:
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
 use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
-`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`).
+`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
@@ -420,6 +477,7 @@ Planned split once the format stabilises (npm workspaces):
 | `source.camera` | ✅ | → video |
 | `source.image` | ✅ | → video (a still image: testing without a camera) |
 | `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
+| `page.event` | ✅ | → onEvent, number (a named event from the page: DOM or postMessage; see "Talking to the page") |
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
@@ -458,6 +516,7 @@ Planned split once the format stabilises (npm workspaces):
 | `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a primitive) |
 | `action.playSound` | ✅ ⚡ | play?, stop? (events) → (a sound file; *volume*, *loop*) |
 | `action.openUrl` | ✅ ⚡ | show?, hide? (events) → (a link on the AR view; http and https only; *label*) |
+| `action.dispatchEvent` | ✅ | trigger? (event) → (a named event to the page: DOM or postMessage; see "Talking to the page") |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |

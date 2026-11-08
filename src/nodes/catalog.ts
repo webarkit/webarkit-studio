@@ -108,6 +108,24 @@ export const CORE_NODES: NodeDefinition[] = [
       loop: { kind: 'boolean', label: 'Loop', default: true, live: true },
     },
   },
+  {
+    type: 'page.event',
+    label: 'Page Event',
+    category: 'source',
+    provider: 'core',
+    description:
+      'An event from the page that holds the graph. DOM: a CustomEvent of this Name that reaches window (dispatched on window, or bubbling from the stage). ' +
+      'postMessage: a message { type: Name, detail } from exactly this Origin ("*" is refused). onEvent fires on the next frame with the detail, reduced to ' +
+      'plain values, as data; several events in one frame fire once, with the count raised by their number and the last detail. Number holds the last detail ' +
+      'that was a number, or a number `value` in it. The Name needs a colon (shop:next).',
+    inputs: {},
+    outputs: { onEvent: { type: 'event', label: 'onEvent' }, number: { type: 'number', label: 'Number' } },
+    params: {
+      name: { kind: 'string', label: 'Name', default: 'page:event' },
+      channel: { kind: 'select', label: 'Channel', default: 'dom', options: { DOM: 'dom', postMessage: 'postMessage' } },
+      origin: { kind: 'string', label: 'Origin (postMessage)', default: '' },
+    },
+  },
 
   // ---------------------------------------------------------- tracking
   {
@@ -664,6 +682,24 @@ export const CORE_NODES: NodeDefinition[] = [
     params: {
       url: { kind: 'string', label: 'URL', default: 'https://github.com/webarkit/webarkit-studio' },
       label: { kind: 'string', label: 'Label', default: 'Open link', live: true },
+    },
+  },
+  {
+    type: 'action.dispatchEvent',
+    label: 'Dispatch Event',
+    category: 'action',
+    provider: 'core',
+    description:
+      'Tells the page that holds the graph, each time Trigger fires. DOM: a CustomEvent of this Name, which the page hears on window. postMessage: a message ' +
+      "{ type: Name, detail } to the parent page of an iframe, sent to the Target origin only (\"*\" is refused). detail is { data, time }: the trigger's data, " +
+      'reduced to plain values, and when it fired (Date.now()). A trigger that fires several times in one frame sends once. The Name needs a colon ' +
+      '(shop:coupon), so it is never a browser event.',
+    inputs: { trigger: { type: 'event', label: 'Trigger', optional: true } },
+    outputs: {},
+    params: {
+      name: { kind: 'string', label: 'Name', default: 'studio:event' },
+      channel: { kind: 'select', label: 'Channel', default: 'dom', options: { DOM: 'dom', postMessage: 'postMessage' } },
+      targetOrigin: { kind: 'string', label: 'Target origin (postMessage)', default: '' },
     },
   },
 

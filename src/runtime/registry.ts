@@ -13,7 +13,8 @@ import { add, addVector3, multiply, number, scaleVector3, sin, splitVector3, tim
 import { rgba, split } from './nodes/color';
 import { expression } from './nodes/expression';
 import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
-import { openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
+import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
+import { pageEvent } from './nodes/page';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
@@ -57,6 +58,8 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'action.setVisible': setVisible,
   'action.playSound': playSound,
   'action.openUrl': openUrl,
+  'action.dispatchEvent': dispatchEvent,
+  'page.event': pageEvent,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
   'debug.trace': traceNode,

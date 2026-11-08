@@ -43,6 +43,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   for Netlify and Cloudflare Pages. In the studio, whose page is not isolated, Threaded stops at once
   with a message and Auto runs SIMD. Plugins ask for this with `crossOriginIsolation` (plugin API,
   optional).
+- Page events (#82): **Dispatch Event** tells the page that holds the graph, and **Page Event** listens
+  to it, with a named `CustomEvent` in the same page or `postMessage` across an iframe, to and from one
+  origin only. Names need a colon, and only plain values cross. `page` is a reserved namespace for
+  plugins. See "Talking to the page" in the README.
 
 ### Changed
 

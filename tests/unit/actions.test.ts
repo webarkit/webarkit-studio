@@ -660,9 +660,9 @@ describe('action.openUrl', () => {
 });
 
 describe('the catalog and the registry', () => {
-  const TYPES = ['action.playAnimation', 'action.setVisible', 'action.playSound', 'action.openUrl'];
+  const TYPES = ['action.playAnimation', 'action.setVisible', 'action.playSound', 'action.openUrl', 'action.dispatchEvent'];
 
-  it('has the four nodes, in the action category, provider core, each with a factory', () => {
+  it('has the action nodes, in the action category, provider core, each with a factory', () => {
     for (const type of TYPES) {
       expect(NODE_CATALOG[type]).toMatchObject({ category: 'action', provider: 'core' });
       expect(NODE_REGISTRY[type]).toBeTypeOf('function');
@@ -679,6 +679,7 @@ describe('the catalog and the registry', () => {
     expect(live('action.setVisible')).toEqual([]);
     expect(live('action.playSound')).toEqual(['volume', 'loop']);
     expect(live('action.openUrl')).toEqual(['label']);
+    expect(live('action.dispatchEvent')).toEqual([]);
   });
 
   it('loops by default, like autoplay, and its speed has a minimum above 0', () => {
