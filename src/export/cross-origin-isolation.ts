@@ -19,17 +19,26 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  // A request the browser may only answer from its cache, for another origin: fetch() would fail.
-  if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return;
+  // A request the browser may only answer from its cache (DevTools reads the page's document this
+  // way): left to the browser, since fetch() rejects it when nothing is cached.
+  if (request.cache === 'only-if-cached') return;
   event.respondWith(
-    fetch(request).then((response) => {
-      // An opaque response (another origin, no CORS) cannot be changed.
-      if (response.status === 0) return response;
-      const headers = new Headers(response.headers);
-      headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-      headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
-      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-    }),
+    fetch(request).then(
+      (response) => {
+        // An opaque response (another origin, no CORS) cannot be changed.
+        if (response.status === 0) return response;
+        const headers = new Headers(response.headers);
+        headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+        headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      },
+      // A request that fails (offline, aborted, the server gone) fails for the page as it would without
+      // the service worker, and leaves no rejection behind.
+      (err) => {
+        console.warn('cross-origin isolation: ' + request.url + ' failed: ' + err);
+        return Response.error();
+      },
+    ),
   );
 });
 `;

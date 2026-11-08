@@ -43,16 +43,31 @@ for (const served of ['with COOP / COEP headers', 'with no headers (the service 
       const errors: string[] = [];
       const missing: string[] = [];
       const marks: string[] = [];
+      const uncaught: string[] = [];
       app.on('pageerror', (e) => errors.push(e.message));
       app.on('response', (r) => r.status() >= 400 && !r.url().endsWith('.zft') && missing.push(`${r.status()} ${r.url()}`));
       app.on('console', (m) => {
         const found = m.text().match(/play: ([▶‖■]) animation0/);
         if (found) marks.push(found[1]);
+        if (/Uncaught|network error response/.test(m.text())) uncaught.push(m.text());
       });
       const workers = workerRequests(app);
       await app.goto(server.url);
       // With no headers, the page registers the service worker and reloads once: wait for that, not for the load.
       await expect.poll(() => app.evaluate(() => window.crossOriginIsolated).catch(() => false), NEXT).toBe(true);
+      const [sw] = app.context().serviceWorkers();
+      if (served.startsWith('with no headers')) {
+        // The service worker's uncaught rejections never reach the page's console: collect them in it.
+        expect(sw?.url()).toMatch(/\/coi-sw\.js$/);
+        await sw.evaluate(() => {
+          const scope = self as unknown as { unhandled: string[]; addEventListener: (type: string, f: (e: PromiseRejectionEvent) => void) => void };
+          scope.unhandled = [];
+          scope.addEventListener('unhandledrejection', (e) => scope.unhandled.push(String(e.reason)));
+        });
+        // What DevTools asks for the page's document: a read of the HTTP cache only. Here nothing is cached under
+        // this URL, and the browser answers it with an error of its own; the service worker must stay out of it.
+        await app.evaluate(() => fetch(`${location.href}?not-cached`, { cache: 'only-if-cached', mode: 'same-origin' }).catch(() => {}));
+      }
       await app.click('#start');
 
       await expect(app.locator('.ar-view canvas')).toHaveCount(1, NEXT);
@@ -61,7 +76,10 @@ for (const served of ['with COOP / COEP headers', 'with no headers (the service 
       expect(workers.some((f) => f.includes('_simd'))).toBe(false);
 
       await expect(app.locator('#error')).toBeHidden();
+      // No uncaught error, from the page or from the service worker.
       expect(errors).toEqual([]);
+      expect(uncaught).toEqual([]);
+      if (served.startsWith('with no headers')) expect(await sw.evaluate(() => (self as unknown as { unhandled: string[] }).unhandled)).toEqual([]);
       expect(missing).toEqual([]);
       await app.close();
     } finally {

@@ -138,10 +138,12 @@ describe('the service worker', () => {
   function load(answer: () => Response | { status: number }) {
     const listeners: Record<string, (e: unknown) => void> = {};
     const self = { addEventListener: (name: string, f: (e: unknown) => void) => (listeners[name] = f), skipWaiting: vi.fn(), clients: { claim: vi.fn(async () => {}) } };
-    new Function('self', 'fetch', 'Headers', 'Response', SERVICE_WORKER)(self, async () => answer(), Headers, Response);
+    const console = { warn: vi.fn() };
+    new Function('self', 'fetch', 'Headers', 'Response', 'console', SERVICE_WORKER)(self, async () => answer(), Headers, Response, console);
     return {
       listeners,
       self,
+      console,
       async fetch(request: { url: string; cache?: string; mode?: string }) {
         let responded: Promise<unknown> | undefined;
         listeners.fetch({ request, respondWith: (p: Promise<unknown>) => (responded = p) });
@@ -171,9 +173,21 @@ describe('the service worker', () => {
     expect(await sw.fetch({ url: 'https://other.example/x.png' })).toBe(opaque);
   });
 
-  it("leaves to the browser a request it may only answer from another origin's cache", async () => {
+  it('leaves to the browser a request it may only answer from the cache, of any origin', async () => {
     const sw = load(() => new Response(''));
     expect(await sw.fetch({ url: 'https://other.example/x', cache: 'only-if-cached', mode: 'no-cors' })).toBeUndefined();
+    // DevTools reads the page's document this way: a fetch() of it rejects when the cache has no copy.
+    expect(await sw.fetch({ url: 'https://example.com/app/', cache: 'only-if-cached', mode: 'same-origin' })).toBeUndefined();
+  });
+
+  it('answers a fetch that fails with a network error, logged with its URL, and lets no rejection escape', async () => {
+    const sw = load(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    const res = (await sw.fetch({ url: 'https://example.com/app/assets/x.js' })) as Response;
+    expect(res.type).toBe('error');
+    expect(sw.console.warn).toHaveBeenCalledTimes(1);
+    expect(String(sw.console.warn.mock.calls[0][0])).toContain('https://example.com/app/assets/x.js');
   });
 
   it('takes over the page as soon as it is installed', async () => {
