@@ -156,6 +156,9 @@ describe('math catalog', () => {
         'math.subtract', 'math.divide', 'math.negate', 'math.abs', 'math.min', 'math.max', 'math.clamp', 'math.lerp', 'math.remap',
         'math.cos', 'math.tan', 'math.atan2', 'math.pow', 'math.sqrt', 'math.log', 'math.exp', 'math.round', 'math.floor', 'math.ceil', 'math.mod',
         'math.degToRad', 'math.radToDeg',
+        // #68
+        'math.vector2', 'math.splitVector2', 'math.length', 'math.normalize', 'math.dot', 'math.cross', 'math.distance',
+        'math.matrix4', 'math.decomposeMatrix4', 'math.matrixFromPose', 'math.matrixMultiply', 'math.invert', 'math.transformPoint',
       ].sort(),
     );
     for (const d of defs) {

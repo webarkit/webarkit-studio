@@ -221,6 +221,9 @@ export const gltf: NodeFactory = (params, ctx) => {
   let model: SceneObjectValue | null = null;
   let clips: string[] = [];
   let status = '';
+  /** The `position` and `rotation` inputs while they carry a vector: they override the params (#68). */
+  let drivenPosition: [number, number, number] | null = null;
+  let drivenRotation: [number, number, number] | null = null;
   const applyAutoplay = () => {
     if (!scene || !model) return;
     if (params.autoplay) {
@@ -235,15 +238,23 @@ export const gltf: NodeFactory = (params, ctx) => {
     scene.setMatrix(
       model,
       transformMatrix({
-        position: vec3(params.position),
-        rotation: vec3(params.rotation),
+        position: drivenPosition ?? vec3(params.position),
+        rotation: drivenRotation ?? vec3(params.rotation),
         scale: Math.max(Number(params.scale), 1e-6), // a zero scale makes a singular matrix
       }),
     );
   };
+  /** Reads the inputs; true when the transform they give changed. */
+  const readInputs = (inputs: PortValues) => {
+    const [position, rotation] = [vec3OrNull(inputs.position), vec3OrNull(inputs.rotation)];
+    const changed = !sameVec3(position, drivenPosition) || !sameVec3(rotation, drivenRotation);
+    [drivenPosition, drivenRotation] = [position, rotation];
+    return changed;
+  };
   return {
     async init(inputs) {
       scene = inputs.scene as SceneValue;
+      readInputs(inputs);
       const url = new URL(String(params.url), ctx.baseUrl).href;
       let res: Response;
       try {
@@ -261,8 +272,11 @@ export const gltf: NodeFactory = (params, ctx) => {
       if (params.autoplay) applyAutoplay();
       return { object: model };
     },
-    update() {
-      if (!scene || !model || !clips.length) return;
+    update(inputs) {
+      if (!scene || !model) return;
+      // Applied again only when a driven value changes, as scene.primitive does with its position.
+      if (readInputs(inputs)) applyTransform();
+      if (!clips.length) return;
       const state = scene.animationState(model);
       const text = `${state?.playing ? `▶ ${state.clip} ${state.time.toFixed(1)} s\n` : ''}clips: ${clips.join(', ')}`;
       // Rounded and only on a change: the status is DOM, and this runs every frame.

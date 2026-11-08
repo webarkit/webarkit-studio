@@ -164,6 +164,148 @@ const NUMBER_FUNCTION_NODES: NodeDefinition[] = [
   numberFunction('math.radToDeg', 'Radians to Degrees', 'x radians in degrees.', 'Degrees', [['x', 'Radians', 0]]),
 ];
 
+/** A core math node. */
+const mathNode = (def: Omit<NodeDefinition, 'category' | 'provider'>): NodeDefinition => ({ ...def, category: 'math', provider: 'core' });
+const VEC3 = (label: string, unit?: string): ParamSpec => ({ kind: 'vector3', label, default: [0, 0, 0], step: 1, live: true, ...(unit ? { unit } : {}) });
+const vec3In = (label: string, optional = true) => ({ type: 'vector3' as const, label, optional });
+const matIn = (label: string) => ({ type: 'matrix4' as const, label, optional: true });
+
+/**
+ * Vectors and matrices (#68), on plain arrays: vector2 [x, y], vector3 [x, y, z] (marker space, mm, +Z up),
+ * matrix4 (16 numbers, column-major), quaternion [x, y, z, w]. Implementations in src/runtime/nodes/math.ts,
+ * the maths in src/core/math.ts.
+ */
+const VECTOR_MATRIX_NODES: NodeDefinition[] = [
+  mathNode({
+    type: 'math.vector2',
+    label: 'Vector2',
+    description: 'A vector from x, y (a point or direction on the marker plane, mm). Connected inputs override the params.',
+    inputs: { x: { type: 'number', label: 'X', optional: true }, y: { type: 'number', label: 'Y', optional: true } },
+    outputs: { vector: { type: 'vector2', label: 'Vector' } },
+    params: {
+      x: { kind: 'number', label: 'X', default: 0, step: 1, live: true },
+      y: { kind: 'number', label: 'Y', default: 0, step: 1, live: true },
+    },
+  }),
+  mathNode({
+    type: 'math.splitVector2',
+    label: 'Split Vector2',
+    description: 'The x, y of a vector2.',
+    inputs: { vector: { type: 'vector2', label: 'Vector' } },
+    outputs: { x: { type: 'number', label: 'X' }, y: { type: 'number', label: 'Y' } },
+    params: {},
+  }),
+  mathNode({
+    type: 'math.length',
+    label: 'Length',
+    description: 'The length of a vector. A connected input overrides the param.',
+    inputs: { vector: vec3In('Vector') },
+    outputs: { value: { type: 'number', label: 'Length' } },
+    params: { vector: VEC3('Vector') },
+  }),
+  mathNode({
+    type: 'math.normalize',
+    label: 'Normalize',
+    description: 'The vector scaled to length 1; the zero vector, which has no direction, stays zero. A connected input overrides the param.',
+    inputs: { vector: vec3In('Vector') },
+    outputs: { vector: { type: 'vector3', label: 'Unit vector' } },
+    params: { vector: VEC3('Vector') },
+  }),
+  mathNode({
+    type: 'math.dot',
+    label: 'Dot Product',
+    description: 'a · b. Connected inputs override the params.',
+    inputs: { a: vec3In('A'), b: vec3In('B') },
+    outputs: { value: { type: 'number', label: 'A · B' } },
+    params: { a: VEC3('A'), b: VEC3('B') },
+  }),
+  mathNode({
+    type: 'math.cross',
+    label: 'Cross Product',
+    description: 'a × b, perpendicular to both (right-handed: X × Y is Z). Connected inputs override the params.',
+    inputs: { a: vec3In('A'), b: vec3In('B') },
+    outputs: { vector: { type: 'vector3', label: 'A × B' } },
+    params: { a: VEC3('A'), b: VEC3('B') },
+  }),
+  mathNode({
+    type: 'math.distance',
+    label: 'Distance',
+    description: 'The distance between two points (mm). Connected inputs override the params.',
+    inputs: { a: vec3In('A'), b: vec3In('B') },
+    outputs: { value: { type: 'number', label: 'Distance' } },
+    params: { a: VEC3('A'), b: VEC3('B') },
+  }),
+  mathNode({
+    type: 'math.matrix4',
+    label: 'Matrix4',
+    description:
+      'A transform matrix from a position (mm), a rotation (degrees, X then Y then Z) and a uniform scale: T · R · S, the ' +
+      'convention models and primitives are placed with. Connected inputs override the params.',
+    inputs: { position: vec3In('Position'), rotation: vec3In('Rotation (°)'), scale: { type: 'number', label: 'Scale', optional: true } },
+    outputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
+    params: {
+      position: VEC3('Position', 'mm'),
+      rotation: VEC3('Rotation', '°'),
+      scale: { kind: 'number', label: 'Scale', default: 1, step: 0.1, live: true },
+    },
+  }),
+  mathNode({
+    type: 'math.decomposeMatrix4',
+    label: 'Decompose Matrix4',
+    description:
+      'The position, rotation (degrees, X then Y then Z), quaternion and scale of a transform matrix. Only a uniform scale ' +
+      'survives: a matrix with a different scale on each axis, or a shear, loses that, and the parts do not rebuild it. ' +
+      'A mirror gives a negative scale.',
+    inputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
+    outputs: {
+      position: { type: 'vector3', label: 'Position' },
+      rotation: { type: 'vector3', label: 'Rotation (°)' },
+      quaternion: { type: 'quaternion', label: 'Quaternion' },
+      scale: { type: 'number', label: 'Scale' },
+    },
+    params: {},
+  }),
+  mathNode({
+    type: 'math.matrixFromPose',
+    label: 'Matrix from Pose',
+    description:
+      "A tracked pose as a matrix, to combine with the other matrix nodes: the marker's transform in camera space. " +
+      'Without a pose (the marker lost), the identity, and Valid is false.',
+    inputs: { pose: { type: 'pose', label: 'Pose' } },
+    outputs: { matrix: { type: 'matrix4', label: 'Matrix' }, valid: { type: 'boolean', label: 'Valid' } },
+    params: {},
+  }),
+  mathNode({
+    type: 'math.matrixMultiply',
+    label: 'Multiply Matrices',
+    description: 'A · B: the transform B, then A. An unwired side is the identity.',
+    inputs: { a: matIn('A'), b: matIn('B') },
+    outputs: { matrix: { type: 'matrix4', label: 'A · B' } },
+    params: {},
+  }),
+  mathNode({
+    type: 'math.invert',
+    label: 'Invert Matrix',
+    description:
+      'The inverse transform, e.g. camera space back to marker space. A singular matrix (a zero scale) has none: the ' +
+      'identity, and Valid is false.',
+    inputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
+    outputs: { matrix: { type: 'matrix4', label: 'Inverse' }, valid: { type: 'boolean', label: 'Valid' } },
+    params: {},
+  }),
+  mathNode({
+    type: 'math.transformPoint',
+    label: 'Transform Point',
+    description:
+      'A point moved by a matrix (divided by w), e.g. a point on the marker into camera space with Matrix from Pose. ' +
+      'An unwired matrix is the identity. A connected point overrides the param. A projective matrix that sends the ' +
+      'point to infinity (w = 0) gives a point that is not finite, which a reader ignores.',
+    inputs: { matrix: matIn('Matrix'), point: vec3In('Point') },
+    outputs: { point: { type: 'vector3', label: 'Point' } },
+    params: { point: VEC3('Point', 'mm') },
+  }),
+];
+
 /** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 export const CORE_NODES: NodeDefinition[] = [
   // ------------------------------------------------------------ sources
@@ -478,8 +620,12 @@ export const CORE_NODES: NodeDefinition[] = [
       'A glTF 2.0 model: a .glb, or a .gltf with embedded resources (a .gltf loading other files works from a URL in the studio, ' +
       'but uploads and exported apps need it self-contained). Its front (glTF +Z) faces the marker bottom edge. ' +
       'Stood up from glTF Y-up onto the marker, then scaled (mm per glTF unit), rotated (degrees, X then Y then Z) and moved (mm). ' +
-      'Autoplay plays its first clip in a loop; its status lists the clips.',
-    inputs: { scene: { type: 'scene', label: 'Scene' } },
+      'Autoplay plays its first clip in a loop; its status lists the clips. Connected position and rotation inputs override the params.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      position: { type: 'vector3', label: 'Position', optional: true },
+      rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
+    },
     outputs: { object: { type: 'sceneObject', label: 'Model' } },
     params: {
       url: { kind: 'string', label: 'Model URL', default: 'models/cube.glb', asset: 'model' },
@@ -594,6 +740,7 @@ export const CORE_NODES: NodeDefinition[] = [
       factor: { kind: 'number', label: 'Factor', default: 1, step: 0.1, live: true },
     },
   },
+  ...VECTOR_MATRIX_NODES,
   {
     type: 'math.add',
     label: 'Add',

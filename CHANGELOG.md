@@ -65,6 +65,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Brightness and Invert Color, on `[r, g, b, a]` values in sRGB. An Expression whose whole formula is
   `rgba(r, g, b, a)` or `vec3(x, y, z)` now gives a colour or a vector, on its new **Color** and **Vector**
   outputs; a numeric formula works as before.
+- Vector and matrix nodes (#68): Vector2 and Split Vector2; Length, Normalize, Dot Product, Cross Product and
+  Distance; Matrix4, Decompose Matrix4, Matrix from Pose, Multiply Matrices, Invert Matrix and Transform Point,
+  on plain column-major matrices. The glTF Model takes **Position** and **Rotation** inputs, so math nodes
+  move and turn a model. A new demo, "pinball · math on a model", bobs and turns a cube that way.
 
 ### Changed
 

@@ -7,9 +7,9 @@
  * same as the last NaN.
  *
  * When one output changes, all of a node's outputs are returned, so an unchanged array output beside it
- * gets a new reference and its readers compute again (with the same result). Every node on this helper has
- * a single array output today; a node with several (such as a matrix decomposition) would want to return
- * only the outputs that changed.
+ * gets a new reference and its readers compute again (with the same result). Only math.decomposeMatrix4
+ * has several array outputs (#68), and they change together for any matrix but a pure move; returning only
+ * the outputs that changed would spare its readers that recomputation.
  */
 import type { ParamValue } from '../core/graph';
 import type { PortValues, RuntimeNode } from './types';
