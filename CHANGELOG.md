@@ -54,6 +54,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - A position for drawn controls (#93): *Position* on the five UI control nodes puts their panel at the top
   right (as before), top left, bottom left, bottom right or bottom centre, live. Each position has its own
   panel, kept clear of the AR view's badge, FPS label, Debug Stats' overlay and Open URL's link.
+- Core sockets `vector2` (`[x, y]`) and `quaternion` (`[x, y, z, w]`) for plugin ports (#65), shown by the
+  Inspector; the plugin API's types package goes to 1.2.0. Math, colour and logic nodes are now computed
+  only when an input or a live param changes.
 
 ### Changed
 

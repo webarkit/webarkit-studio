@@ -25,8 +25,12 @@ export const CORE_SOCKET_TYPES = {
   sceneObject: { label: 'Scene object', color: '#90a4ae' },
   boolean: { label: 'Boolean', color: '#fff176' },
   number: { label: 'Number', color: '#a1887f' },
+  /** x, y: a point or direction on the marker's plane (mm). */
+  vector2: { label: 'Vector (x, y)', color: '#9fa8da' },
   /** x, y, z in marker space (mm, +Z up). */
   vector3: { label: 'Vector (x, y, z)', color: '#7986cb' },
+  /** A rotation as a unit quaternion [x, y, z, w], in marker space. */
+  quaternion: { label: 'Rotation (x, y, z, w)', color: '#5c6bc0' },
   /** [r, g, b, a], 0–1, sRGB (src/core/color.ts). */
   color: { label: 'Color (r, g, b, a)', color: '#ffab91' },
   event: { label: 'Event', color: '#ffffff' },

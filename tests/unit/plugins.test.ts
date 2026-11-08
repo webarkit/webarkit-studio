@@ -42,6 +42,14 @@ describe('validatePlugin', () => {
     expect(problemsOf(plugin())).toEqual([]);
   });
 
+  it('accepts ports on the vector2 and quaternion core sockets (#65)', () => {
+    const [node] = plugin().nodes;
+    const p = plugin({
+      nodes: [{ ...node, inputs: { ...node.inputs, uv: { type: 'vector2', label: 'UV' } }, outputs: { ...node.outputs, rotation: { type: 'quaternion', label: 'Rotation' } } }],
+    });
+    expect(problemsOf(p)).toEqual([]);
+  });
+
   it('names the plugin in the error message', () => {
     expect(() => validatePlugin(plugin({ version: 'one' }), { installed: [] })).toThrow(/plugin "acme"/);
   });

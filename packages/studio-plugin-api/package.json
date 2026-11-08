@@ -1,6 +1,6 @@
 {
   "name": "@webarkit/studio-plugin-api",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "The types a WebARKit Studio plugin is written against",
   "license": "LGPL-3.0-or-later",

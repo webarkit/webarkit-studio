@@ -92,8 +92,18 @@ The core socket types (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and the val
 (`src/plugin-api`: `VideoValue`, `TrackingResultValue` / `TrackedMarkerValue`, `ProjectionValue`,
 `MarkerInfoValue`, `PoseFilterValue`, `EventValue`, `TrackingStatsValue`, `TrackingTraceValue`,
 `ColorValue`, …) are the contract between plugins. Changing one is a breaking change of the plugin
-API, which bumps `PLUGIN_API_VERSION`. Adding a socket type (as `number`, `vector3` and `color` were)
-is not: plugins built for the same API version keep working.
+API, which bumps `PLUGIN_API_VERSION`. Adding a socket type (as `number`, `vector3`, `color`,
+`vector2` and `quaternion` were) is not: plugins built for the same API version keep working.
+
+Vectors and rotations are plain arrays of numbers: `vector2` is `[x, y]`, `vector3` is `[x, y, z]`,
+`quaternion` is `[x, y, z, w]` (a unit quaternion), and `matrix4` holds 16 numbers, column-major. The
+Inspector shows each as a list (a `matrix4` as four rows).
+
+A pure node (its outputs depend only on its inputs and params) is computed only when an input or a live
+param changes: inputs are compared by `Object.is`, so a node that outputs an array must return a new
+array when its values change, and keep the old one when they do not. The core's math, colour and logic
+nodes do so; a plugin's node that feeds them should too. The helper that does this (`src/runtime/computed.ts`)
+is the studio's own, not part of the plugin API.
 
 The values of the `renderer`, `scene` and `sceneObject` sockets are studio internals, not part of
 plugin API v1: a plugin may pass them through (wire them from one port to another) but must not
@@ -214,10 +224,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.1.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.2.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.1.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.2.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
@@ -231,8 +241,8 @@ Plugins inside this repository keep the `tsconfig.json` `paths` alias, which rea
 `src/plugin-api/index.ts` directly, so typechecking needs no build first.
 
 **Versions.** The package's major version is `PLUGIN_API_VERSION`, the `apiVersion` a plugin's manifest
-states: a breaking change, such as a change to a shared socket type, bumps both. A new optional field
-bumps the minor version.
+states: a breaking change, such as a change to a shared socket type, bumps both. An addition (a new
+optional field, a new core socket type) bumps the minor version.
 
 The package is `private`, so `npm publish` refuses it until that is decided.
 
