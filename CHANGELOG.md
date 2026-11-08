@@ -57,6 +57,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - Core sockets `vector2` (`[x, y]`) and `quaternion` (`[x, y, z, w]`) for plugin ports (#65), shown by the
   Inspector; the plugin API's types package goes to 1.2.0. Math, colour and logic nodes are now computed
   only when an input or a live param changes.
+- Math nodes (#66): Subtract, Divide, Negate, Absolute, Minimum, Maximum, Clamp, Lerp, Remap, Cosine, Tangent,
+  Atan2, Power, Square Root, Logarithm, Exponential, Round, Floor, Ceiling, Modulo, Degrees to Radians and
+  Radians to Degrees, each with inputs that override its params. Angles are in degrees, like Sine's. Time
+  has a new output, **Delta**: the seconds since the last frame, at its Speed.
 
 ### Changed
 
