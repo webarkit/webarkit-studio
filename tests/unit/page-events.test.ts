@@ -89,6 +89,20 @@ describe('plain values', () => {
     expect(kept).toBeUndefined();
   });
 
+  it('keeps an own "__proto__" key as a key: it never sets the prototype of what it returns', () => {
+    // What JSON.parse makes of a page's string, and what postMessage's structured clone keeps.
+    const sent = structuredClone(JSON.parse('{"__proto__":{"polluted":1},"a":2}'));
+    const out = plainValue(sent) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(out.polluted).toBeUndefined();
+    expect(Object.keys(out)).toEqual(['__proto__', 'a']);
+    expect(Object.getOwnPropertyDescriptor(out, '__proto__')?.value).toEqual({ polluted: 1 });
+    // Nested, too.
+    const nested = plainValue({ x: JSON.parse('{"__proto__":{"polluted":1}}') }) as { x: Record<string, unknown> };
+    expect(nested.x.polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('drops a property whose getter throws', () => {
     const o = { ok: 1 };
     Object.defineProperty(o, 'bad', { enumerable: true, get: () => { throw new Error('no'); } });
@@ -199,6 +213,23 @@ describe('page.event', () => {
     expect(h.outputs().number).toBe(8);
   });
 
+  it('passes no "__proto__" key on as a prototype, on either channel', async () => {
+    const polluting = () => structuredClone(JSON.parse('{"__proto__":{"polluted":1},"value":4}'));
+    const dom = await harness(pageEvent, { name: 'shop:go', channel: 'dom', origin: '' });
+    win.dispatchEvent(new CustomEvent('shop:go', { detail: polluting() }));
+    dom.step();
+    const post = await harness(pageEvent, { name: 'shop:go', channel: 'postMessage', origin: 'https://a.example' });
+    win.dispatchEvent(new MessageEvent('message', { data: { type: 'shop:go', detail: polluting() }, origin: 'https://a.example' }));
+    post.step();
+    for (const h of [dom, post]) {
+      const data = (h.outputs().onEvent as EventValue).data as Record<string, unknown>;
+      expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
+      expect(data.polluted).toBeUndefined();
+      expect(data.value).toBe(4);
+      expect(h.outputs().number).toBe(4);
+    }
+  });
+
   it('removes its listener on dispose', async () => {
     const h = await harness(pageEvent, { name: 'shop:go', channel: 'dom', origin: '' });
     h.node.dispose?.();
@@ -249,6 +280,17 @@ describe('action.dispatchEvent', () => {
     expect(heard[0].detail).toEqual({ data: { index: 0, name: 'pinball' }, time: event.time });
     h.step({ trigger: event }); // the same event: no new firing
     expect(heard).toHaveLength(1);
+  });
+
+  it('sends no "__proto__" key as a prototype in its detail', async () => {
+    const h = await harness(dispatchEvent, { name: 'shop:found', channel: 'dom', targetOrigin: '' }, { trigger: NOT_FIRED });
+    const heard: CustomEvent[] = [];
+    h.stage.addEventListener('shop:found', (e) => heard.push(e as CustomEvent));
+    h.step({ trigger: fire(NOT_FIRED, JSON.parse('{"__proto__":{"polluted":1},"a":2}')) });
+    const data = heard[0].detail.data as Record<string, unknown>;
+    expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
+    expect(data.polluted).toBeUndefined();
+    expect(data.a).toBe(2);
   });
 
   it('posts to the parent with the target origin on the postMessage channel', async () => {

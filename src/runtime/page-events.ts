@@ -45,7 +45,8 @@ const isPlainObject = (value: object): boolean => {
  * The value reduced to plain data: strings, finite numbers, booleans, `null`, and arrays and plain
  * objects of those, to MAX_DEPTH levels. Anything else is dropped (undefined): no DOM node, function or
  * class instance crosses between the graph and the page. A dropped item is `null` in an array, so the
- * others keep their places, and absent in an object. A cycle is dropped where it closes.
+ * others keep their places, and absent in an object. A cycle is dropped where it closes. An own
+ * `__proto__` key stays a key: the result is always a plain object of Object.prototype.
  */
 export function plainValue(value: unknown, depth = 0, ancestors: Set<object> = new Set()): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
@@ -65,7 +66,8 @@ export function plainValue(value: unknown, depth = 0, ancestors: Set<object> = n
         continue; // a getter that throws
       }
       const reduced = plainValue(item, depth + 1, ancestors);
-      if (reduced !== undefined) out[key] = reduced;
+      // Defined, not assigned: an own "__proto__" key (JSON.parse makes one) would otherwise set the prototype.
+      if (reduced !== undefined) Object.defineProperty(out, key, { value: reduced, enumerable: true, writable: true, configurable: true });
     }
     return out;
   } finally {
