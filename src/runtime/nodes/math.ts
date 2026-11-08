@@ -202,7 +202,9 @@ export const matrixMultiply: NodeFactory = () => computed(({ a, b }) => ({ matri
 /** math.invert — the inverse, and whether there is one: a singular matrix gives the identity and false. */
 export const invert: NodeFactory = () =>
   computed(({ matrix }) => {
-    const inverse = m.invertMatrix(matrixOf(matrix));
+    // Not the identity fallback: something that is not a matrix has no inverse either.
+    const input = matrixOrNull(matrix);
+    const inverse = input && m.invertMatrix(input);
     return { matrix: inverse ?? [...m.IDENTITY], valid: inverse !== null };
   });
 

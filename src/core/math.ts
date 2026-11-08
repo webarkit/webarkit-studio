@@ -125,16 +125,23 @@ export interface Decomposition {
 
 /**
  * Position, rotation and one uniform scale: the inverse of transformMatrix. The scale is the cube root of the
- * 3 × 3 determinant, so a mirror gives a negative scale and a proper rotation. A non-uniform scale or a shear
- * cannot be told by one number and is lost; a singular matrix gives scale 0 and no rotation.
+ * 3 × 3 determinant, so a mirror gives a negative scale. The rotation is read from each axis (column) divided
+ * by its own length, with the determinant's sign, so a scale that differs per axis still gives the rotation
+ * and a unit quaternion, and a mirror a proper rotation. That per-axis scale, or a shear, cannot be told by
+ * one number and is lost from the scale; a singular matrix gives scale 0 and no rotation.
  */
 export function decomposeMatrix(m: ArrayLike<number>): Decomposition {
   const position: Vec3 = [m[12], m[13], m[14]];
   const det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
   const scale = Math.cbrt(det);
   if (scale === 0 || !Number.isFinite(scale)) return { position, rotation: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: 0 };
-  // The rotation part, column-major: r[col * 3 + row].
-  const r = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]].map((v) => v / scale);
+  // The rotation part, column-major: r[col * 3 + row]. Each axis by its own length; a negative determinant
+  // flips all three, which turns the mirror into a proper rotation (det of the result is +1).
+  const sign = Math.sign(det);
+  const r = [0, 4, 8].flatMap((c) => {
+    const n = Math.hypot(m[c], m[c + 1], m[c + 2]) * sign;
+    return [m[c] / n, m[c + 1] / n, m[c + 2] / n];
+  });
   const [m11, m21, m31, m12, m22, m32, m13, m23, m33] = r;
   // Euler XYZ, as three.js reads it from a matrix.
   const y = Math.asin(Math.min(1, Math.max(-1, m13)));
@@ -142,8 +149,17 @@ export function decomposeMatrix(m: ArrayLike<number>): Decomposition {
   return { position, rotation: [x / DEG, y / DEG, z / DEG], quaternion: quaternionOf(m11, m12, m13, m21, m22, m23, m31, m32, m33), scale };
 }
 
-/** The unit quaternion of a rotation matrix (rows: m11 m12 m13 / m21 … ), as three.js computes it. */
+/**
+ * The unit quaternion of a rotation matrix (rows: m11 m12 m13 / m21 … ), as three.js computes it, then
+ * normalised: a shear leaves the axes not quite perpendicular, and the result must still be a rotation.
+ */
 function quaternionOf(m11: number, m12: number, m13: number, m21: number, m22: number, m23: number, m31: number, m32: number, m33: number): Quat {
+  const q = rawQuaternion(m11, m12, m13, m21, m22, m23, m31, m32, m33);
+  const n = Math.hypot(...q);
+  return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
+}
+
+function rawQuaternion(m11: number, m12: number, m13: number, m21: number, m22: number, m23: number, m31: number, m32: number, m33: number): Quat {
   const trace = m11 + m22 + m33;
   if (trace > 0) {
     const s = 0.5 / Math.sqrt(trace + 1);

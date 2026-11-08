@@ -253,9 +253,9 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
     type: 'math.decomposeMatrix4',
     label: 'Decompose Matrix4',
     description:
-      'The position, rotation (degrees, X then Y then Z), quaternion and scale of a transform matrix. Only a uniform scale ' +
-      'survives: a matrix with a different scale on each axis, or a shear, loses that, and the parts do not rebuild it. ' +
-      'A mirror gives a negative scale.',
+      'The position, rotation (degrees, X then Y then Z), quaternion and scale of a transform matrix. Scale is one ' +
+      'number: a matrix with a different scale on each axis, or a shear, loses that, and the parts do not rebuild it ' +
+      '(the rotation is still read right). A mirror gives a negative scale.',
     inputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
     outputs: {
       position: { type: 'vector3', label: 'Position' },

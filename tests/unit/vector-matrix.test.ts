@@ -114,6 +114,35 @@ describe('matrices (src/core/math.ts)', () => {
     close(transformMatrix({ position: d.position, rotation: d.rotation, scale: d.scale }), G, 6);
   });
 
+  const unit = (q: readonly number[]) => expect(Math.hypot(...q), `|q| of ${q}`).toBeCloseTo(1, 12);
+
+  it('reads the rotation of a non-uniform scale from each axis on its own: diag(2, 1, 1) has none', () => {
+    const d = decomposeMatrix([2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    unit(d.quaternion);
+    close(d.quaternion, [0, 0, 0, 1], 12);
+    close(d.rotation, [0, 0, 0], 12);
+  });
+
+  it('a non-uniform scale under a rotation gives that rotation, as a unit quaternion', () => {
+    const rotation: [number, number, number] = [10, 20, 30];
+    const R = transformMatrix({ position: [0, 0, 0], rotation, scale: 1 });
+    // R · S: the scale (2, 3, 0.5) along the model's own axes, then the rotation.
+    const stretched = multiplyMatrices(R, [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1]);
+    const d = decomposeMatrix(stretched);
+    unit(d.quaternion);
+    close(d.quaternion, decomposeMatrix(R).quaternion, 12);
+    close(d.rotation, rotation, 9);
+    expect(d.scale).toBeCloseTo(Math.cbrt(3), 9); // still one number: the cube root of the determinant
+  });
+
+  it('a mirror still gives a proper rotation and a negative scale', () => {
+    const mirrored = transformMatrix({ position: [0, 0, 0], rotation: [0, 0, 30], scale: -2 });
+    const d = decomposeMatrix(mirrored);
+    unit(d.quaternion);
+    expect(d.scale).toBeCloseTo(-2, 9);
+    close(transformMatrix({ position: d.position, rotation: d.rotation, scale: d.scale }), mirrored, 9);
+  });
+
   it('loses a non-uniform scale: the decomposition does not rebuild the matrix', () => {
     const stretched = [2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     const d = decomposeMatrix(stretched);
@@ -215,6 +244,14 @@ describe('vector and matrix nodes (#68)', () => {
     expect(out.valid).toBe(true);
     close(multiplyMatrices(out.matrix as number[], m), IDENTITY);
     expect(outputs('math.invert', { matrix: new Array(16).fill(0) })).toEqual({ matrix: IDENTITY, valid: false });
+  });
+
+  it('math.invert: something that is not a matrix gives the identity and not valid, not the inverse of the identity', () => {
+    const notFinite = Array.from(IDENTITY);
+    notFinite[5] = Number.NaN;
+    for (const matrix of [[1, 2, 3], notFinite, 'nope', undefined]) {
+      expect(outputs('math.invert', { matrix }), String(matrix)).toEqual({ matrix: IDENTITY, valid: false });
+    }
   });
 
   it('math.transformPoint: the point param applies while its input is unwired', () => {
