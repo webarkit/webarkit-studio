@@ -530,9 +530,18 @@ Planned split once the format stabilises (npm workspaces):
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |
 | `math.add` / `math.multiply` | ✅ ⚡ | a?, b? → number |
+| `math.subtract` / `math.divide` / `math.min` / `math.max` / `math.mod` | ✅ ⚡ | a?, b? → number (divide by 0: ±Infinity or NaN; mod is floored, with the sign of b: −30 mod 360 = 330) |
+| `math.negate` / `math.abs` / `math.sqrt` / `math.log` / `math.exp` | ✅ ⚡ | x? → number (log is natural; outside its domain, NaN or −Infinity) |
+| `math.round` / `math.floor` / `math.ceil` | ✅ ⚡ | x? → number (round: halves up) |
+| `math.clamp` | ✅ ⚡ | x?, min?, max? → number (max wins if min is above it) |
+| `math.lerp` | ✅ ⚡ | a?, b?, t? → a + (b − a) × t (not clamped) |
+| `math.remap` | ✅ ⚡ | x?, inMin?, inMax?, outMin?, outMax? → number (not clamped) |
+| `math.pow` | ✅ ⚡ | base?, exponent? → number |
 | `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
-| `math.sin` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin(x) |
-| `math.time` | ✅ ⚡ | → seconds since start (× speed) |
+| `math.sin` / `math.cos` / `math.tan` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin / cos / tan(x) |
+| `math.atan2` | ✅ ⚡ | y?, x? → angle in degrees (−180 to 180) |
+| `math.degToRad` / `math.radToDeg` | ✅ ⚡ | x? → number |
+| `math.time` | ✅ ⚡ | → seconds since start (× speed), delta (since the last frame, × speed) |
 | `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
 | `color.split` | ✅ | color → r, g, b, a |
 | `logic.and` / `logic.or` | ✅ | a, b (boolean) → value |

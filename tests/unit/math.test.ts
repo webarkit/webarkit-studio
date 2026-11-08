@@ -124,9 +124,16 @@ describe('math.sin', () => {
 describe('math.time', () => {
   it('outputs the seconds since start, times its speed', () => {
     const { node } = make('math.time', time, { speed: 2 });
-    expect(node.init!({})).toEqual({ seconds: 0 });
+    expect(node.init!({})).toEqual({ seconds: 0, delta: 0 });
     node.update!({}, frame(250));
-    expect(node.update!({}, frame(250))).toEqual({ seconds: 1 });
+    expect(node.update!({}, frame(250))).toEqual({ seconds: 1, delta: 0.5 });
+  });
+
+  it('outputs delta, the time since the last frame at its speed: seconds is the sum of the deltas (#66)', () => {
+    const { node } = make('math.time', time, { speed: 1 });
+    expect(node.init!({})).toMatchObject({ delta: 0 }); // no frame yet
+    expect(node.update!({}, frame(16))).toEqual({ seconds: 0.016, delta: 0.016 });
+    expect(node.update!({}, frame(33))).toEqual({ seconds: 0.049, delta: 0.033 });
   });
 
   it('a speed change applies from now on: no jump in the value', () => {
@@ -135,7 +142,7 @@ describe('math.time', () => {
     node.update!({}, frame(600_000)); // 600 s
     p.speed = 2;
     expect(node.onParamChange!('speed', 2)).toEqual({ seconds: 600 });
-    expect(node.update!({}, frame(1000))).toEqual({ seconds: 602 });
+    expect(node.update!({}, frame(1000))).toEqual({ seconds: 602, delta: 2 });
   });
 });
 
@@ -143,7 +150,13 @@ describe('math catalog', () => {
   it('every math node is core, in the math category, with live params only', () => {
     const defs = Object.values(NODE_CATALOG).filter((d) => d.type.startsWith('math.'));
     expect(defs.map((d) => d.type).sort()).toEqual(
-      ['math.add', 'math.addVector3', 'math.expression', 'math.multiply', 'math.number', 'math.scaleVector3', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3'].sort(),
+      [
+        'math.add', 'math.addVector3', 'math.expression', 'math.multiply', 'math.number', 'math.scaleVector3', 'math.sin', 'math.splitVector3', 'math.time', 'math.vector3',
+        // #66
+        'math.subtract', 'math.divide', 'math.negate', 'math.abs', 'math.min', 'math.max', 'math.clamp', 'math.lerp', 'math.remap',
+        'math.cos', 'math.tan', 'math.atan2', 'math.pow', 'math.sqrt', 'math.log', 'math.exp', 'math.round', 'math.floor', 'math.ceil', 'math.mod',
+        'math.degToRad', 'math.radToDeg',
+      ].sort(),
     );
     for (const d of defs) {
       expect([d.provider, d.category], d.type).toEqual(['core', 'math']);

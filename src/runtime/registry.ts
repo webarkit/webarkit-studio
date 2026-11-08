@@ -9,7 +9,7 @@ import { oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
-import { add, addVector3, multiply, number, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
+import { add, addVector3, multiply, number, NUMBER_FUNCTIONS, numberFunction, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
 import { rgba, split } from './nodes/color';
 import { expression } from './nodes/expression';
 import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
@@ -43,6 +43,8 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'math.multiply': multiply,
   'math.sin': sin,
   'math.time': time,
+  // Arithmetic and functions (#66), from one table.
+  ...Object.fromEntries(Object.entries(NUMBER_FUNCTIONS).map(([type, fn]) => [type, numberFunction(fn)])),
   'color.rgba': rgba,
   'color.split': split,
   'math.expression': expression,

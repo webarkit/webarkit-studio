@@ -68,6 +68,102 @@ export interface NodeDefinition {
   params: Record<string, ParamSpec>;
 }
 
+/** A number input and the live param of the same name that it overrides: key, label, default, step. */
+type NumberPort = [key: string, label: string, value: number, step?: number];
+
+/**
+ * A math node that maps numbers to one number (#66): each port is an optional number input over a live
+ * number param of the same name. Its function is in src/runtime/nodes/math.ts (NUMBER_FUNCTIONS).
+ */
+function numberFunction(type: string, label: string, description: string, output: string, ports: NumberPort[], extra: Record<string, ParamSpec> = {}): NodeDefinition {
+  return {
+    type,
+    label,
+    category: 'math',
+    provider: 'core',
+    description: `${description} Connected inputs override the params.`,
+    inputs: Object.fromEntries(ports.map(([key, name]) => [key, { type: 'number', label: name, optional: true }])),
+    outputs: { value: { type: 'number', label: output } },
+    params: {
+      ...Object.fromEntries(ports.map(([key, name, value, step = 0.1]) => [key, { kind: 'number', label: name, default: value, step, live: true }])),
+      ...extra,
+    },
+  };
+}
+
+/** Amplitude and offset of the trigonometric nodes, as math.sin has them. */
+const WAVE: Record<string, ParamSpec> = {
+  amplitude: { kind: 'number', label: 'Amplitude', default: 1, step: 0.1, live: true },
+  offset: { kind: 'number', label: 'Offset', default: 0, step: 0.1, live: true },
+};
+
+/** Arithmetic and functions (#66). A non-finite result goes out as it is; a node reading it falls back to its param. */
+const NUMBER_FUNCTION_NODES: NodeDefinition[] = [
+  numberFunction('math.subtract', 'Subtract', 'a − b.', 'A − B', [
+    ['a', 'A', 0],
+    ['b', 'B', 0],
+  ]),
+  numberFunction('math.divide', 'Divide', 'a ÷ b. Dividing by 0 gives ±Infinity, or NaN for 0 ÷ 0, which a number input reading it ignores (it falls back to its param).', 'A ÷ B', [
+    ['a', 'A', 1],
+    ['b', 'B', 1],
+  ]),
+  numberFunction('math.negate', 'Negate', '−x.', '−X', [['x', 'X', 0]]),
+  numberFunction('math.abs', 'Absolute', '|x|: x without its sign.', '|X|', [['x', 'X', 0]]),
+  numberFunction('math.min', 'Minimum', 'The smaller of a and b.', 'Min', [
+    ['a', 'A', 0],
+    ['b', 'B', 0],
+  ]),
+  numberFunction('math.max', 'Maximum', 'The larger of a and b.', 'Max', [
+    ['a', 'A', 0],
+    ['b', 'B', 0],
+  ]),
+  numberFunction('math.clamp', 'Clamp', 'x kept within min and max; when min is above max, max wins.', 'Clamped', [
+    ['x', 'X', 0],
+    ['min', 'Min', 0],
+    ['max', 'Max', 1],
+  ]),
+  numberFunction('math.lerp', 'Lerp', 'From a (t = 0) to b (t = 1), in a straight line; beyond them when t is outside 0–1.', 'Value', [
+    ['a', 'A', 0],
+    ['b', 'B', 1],
+    ['t', 'T', 0.5, 0.05],
+  ]),
+  numberFunction(
+    'math.remap',
+    'Remap',
+    'x from the range in min–in max to the range out min–out max, not clamped. An empty input range (in min = in max) divides by 0.',
+    'Value',
+    [
+      ['x', 'X', 0],
+      ['inMin', 'In min', 0],
+      ['inMax', 'In max', 1],
+      ['outMin', 'Out min', 0],
+      ['outMax', 'Out max', 1],
+    ],
+  ),
+  numberFunction('math.cos', 'Cosine', 'offset + amplitude × cos(x), x in degrees (like the rotations).', 'Value', [['x', 'X (°)', 0, 1]], WAVE),
+  numberFunction('math.tan', 'Tangent', 'offset + amplitude × tan(x), x in degrees. Near 90° and 270° it is very large (not Infinity).', 'Value', [['x', 'X (°)', 0, 1]], WAVE),
+  numberFunction('math.atan2', 'Atan2', 'The angle of the point (x, y), in degrees, from −180 to 180: 0 along +x, 90 along +y.', 'Angle (°)', [
+    ['y', 'Y', 0],
+    ['x', 'X', 1],
+  ]),
+  numberFunction('math.pow', 'Power', 'base to the power exponent. A negative base with a fractional exponent gives NaN.', 'Value', [
+    ['base', 'Base', 2],
+    ['exponent', 'Exponent', 2],
+  ]),
+  numberFunction('math.sqrt', 'Square Root', '√x. Below 0 it gives NaN.', '√X', [['x', 'X', 1]]),
+  numberFunction('math.log', 'Logarithm', 'The natural logarithm of x (base e). At 0 it gives −Infinity, below 0 NaN.', 'ln X', [['x', 'X', 1]]),
+  numberFunction('math.exp', 'Exponential', 'e to the power x.', 'eˣ', [['x', 'X', 0]]),
+  numberFunction('math.round', 'Round', 'x to the nearest whole number; halves go up (2.5 → 3, −2.5 → −2).', 'Rounded', [['x', 'X', 0]]),
+  numberFunction('math.floor', 'Floor', 'x down to a whole number (−1.2 → −2).', 'Floor', [['x', 'X', 0]]),
+  numberFunction('math.ceil', 'Ceiling', 'x up to a whole number (−1.2 → −1).', 'Ceiling', [['x', 'X', 0]]),
+  numberFunction('math.mod', 'Modulo', 'The remainder of a ÷ b, with the sign of b, so it wraps angles: −30 mod 360 = 330. With b = 0 it gives NaN.', 'A mod B', [
+    ['a', 'A', 0],
+    ['b', 'B', 360],
+  ]),
+  numberFunction('math.degToRad', 'Degrees to Radians', 'x degrees in radians.', 'Radians', [['x', 'Degrees', 0, 1]]),
+  numberFunction('math.radToDeg', 'Radians to Degrees', 'x radians in degrees.', 'Degrees', [['x', 'Radians', 0]]),
+];
+
 /** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 export const CORE_NODES: NodeDefinition[] = [
   // ------------------------------------------------------------ sources
@@ -538,14 +634,17 @@ export const CORE_NODES: NodeDefinition[] = [
       offset: { kind: 'number', label: 'Offset', default: 0, step: 0.1, live: true },
     },
   },
+  ...NUMBER_FUNCTION_NODES,
   {
     type: 'math.time',
     label: 'Time',
     category: 'math',
     provider: 'core',
-    description: 'Seconds since the first frame (after every node is ready), counted at Speed. With Multiply and Sine, it animates.',
+    description:
+      'Seconds since the first frame (after every node is ready), counted at Speed. With Multiply and Sine, it animates. Delta is the time since ' +
+      'the last frame, at Speed (Seconds is the sum of the deltas): multiply a speed by it to move at the same pace whatever the frame rate.',
     inputs: {},
-    outputs: { seconds: { type: 'number', label: 'Seconds' } },
+    outputs: { seconds: { type: 'number', label: 'Seconds' }, delta: { type: 'number', label: 'Delta (s)' } },
     params: { speed: { kind: 'number', label: 'Speed', default: 1, step: 0.1, live: true } },
   },
   {
