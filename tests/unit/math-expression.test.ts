@@ -74,6 +74,62 @@ describe('math.expression', () => {
     expect(node.update!({ a: 9 }, frame(16))).toEqual({ value: 3 });
   });
 
+  it('a formula ending in rgba() gives the color output only, clamped to 0–1', () => {
+    const { node } = make({ expression: 'rgba(a, 0.5, 2, 1)', a: 1 });
+    const out = node.init!({});
+    expect(out).toEqual({ color: [1, 0.5, 1, 1] });
+    expect(out).not.toHaveProperty('value');
+  });
+
+  it('a formula ending in vec3() gives the vector output, a new array only when it changes', () => {
+    const { node } = make({ expression: 'vec3(0, 0, 10 * t)' });
+    expect(node.init!({})).toEqual({ vector: [0, 0, 0] });
+    const moved = node.update!({}, frame(500)) as { vector: number[] };
+    expect(moved).toEqual({ vector: [0, 0, 5] });
+    expect(node.update!({ t: 0.5 }, frame(16))).toBeUndefined(); // same components
+    const again = node.update!({ t: 1 }, frame(16)) as { vector: number[] };
+    expect(again.vector).toEqual([0, 0, 10]);
+    expect(again.vector).not.toBe(moved.vector);
+  });
+
+  it('a non-finite component keeps the last valid colour or vector', () => {
+    const { node } = make({ expression: 'vec3(sqrt(a), 0, 0)', a: 4 });
+    node.init!({});
+    expect(node.update!({ a: -1 }, frame(16))).toBeUndefined();
+    expect(node.update!({ a: 9 }, frame(16))).toEqual({ vector: [3, 0, 0] });
+  });
+
+  it('a live change to another kind of result clears the outputs that no longer match', () => {
+    const { node, p } = make({ expression: 'a', a: 2 });
+    expect(node.init!({})).toEqual({ value: 2 });
+    p.expression = 'rgba(1, 0, 0, 1)';
+    const toColor = node.onParamChange!('expression', p.expression) as Record<string, unknown>;
+    expect(toColor).toEqual({ color: [1, 0, 0, 1] });
+    expect(Object.keys(toColor).sort()).toEqual(['color', 'value', 'vector']);
+    p.expression = 'a * 3';
+    const toNumber = node.onParamChange!('expression', p.expression) as Record<string, unknown>;
+    expect(toNumber).toEqual({ value: 6 });
+    expect(Object.keys(toNumber).sort()).toEqual(['color', 'value', 'vector']);
+  });
+
+  it('a live change to another kind clears the old output at once, even before the new one is valid', () => {
+    const { node, p } = make({ expression: 'a', a: 2 });
+    node.init!({});
+    p.expression = 'rgba(sqrt(a - 5), 0, 0, 1)';
+    const cleared = node.onParamChange!('expression', p.expression) as Record<string, unknown>;
+    expect(cleared).toEqual({});
+    expect(Object.keys(cleared).sort()).toEqual(['value', 'vector']);
+    expect(node.update!({ a: 9 }, frame(16))).toEqual({ color: [1, 0, 0, 1] });
+  });
+
+  it('the catalog entry has color and vector outputs beside value', () => {
+    expect(NODE_CATALOG['math.expression'].outputs).toMatchObject({
+      value: { type: 'number' },
+      color: { type: 'color' },
+      vector: { type: 'vector3' },
+    });
+  });
+
   it('the catalog entry matches: expression param flagged as one, a–d and t inputs', () => {
     const def = NODE_CATALOG['math.expression'];
     expect(def.params.expression).toMatchObject({ kind: 'string', syntax: 'expression', live: true });
