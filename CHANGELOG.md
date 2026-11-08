@@ -61,6 +61,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Atan2, Power, Square Root, Logarithm, Exponential, Round, Floor, Ceiling, Modulo, Degrees to Radians and
   Radians to Degrees, each with inputs that override its params. Angles are in degrees, like Sine's. Time
   has a new output, **Delta**: the seconds since the last frame, at its Speed.
+- Colour nodes (#67): Hex Color, HSV Color (hue in degrees: drive it with a time for a rainbow), Mix Colors,
+  Brightness and Invert Color, on `[r, g, b, a]` values in sRGB. An Expression whose whole formula is
+  `rgba(r, g, b, a)` or `vec3(x, y, z)` now gives a colour or a vector, on its new **Color** and **Vector**
+  outputs; a numeric formula works as before.
 
 ### Changed
 

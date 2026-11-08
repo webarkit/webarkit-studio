@@ -10,7 +10,7 @@ import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
 import { add, addVector3, multiply, number, NUMBER_FUNCTIONS, numberFunction, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
-import { rgba, split } from './nodes/color';
+import { brightness, hex, hsv, invert, mix, rgba, split } from './nodes/color';
 import { expression } from './nodes/expression';
 import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
 import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
@@ -47,6 +47,11 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   ...Object.fromEntries(Object.entries(NUMBER_FUNCTIONS).map(([type, fn]) => [type, numberFunction(fn)])),
   'color.rgba': rgba,
   'color.split': split,
+  'color.hex': hex,
+  'color.hsv': hsv,
+  'color.mix': mix,
+  'color.brightness': brightness,
+  'color.invert': invert,
   'math.expression': expression,
   'logic.and': and,
   'logic.or': or,

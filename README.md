@@ -525,7 +525,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
-| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`) |
+| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |
 | `math.number` | ✅ ⚡ | → number |
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |
@@ -544,6 +544,11 @@ Planned split once the format stabilises (npm workspaces):
 | `math.time` | ✅ ⚡ | → seconds since start (× speed), delta (since the last frame, × speed) |
 | `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
 | `color.split` | ✅ | color → r, g, b, a |
+| `color.hex` | ✅ ⚡ | → color (the picker's colour, opaque) |
+| `color.hsv` | ✅ ⚡ | h? (degrees, wrapped), s?, v?, a? (0–1) → color |
+| `color.mix` | ✅ ⚡ | a?, b? (colours), t? (0–1, clamped) → color (each channel and alpha, in sRGB) |
+| `color.brightness` | ✅ ⚡ | color?, factor? → color (red, green and blue × factor, clamped; alpha kept) |
+| `color.invert` | ✅ ⚡ | color? → color (1 − red, green and blue; alpha kept) |
 | `logic.and` / `logic.or` | ✅ | a, b (boolean) → value |
 | `logic.not` | ✅ | value → value |
 | `logic.toggle` | ✅ | trigger, reset? (event) → value (flips on trigger; *initial*) |

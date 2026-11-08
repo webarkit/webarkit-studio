@@ -8,6 +8,9 @@
  *   the functions below (trigonometry in degrees, like the graph's rotations)
  *   and the variables the caller allows.
  *
+ * A formula can also be rgba(r, g, b, a) or vec3(x, y, z) as a whole (#67), which gives several numbers.
+ * Only as a whole: inside a formula they are an error, so the language stays on numbers.
+ *
  * Shared by the runtime (evaluation) and the editor (error display).
  */
 
@@ -29,9 +32,20 @@ export class ExpressionError extends Error {
   }
 }
 
+/** What a formula gives: one number, or the components of rgba(…) or vec3(…). */
+export type ExpressionResult = 'number' | 'rgba' | 'vec3';
+
 export interface CompiledExpression {
+  readonly result: ExpressionResult;
+  /** The value of a number formula; NaN for rgba(…) and vec3(…), which have components instead. */
   evaluate(variables: Readonly<Record<string, number>>): number;
+  /** The result's numbers: one for a number formula, four for rgba(…), three for vec3(…). */
+  components(variables: Readonly<Record<string, number>>): number[];
 }
+
+/** The results that are a call around the whole formula: name → number of arguments. */
+const RESULTS: Record<string, [Exclude<ExpressionResult, 'number'>, number]> = { rgba: ['rgba', 4], vec3: ['vec3', 3] };
+const wholeOnly = (name: string, position: number) => new ExpressionError(`${name}(…) can only be the whole formula`, position);
 
 type Node = (vars: Readonly<Record<string, number>>) => number;
 
@@ -185,30 +199,39 @@ export function compileExpression(source: string, allowed: readonly string[]): C
     if (t.type === 'name') return name(t);
     throw unexpected(t);
   };
+  /** The arguments of a call whose name `t` was just read, up to and including its ")". */
+  const callArguments = (t: Token): Node[] => {
+    next(); // (
+    const args: Node[] = [];
+    nested(t, () => {
+      if (!isOp(')')) {
+        args.push(ternary());
+        while (isOp(',')) {
+          next();
+          args.push(ternary());
+        }
+      }
+      expect(')');
+    });
+    return args;
+  };
+  const arity = (t: Token, count: number, min: number, max: number) => {
+    if (count >= min && count <= max) return;
+    const message =
+      max === Infinity
+        ? `${t.text} takes at least ${min} argument${min === 1 ? '' : 's'}`
+        : `${t.text} takes ${min} argument${min === 1 ? '' : 's'}, not ${count}`;
+    throw new ExpressionError(message, t.position);
+  };
   const name = (t: Token): Node => {
     const call = isOp('(');
+    const known = Object.hasOwn(FUNCTIONS, t.text) || Object.hasOwn(RESULTS, t.text);
+    if (known && !call) throw new ExpressionError(`${t.text} is a function: ${t.text}(…)`, t.position);
+    if (Object.hasOwn(RESULTS, t.text)) throw wholeOnly(t.text, t.position);
     if (Object.hasOwn(FUNCTIONS, t.text)) {
-      if (!call) throw new ExpressionError(`${t.text} is a function: ${t.text}(…)`, t.position);
-      next();
-      const args: Node[] = [];
-      nested(t, () => {
-        if (!isOp(')')) {
-          args.push(ternary());
-          while (isOp(',')) {
-            next();
-            args.push(ternary());
-          }
-        }
-        expect(')');
-      });
+      const args = callArguments(t);
       const [min, max, fn] = FUNCTIONS[t.text];
-      if (args.length < min || args.length > max) {
-        const message =
-          max === Infinity
-            ? `${t.text} takes at least ${min} argument${min === 1 ? '' : 's'}`
-            : `${t.text} takes ${min} argument${min === 1 ? '' : 's'}, not ${args.length}`;
-        throw new ExpressionError(message, t.position);
-      }
+      arity(t, args.length, min, max);
       return (v) => fn(...args.map((a) => a(v)));
     }
     const isVariable = allowed.includes(t.text);
@@ -235,9 +258,20 @@ export function compileExpression(source: string, allowed: readonly string[]): C
   const and = binary(compare, { '&&': (a, b) => +(Boolean(a) && Boolean(b)) });
   const or = binary(and, { '||': (a, b) => +(Boolean(a) || Boolean(b)) });
 
+  // rgba(…) or vec3(…) around the whole formula; anywhere else, name() refuses them.
+  const first = peek();
+  if (first.type === 'name' && Object.hasOwn(RESULTS, first.text) && tokens[1].type === 'op' && tokens[1].text === '(') {
+    next();
+    const [result, count] = RESULTS[first.text];
+    const args = callArguments(first);
+    arity(first, args.length, count, count);
+    if (peek().type !== 'end') throw wholeOnly(first.text, peek().position);
+    return { result, evaluate: () => Number.NaN, components: (v) => args.map((a) => a(v)) };
+  }
+
   const root = ternary();
   if (peek().type !== 'end') throw unexpected(peek());
-  return { evaluate: root };
+  return { result: 'number', evaluate: root, components: (v) => [root(v)] };
 }
 
 /** The first error in `source`, or null when it compiles. */

@@ -655,7 +655,9 @@ export const CORE_NODES: NodeDefinition[] = [
     description:
       'A number from a formula, e.g. 40 + 30 * sin(t * 180). Variables a, b, c, d (params, or their inputs) and t ' +
       '(seconds since the first frame, or its input). Operators + - * / % ^, unary - and ! (not), comparisons, && ||, ? :, pi; functions ' +
-      'sin cos tan asin acos atan atan2 (degrees), sqrt abs min max clamp lerp pow log exp floor ceil round mod.',
+      'sin cos tan asin acos atan atan2 (degrees), sqrt abs min max clamp lerp pow log exp floor ceil round mod. ' +
+      'A whole formula of rgba(r, g, b, a) gives Color (0–1, clamped), and one of vec3(x, y, z) gives Vector, ' +
+      'e.g. rgba(0.5 + 0.5 * sin(t * 90), 0.2, 1, 1); only the output that matches the formula gets a value.',
     inputs: {
       a: { type: 'number', label: 'A', optional: true },
       b: { type: 'number', label: 'B', optional: true },
@@ -663,7 +665,11 @@ export const CORE_NODES: NodeDefinition[] = [
       d: { type: 'number', label: 'D', optional: true },
       t: { type: 'number', label: 'T (s)', optional: true },
     },
-    outputs: { value: { type: 'number', label: 'Value' } },
+    outputs: {
+      value: { type: 'number', label: 'Value' },
+      color: { type: 'color', label: 'Color' },
+      vector: { type: 'vector3', label: 'Vector' },
+    },
     params: {
       expression: { kind: 'string', label: 'Formula', default: 'a + b', syntax: 'expression', live: true },
       a: { kind: 'number', label: 'A', default: 0, step: 0.1, live: true },
@@ -709,6 +715,86 @@ export const CORE_NODES: NodeDefinition[] = [
       a: { type: 'number', label: 'A' },
     },
     params: {},
+  },
+  {
+    type: 'color.hex',
+    label: 'Hex Color',
+    category: 'math',
+    provider: 'core',
+    description: 'A colour from the picker, opaque.',
+    inputs: {},
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: { color: { kind: 'color', label: 'Color', default: '#ffffff', live: true } },
+  },
+  {
+    type: 'color.hsv',
+    label: 'HSV Color',
+    category: 'math',
+    provider: 'core',
+    description:
+      'A colour from hue (degrees, around the wheel: 0 red, 120 green, 240 blue, and on past 360), saturation, ' +
+      'value and alpha (0–1). Drive the hue with a time for a rainbow. Connected inputs override the params.',
+    inputs: {
+      h: { type: 'number', label: 'Hue (°)', optional: true },
+      s: { type: 'number', label: 'Saturation', optional: true },
+      v: { type: 'number', label: 'Value', optional: true },
+      a: { type: 'number', label: 'A', optional: true },
+    },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: {
+      h: { kind: 'number', label: 'Hue (°)', default: 0, step: 1, live: true },
+      s: { kind: 'number', label: 'Saturation', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      v: { kind: 'number', label: 'Value', default: 1, min: 0, max: 1, step: 0.01, live: true },
+      a: { kind: 'number', label: 'A', default: 1, min: 0, max: 1, step: 0.01, live: true },
+    },
+  },
+  {
+    type: 'color.mix',
+    label: 'Mix Colors',
+    category: 'math',
+    provider: 'core',
+    description:
+      'A colour between A and B: each channel and alpha, in sRGB. T is 0 for A and 1 for B, clamped. ' +
+      'Connected inputs override the params.',
+    inputs: {
+      a: { type: 'color', label: 'A', optional: true },
+      b: { type: 'color', label: 'B', optional: true },
+      t: { type: 'number', label: 'T', optional: true },
+    },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: {
+      a: { kind: 'color', label: 'A', default: '#ffffff', live: true },
+      b: { kind: 'color', label: 'B', default: '#000000', live: true },
+      t: { kind: 'number', label: 'T', default: 0.5, min: 0, max: 1, step: 0.05, live: true },
+    },
+  },
+  {
+    type: 'color.brightness',
+    label: 'Brightness',
+    category: 'math',
+    provider: 'core',
+    description:
+      'A colour with its red, green and blue multiplied by Factor and clamped to 0–1; alpha is kept. ' +
+      'Connected inputs override the params.',
+    inputs: {
+      color: { type: 'color', label: 'Color', optional: true },
+      factor: { type: 'number', label: 'Factor', optional: true },
+    },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: {
+      color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
+      factor: { kind: 'number', label: 'Factor', default: 1, step: 0.1, live: true },
+    },
+  },
+  {
+    type: 'color.invert',
+    label: 'Invert Color',
+    category: 'math',
+    provider: 'core',
+    description: 'A colour with its red, green and blue inverted (1 − each); alpha is kept. A connected input overrides the param.',
+    inputs: { color: { type: 'color', label: 'Color', optional: true } },
+    outputs: { color: { type: 'color', label: 'Color' } },
+    params: { color: { kind: 'color', label: 'Color', default: '#ffffff', live: true } },
   },
 
   // --------------------------------------------------------------- logic
