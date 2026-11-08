@@ -66,7 +66,12 @@ async function checkPanels(page: Page) {
   expect(left.y + left.height).toBeLessThanOrEqual(stats.y);
   expect(stats.y - (left.y + left.height)).toBeLessThan(16);
   expect(view.x + view.width - (right.x + right.width)).toBeLessThan(view.width / 4);
-  expect(right.y - view.y).toBeLessThan(view.height / 4);
+  // Top right: at its place below the renderer badge, or, when Open URL's link leaves too little room beside
+  // it, directly below the link (in CI's smaller preview, with Linux's wider fonts, it does); in the top half.
+  const below = (o: Box) => o.y + o.height + 6;
+  const near = (a: number, b: number) => Math.abs(a - b) < 2;
+  expect(near(right.y, below(overlays.badge!)) || near(right.y, below(overlays.link!)), `top right at ${right.y}`).toBe(true);
+  expect(right.y + right.height).toBeLessThanOrEqual(view.y + view.height / 2);
   for (const [name, panel] of Object.entries(panels)) {
     for (const [key, o] of Object.entries(overlays)) expect(o && overlap(panel, o), `${name} over ${key}`).toBeFalsy();
   }
