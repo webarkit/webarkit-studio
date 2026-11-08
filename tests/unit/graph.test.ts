@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph } from '../../src/core/graph';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
-import { socketsCompatible } from '../../src/core/sockets';
+import { CORE_SOCKET_TYPES, isSocketType, socketsCompatible } from '../../src/core/sockets';
 import { graph, TEST_CATALOG } from '../helpers/fake-catalog';
 
 const problems = (doc: unknown) => {
@@ -184,6 +184,18 @@ describe('socketsCompatible', () => {
     expect(socketsCompatible('pose', 'any')).toBe(true);
     expect(socketsCompatible('pose', 'markerInfo')).toBe(false);
     expect(socketsCompatible('any', 'pose')).toBe(false);
+  });
+
+  it('has vector2 and quaternion, which connect to themselves and to "any" only (#65)', () => {
+    expect(CORE_SOCKET_TYPES.vector2).toMatchObject({ label: expect.stringMatching(/x, y/) });
+    expect(CORE_SOCKET_TYPES.quaternion).toMatchObject({ label: expect.stringMatching(/x, y, z, w/) });
+    for (const t of ['vector2', 'quaternion'] as const) {
+      expect(isSocketType(t)).toBe(true);
+      expect(socketsCompatible(t, t)).toBe(true);
+      expect(socketsCompatible(t, 'any')).toBe(true);
+    }
+    expect(socketsCompatible('vector2', 'vector3')).toBe(false);
+    expect(socketsCompatible('quaternion', 'color')).toBe(false);
   });
 });
 

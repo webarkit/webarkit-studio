@@ -62,7 +62,7 @@ into the same nodes.
 ```bash
 npm test             # unit + integration (Vitest)
 npm run test:e2e     # end-to-end (Playwright, Chromium); once: npx playwright install chromium
-npm run bench        # benchmarks (tinybench); npm run bench -- runtime | tracker
+npm run bench        # benchmarks (tinybench); npm run bench -- runtime | math | tracker
 npm run test:all     # typecheck + unit + integration + e2e
 ```
 

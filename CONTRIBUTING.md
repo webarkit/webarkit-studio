@@ -25,7 +25,7 @@ npm run typecheck
 npm test             # unit + integration (integration uses the Node build of jsartoolkit-nft)
 npm run build        # studio + standalone player
 npm run test:e2e     # Playwright, Chromium with a fake camera
-npm run bench        # optional: runtime and tracker benchmarks
+npm run bench        # optional: runtime, math and tracker benchmarks
 ```
 
 `npm run test:all` runs typecheck, unit/integration and e2e tests in sequence. CI runs the same gates on every push to `master` / `dev` and on every pull request.

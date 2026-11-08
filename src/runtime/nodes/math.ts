@@ -3,19 +3,14 @@
  * types, so they run the same on every renderer and in the Node tests.
  *
  * Inputs override params: an input with the same name as a param wins while
- * it carries a finite number; the param applies otherwise. Outputs are
- * returned only when they change.
+ * it carries a finite number; the param applies otherwise. The pure ones are
+ * computed only when an input or a live param changes (../computed.ts).
  */
 import type { ParamValue } from '../../core/graph';
-import type { NodeFactory, PortValues, RuntimeNode } from '../types';
+import { computed, numberOf } from '../computed';
+import type { NodeFactory, PortValues } from '../types';
 
 type Params = Record<string, ParamValue>;
-
-/** The connected input if it is a finite number, else the param. */
-export const numberOf = (inputs: PortValues, params: Params, key: string): number => {
-  const input = inputs[key];
-  return typeof input === 'number' && Number.isFinite(input) ? input : Number(params[key]);
-};
 
 type Vec3 = [number, number, number];
 
@@ -27,37 +22,6 @@ const vectorOf = (inputs: PortValues, params: Params, key: string): Vec3 => {
   const param = params[key];
   return valid(param) ? [param[0], param[1], param[2]] : [0, 0, 0];
 };
-
-// Object.is: a NaN output is "unchanged" too, not re-emitted every frame.
-const sameOutputs = (a: PortValues, b: PortValues) =>
-  Object.keys(b).every((k) => {
-    const [x, y] = [a[k], b[k]];
-    return Array.isArray(x) && Array.isArray(y) ? x.length === y.length && x.every((v, i) => Object.is(v, y[i])) : Object.is(x, y);
-  });
-
-/** A node whose outputs are `compute(inputs)`: on init, every frame and on live param changes, returned when they change. */
-export function computed(compute: (inputs: PortValues) => PortValues): RuntimeNode {
-  let inputs: PortValues = {};
-  let last: PortValues = {};
-  const next = (): PortValues | void => {
-    const out = compute(inputs);
-    if (sameOutputs(last, out)) return;
-    last = out;
-    return out;
-  };
-  return {
-    init(i) {
-      inputs = i;
-      last = compute(inputs);
-      return last;
-    },
-    update(i) {
-      inputs = i;
-      return next();
-    },
-    onParamChange: () => next(),
-  };
-}
 
 /** math.number — a constant. */
 export const number: NodeFactory = (params) => computed(() => ({ value: Number(params.value) }));

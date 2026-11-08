@@ -103,6 +103,11 @@ describe('Inspector formatValue', () => {
     expect(formatValue([1.5, -2, 0.25])).toBe('[1.500, -2, 0.250]');
   });
 
+  it('shows a vector2 and a quaternion as a list too (#65)', () => {
+    expect(formatValue([3, -4])).toBe('[3, -4]');
+    expect(formatValue([0, 0, 0.7071, 0.7071])).toBe('[0, 0, 0.707, 0.707]');
+  });
+
   it('shows one line per marker for a tracking result', () => {
     const text = formatValue([marker(0, 'pinball', true), marker(1, 'kuva')]);
     expect(text.split('\n')).toHaveLength(2);

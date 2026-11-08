@@ -8,7 +8,7 @@
  */
 import { eventWatcher, fired, NOT_FIRED } from '../events';
 import type { EventValue, NodeFactory, PortValues } from '../types';
-import { computed, numberOf } from './math';
+import { computed, numberOf } from '../computed';
 
 const isTrue = (value: unknown) => value === true;
 const dataOf = (event: unknown) => (event as EventValue).data;
