@@ -8,6 +8,7 @@ import {
   colorValue,
   PANEL_POSITIONS,
   panelPlacement,
+  unionBox,
   sameValue,
   selectIndex,
   selectOptions,
@@ -178,6 +179,24 @@ describe("the panels' places (#93)", () => {
       expect(maxWidth, p).toBeGreaterThanOrEqual(0);
       expect(maxHeight, p).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it('keeps clear of every overlay of a kind, as their union: two Debug Stats, the first one smaller', () => {
+    // Each Debug Stats node draws its own overlay at the bottom left: one line without tracker stats, five with.
+    const small: Box = { left: 8, top: 456, right: 110, bottom: 472 };
+    const large: Box = { left: 8, top: 388, right: 150, bottom: 472 };
+    const stats = unionBox([small, large]);
+    expect(stats).toEqual({ left: 8, top: 388, right: 150, bottom: 472 });
+    const box = maxBox('bottom-left', view, { stats });
+    expect(overlap(box, large)).toBe(false);
+    expect(overlap(box, small)).toBe(false);
+    // Measured from the first one alone, the panel would cover the second.
+    expect(overlap(maxBox('bottom-left', view, { stats: small }), large)).toBe(true);
+  });
+
+  it('has no union of nothing, and the union of one is that one', () => {
+    expect(unionBox([])).toBeNull();
+    expect(unionBox([all.link!])).toEqual(all.link);
   });
 
   it('takes an unknown position as top right', () => {

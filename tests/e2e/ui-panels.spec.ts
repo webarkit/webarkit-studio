@@ -11,9 +11,12 @@ type Port = [node: string, port: string];
  * The still-photo demo (marker always found; AR View's FPS label and debug.stats' overlay on), and: a Button
  * at the bottom left, a Slider with no position (as a graph saved before #93: top right), Open URL's link
  * shown on found, and a Switch bound to the page's checkbox, set to the bottom centre, which it ignores.
+ * Also a second Debug Stats with no tracker input: its overlay, one line where the demo's has five, is drawn
+ * at the same place and first (it has no input, so it runs first), and the panels keep clear of both.
  */
 function graph(engine: string) {
   const doc = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8'));
+  doc.nodes.unshift({ id: 'stats_small', type: 'debug.stats', params: { overlay: true }, position: { x: 1400, y: 900 } });
   const nodes: Record<string, [string, Record<string, unknown>]> = {
     left: ['ui.button', { label: 'Left', elementId: '', position: 'bottom-left' }],
     x: ['ui.slider', { label: 'X', elementId: '', min: 0, max: 10, step: 1, initial: 5 }],
@@ -33,21 +36,35 @@ const PAGE_SWITCH = '<input type="checkbox" id="page-switch">';
 type Box = { x: number; y: number; width: number; height: number };
 const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-/** Each panel's box, the overlays' boxes, and the view's. */
+/** The smallest box holding all of these, or null for none. */
+function union(list: Box[]): Box | null {
+  if (!list.length) return null;
+  const x = Math.min(...list.map((b) => b.x));
+  const y = Math.min(...list.map((b) => b.y));
+  return { x, y, width: Math.max(...list.map((b) => b.x + b.width)) - x, height: Math.max(...list.map((b) => b.y + b.height)) - y };
+}
+
+/** Each panel's box, the overlays' boxes (each kind as the union of all its elements, and every element), and the view's. */
 async function boxes(page: Page) {
-  const box = async (selector: string) => (await page.locator(selector).count()) ? page.locator(selector).first().boundingBox() : null;
-  const view = (await box('.ar-view'))!;
+  const all = async (selector: string) => (await Promise.all((await page.locator(selector).all()).map((el) => el.boundingBox()))).filter((b): b is Box => !!b);
+  const view = (await page.locator('.ar-view').boundingBox())!;
   const panels: Record<string, Box> = {};
   for (const panel of await page.locator('.ui-panel').all()) panels[(await panel.getAttribute('data-position'))!] = (await panel.boundingBox())!;
-  const overlays = { badge: await box('.ar-view-badge'), fps: await box('.ar-view-fps'), stats: await box('.stats-overlay'), link: await box('.open-url-link') };
-  return { view, panels, overlays };
+  const every: Record<string, Box[]> = {
+    badge: await all('.ar-view-badge'),
+    fps: await all('.ar-view-fps'),
+    stats: await all('.stats-overlay'),
+    link: await all('.open-url-link'),
+  };
+  const overlays = Object.fromEntries(Object.entries(every).map(([key, list]) => [key, union(list)])) as Record<'badge' | 'fps' | 'stats' | 'link', Box | null>;
+  return { view, panels, overlays, every };
 }
 
 /** Two panels at their corners, and nothing on the view covered. */
 async function checkPanels(page: Page) {
   // The link comes on found; every overlay is there before the boxes are read.
   await expect(page.locator('.open-url-link')).toBeVisible(NEXT);
-  await expect(page.locator('.stats-overlay')).toBeVisible();
+  await expect(page.locator('.stats-overlay')).toHaveCount(2);
   await expect(page.locator('.ar-view-fps')).toBeVisible();
   await expect(page.locator('.ui-panel')).toHaveCount(2);
   await expect(page.locator('.ui-panel[data-position="bottom-left"] button')).toHaveText('Left');
@@ -57,10 +74,12 @@ async function checkPanels(page: Page) {
   await expect(page.locator('#page-switch')).toHaveCount(1);
   await page.waitForTimeout(300); // a frame or two: the panels are placed against the link that just came
 
-  const { view, panels, overlays } = await boxes(page);
+  const { view, panels, overlays, every } = await boxes(page);
   const left = panels['bottom-left'];
   const right = panels['top-right'];
-  // At their corners: within the view's quarter on each side; bottom left right above debug.stats, which is on.
+  // The two Debug Stats overlays differ: the first one drawn is the smaller.
+  expect(every.stats[0].height).toBeLessThan(every.stats[1].height);
+  // At their corners: within the view's quarter on each side; bottom left right above debug.stats (both), which is on.
   expect(left.x - view.x).toBeLessThan(view.width / 4);
   const stats = overlays.stats!;
   expect(left.y + left.height).toBeLessThanOrEqual(stats.y);
@@ -73,7 +92,7 @@ async function checkPanels(page: Page) {
   expect(near(right.y, below(overlays.badge!)) || near(right.y, below(overlays.link!)), `top right at ${right.y}`).toBe(true);
   expect(right.y + right.height).toBeLessThanOrEqual(view.y + view.height / 2);
   for (const [name, panel] of Object.entries(panels)) {
-    for (const [key, o] of Object.entries(overlays)) expect(o && overlap(panel, o), `${name} over ${key}`).toBeFalsy();
+    for (const [key, list] of Object.entries(every)) list.forEach((o, i) => expect(overlap(panel, o), `${name} over ${key} ${i}`).toBe(false));
   }
   expect(overlap(left, right)).toBe(false);
 }

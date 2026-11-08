@@ -21,6 +21,7 @@ import {
   selectIndex,
   selectOptions,
   sliderValue,
+  unionBox,
   type Box,
   type PanelPosition,
   type Placement,
@@ -65,12 +66,16 @@ function layoutPanels(view: HTMLElement): void {
   const rect = view.getBoundingClientRect();
   // CSS pixels of the view, whatever scales it on the page.
   const scale = view.offsetWidth ? rect.width / view.offsetWidth : 1;
+  /** Every visible element of the class, as one box: several nodes may each draw one at the same place. */
   const boxOf = (className: string): Box | null => {
-    const el = view.querySelector<HTMLElement>(`.${className}`);
-    if (!el || el.hidden) return null;
-    const r = el.getBoundingClientRect();
-    if (!r.width && !r.height) return null;
-    return { left: (r.left - rect.left) / scale, top: (r.top - rect.top) / scale, right: (r.right - rect.left) / scale, bottom: (r.bottom - rect.top) / scale };
+    const boxes: Box[] = [];
+    for (const el of view.querySelectorAll<HTMLElement>(`.${className}`)) {
+      if (el.hidden) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      boxes.push({ left: (r.left - rect.left) / scale, top: (r.top - rect.top) / scale, right: (r.right - rect.left) / scale, bottom: (r.bottom - rect.top) / scale });
+    }
+    return unionBox(boxes);
   };
   const overlays = { badge: boxOf(OVERLAYS.badge), fps: boxOf(OVERLAYS.fps), stats: boxOf(OVERLAYS.stats), link: boxOf(OVERLAYS.link) };
   // The positions with a panel: bottom left and right take half the width when bottom centre has none.

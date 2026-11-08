@@ -68,6 +68,20 @@ export interface Box {
   bottom: number;
 }
 
+/**
+ * The smallest box holding all of these, or null for none: an overlay drawn by several nodes at the same
+ * place (each Debug Stats, each Open URL draws its own) counts as all of them, not the first.
+ */
+export function unionBox(boxes: readonly Box[]): Box | null {
+  if (!boxes.length) return null;
+  return {
+    left: Math.min(...boxes.map((b) => b.left)),
+    top: Math.min(...boxes.map((b) => b.top)),
+    right: Math.max(...boxes.map((b) => b.right)),
+    bottom: Math.max(...boxes.map((b) => b.bottom)),
+  };
+}
+
 /** What the AR view draws that a panel must keep clear of, when it is there. */
 export interface Overlays {
   /** The renderer's name, top right (ar-view.ts). */
