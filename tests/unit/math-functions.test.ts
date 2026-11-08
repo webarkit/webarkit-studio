@@ -109,6 +109,16 @@ describe('arithmetic', () => {
     expect(value('math.mod', { a: 7, b: -3 })).toBe(-2);
     expect(value('math.mod', { a: 1, b: 0 })).toBeNaN();
   });
+
+  it('mod is exact for a large a: no rounding in a division', () => {
+    // 1e20 is exactly 10^20, which is 1 more than a multiple of 3.
+    expect(value('math.mod', { a: 1e20, b: 3 })).toBe(1);
+  });
+
+  it('mod is exact for a tiny b: no overflow in a division', () => {
+    // 1 is an exact multiple of the smallest double, so the remainder is 0, not -Infinity.
+    expect(value('math.mod', { a: 1, b: Number.MIN_VALUE })).toBe(0);
+  });
 });
 
 describe('functions', () => {

@@ -114,10 +114,11 @@ export const NUMBER_FUNCTIONS: Record<string, (n: Read, params: Params) => numbe
   'math.round': (n) => Math.round(n('x')),
   'math.floor': (n) => Math.floor(n('x')),
   'math.ceil': (n) => Math.ceil(n('x')),
-  // Floored: the sign of b, so -30 mod 360 is 330.
+  // Floored: the sign of b, so -30 mod 360 is 330. Built on %, which is exact, rather than on a / b,
+  // which rounds (1e20 mod 3) or overflows (1 mod Number.MIN_VALUE).
   'math.mod': (n) => {
     const [a, b] = [n('a'), n('b')];
-    return a - b * Math.floor(a / b);
+    return ((a % b) + b) % b;
   },
   'math.degToRad': (n) => n('x') * DEGREES,
   'math.radToDeg': (n) => n('x') / DEGREES,
