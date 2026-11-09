@@ -69,6 +69,14 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Distance; Matrix4, Decompose Matrix4, Matrix from Pose, Multiply Matrices, Invert Matrix and Transform Point,
   on plain column-major matrices. The glTF Model takes **Position** and **Rotation** inputs, so math nodes
   move and turn a model. A new demo, "pinball · math on a model", bobs and turns a cube that way.
+- **Script** node (#35, `script.lite`): JavaScript whose header comment declares its inputs, outputs and
+  dropdowns (`in`, `out`, `enum`, `run on-change`), on value sockets only. The node shows the script's name,
+  ports and params; **Edit** opens a code panel (Ctrl+Enter applies), **Import** reads a `.js` file or an example.
+  Changing the ports rebuilds the node and drops the wires that no longer fit, in one undo step. Errors show on
+  the node with their line and never stop the graph. A script runs in the page: the studio asks before running or
+  exporting scripts from someone else (an opened graph or project, a restored autosave), the player refuses a graph with
+  scripts named by a `?graph=` link, and the MCP server never runs one. A new demo, "pinball · one script". `script`
+  is a reserved namespace for plugins. See "Scripts" in the README.
 
 ### Changed
 

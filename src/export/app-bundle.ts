@@ -16,6 +16,7 @@ import { zipSync, strToU8 } from 'fflate';
 import type { GraphDocument, GraphNode } from '../core/graph';
 import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { effectiveDefinition } from '../core/script';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { slugify, type ExportContext, type ExportResult } from './exporters';
@@ -188,7 +189,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
   const files: Record<string, Uint8Array> = {};
   const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
   for (const node of doc.nodes) {
-    const def = NODE_CATALOG[node.type];
+    const def = effectiveDefinition(node)!; // a script's header never declares an asset param, but read it the one way
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       const value = String(node.params[key] ?? spec.default);

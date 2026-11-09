@@ -34,7 +34,7 @@ and refuses it with the list of problems if:
 
 - `id` is not a plain identifier (letters and digits), is one of the built-in namespaces
   (`source`, `tracking`, `filter`, `three`, `babylon`, `scene`, `output`, `math`, `color`, `logic`,
-  `action`, `page`, `ui`, `debug`), is `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT
+  `action`, `page`, `ui`, `debug`, `script`), is `webarkit` (reserved for webarkit/webarkit), or is already loaded (jsartoolkitNFT
   is taken by the bundled plugin);
 - `version` is not `x.y.z`, or `apiVersion` is not the studio's `PLUGIN_API_VERSION`;
 - a node type or socket id does not start with `<id>.`, or is defined twice;
@@ -46,6 +46,12 @@ and refuses it with the list of problems if:
 Node definitions and factories follow the same rules as the built-in nodes (`AGENTS.md`,
 "Adding a node"): the definitions are metadata only, factories implement `init`, `update`,
 `onParamChange` for `live` params and `dispose`.
+
+A plugin node's ports are the ones its definition lists. A script node (`script.lite`, #35) is
+different: its ports and some of its params come from its script's header, per node. The studio reads
+every node's ports through `effectiveDefinition()` (`src/core/script.ts`), so a plugin's node never needs
+to know about scripts, and a script can feed it like any node of the same socket types. Scripts run in
+the page: the studio asks before running scripts from someone else, and the MCP server never runs them.
 
 ## Registering it
 

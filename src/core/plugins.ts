@@ -14,7 +14,7 @@ import { isSocketType } from './sockets';
 export const PLUGIN_API_VERSION = 1;
 
 /** Namespaces of the built-in nodes, and `webarkit` (webarkit/webarkit trackers): no plugin may use them. */
-export const RESERVED_NAMESPACES: readonly string[] = ['source', 'tracking', 'filter', 'three', 'babylon', 'scene', 'output', 'math', 'color', 'logic', 'action', 'page', 'ui', 'debug', 'webarkit'];
+export const RESERVED_NAMESPACES: readonly string[] = ['source', 'tracking', 'filter', 'three', 'babylon', 'scene', 'output', 'math', 'color', 'logic', 'action', 'page', 'ui', 'debug', 'script', 'webarkit'];
 
 /** The parts of a StudioPlugin (src/plugin-api) the checks read. */
 export interface PluginManifest {

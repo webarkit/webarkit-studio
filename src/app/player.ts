@@ -4,7 +4,7 @@
  *
  * Graph source, in order of precedence:
  *   player.html?source=studio                    graph handed over by the studio
- *   player.html?graph=graphs/pinball-three.json   any graph URL
+ *   player.html?graph=graphs/pinball-three.json   any graph URL, without script nodes (#35)
  *   <meta name="webarkit-studio-graph" content="graph.json">  set by "Export → Standalone app"
  *   graphs/pinball-three.json                     default demo
  */
@@ -12,6 +12,7 @@ import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
 import type { AssetLookup } from '../assets/asset';
 import { loadPlugins, pluginIdsOf } from '../plugins/host';
+import { isScriptType } from '../core/script';
 import studioConfig from '../../webarkit-studio.config';
 
 /** Graphs handed over by the studio may use its uploaded assets (same origin, same IndexedDB). */
@@ -33,10 +34,23 @@ async function loadGraph(): Promise<unknown> {
     }
   }
   const meta = document.querySelector<HTMLMetaElement>(`meta[name="${GRAPH_META}"]`)?.content;
-  const url = params.get('graph') ?? meta ?? 'graphs/pinball-three.json';
+  const linked = params.get('graph');
+  const url = linked ?? meta ?? 'graphs/pinball-three.json';
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Cannot load ${url}: HTTP ${res.status}`);
-  return res.json();
+  const graph: unknown = await res.json();
+  // A script runs in this page (#35). The app's own graph and the studio's (which asked) run theirs; a graph named
+  // by a link could be anyone's, on this site's origin, with no one asked: it is refused.
+  if (linked !== null) {
+    const nodes = (graph as { nodes?: Array<{ id?: unknown; type?: unknown }> }).nodes;
+    const scripts = Array.isArray(nodes) ? nodes.filter((n) => typeof n?.type === 'string' && isScriptType(n.type)) : [];
+    if (scripts.length) {
+      throw new Error(
+        `${url} has scripts (${scripts.map((n) => String(n.id)).join(', ')}), and the player does not run scripts from a link: open the graph in the studio, which asks before running them`,
+      );
+    }
+  }
+  return graph;
 }
 
 const stage = document.getElementById('stage')!;

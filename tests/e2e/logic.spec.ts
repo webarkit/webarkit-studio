@@ -40,7 +40,8 @@ const NEXT_FOUND = { timeout: 30_000 };
 test('the palette lists the logic nodes under their own category', async ({ page }) => {
   await openStudio(page);
   const buttons = page.locator('.palette-group:has(h3:text-is("logic")) button');
-  await expect(buttons).toHaveText(['And', 'Or', 'Not', 'Toggle', 'Timer', 'Compare', 'Edge', 'Branch', 'Switch']);
+  // Script (#35) is in this category too: it comes first in the catalog.
+  await expect(buttons).toHaveText(['Script', 'And', 'Or', 'Not', 'Toggle', 'Timer', 'Compare', 'Edge', 'Branch', 'Switch']);
 });
 
 for (const engine of ['three', 'babylon']) {
