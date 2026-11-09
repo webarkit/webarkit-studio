@@ -13,6 +13,8 @@ export interface ScriptPanel {
   open(node: StudioNode): void;
   /** Follows the graph: the node's script after an undo or redo, or closes if the node is gone. */
   sync(doc: GraphDocument): void;
+  /** What a running node reported: the panel shows its node's runtime error, since the panel covers the node. */
+  report(nodeId: string, text: string): void;
   close(): void;
 }
 
@@ -25,11 +27,14 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   /** The node's script as the panel last showed or applied it. */
   let shown = '';
   let timer = 0;
+  /** The node's runtime error while the preview runs (what it shows itself), or empty. */
+  let running = '';
 
   const check = () => {
     const problem = checkScript(code.value);
-    problems.textContent = problem ? `✗ ${problem}` : '✓ no problems';
-    problems.classList.toggle('error', Boolean(problem));
+    const text = problem ? `✗ ${problem}` : running ? `✗ running: ${running}` : '✓ no problems';
+    problems.textContent = text;
+    problems.classList.toggle('error', text.startsWith('✗'));
   };
   const show = (text: string) => {
     code.value = shown = text;
@@ -65,7 +70,13 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   dialog.addEventListener('close', () => (nodeId = null));
 
   return {
+    report(id, text) {
+      if (id !== nodeId) return;
+      running = text.startsWith('✗ ') ? text.slice(2) : '';
+      check();
+    },
     open(node) {
+      if (node.id !== nodeId) running = '';
       nodeId = node.id;
       title.textContent = node.id;
       file.value = String(node.params.file ?? node.def.params.file?.default ?? 'script.js');

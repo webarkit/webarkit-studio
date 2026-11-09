@@ -132,6 +132,42 @@ test("applying a new header rebuilds the node's ports and drops the wires that n
   await expect(node.locator('.socket[data-side="output"][data-key="color"]')).toHaveCount(0);
 });
 
+test('a live edit that throws, applied from the code panel while the graph runs, shows its error; a fix clears it and the outputs move again', async ({ page }) => {
+  await loadDemo(page, 'pinball-script');
+  await run(page);
+  const lift = nodeStatus(page, 'Inspector', 1);
+  await expect(lift).toContainText(/\[0, 0, \d/, NEXT);
+  const node = scriptNode(page);
+  await node.locator('.script-edit').click();
+  const code = page.locator('#script-panel textarea');
+  const original = await code.inputValue();
+  await code.fill(original.replace('*/\n', '*/\nthrow new Error("x");\n'));
+  await code.press('Control+Enter');
+  // The node is under the panel: the error shows on the node, in the panel and once in the log.
+  await expect(node.locator('pre.status')).toHaveText('✗ line 7: x', NEXT);
+  await expect(page.locator('#script-panel .script-problems')).toContainText('✗ running: line 7: x');
+  await expect(page.locator('#log')).toContainText('✗ script: line 7: x');
+  // The Inspector's display can lag the throw by a moment: once it settles, it stays.
+  let held = await lift.innerText();
+  await expect
+    .poll(async () => {
+      const before = held;
+      await page.waitForTimeout(300);
+      held = await lift.innerText();
+      return held === before;
+    }, NEXT)
+    .toBe(true);
+  await page.waitForTimeout(800);
+  expect(await lift.innerText()).toBe(held); // outputs stopped
+  expect((await page.locator('#log').innerText()).match(/✗ script: line 7: x/g)).toHaveLength(1); // once, not every frame
+  // A fix clears the error everywhere, and the outputs move again.
+  await code.fill(original);
+  await code.press('Control+Enter');
+  await expect(node.locator('pre.status')).toHaveCount(0, NEXT);
+  await expect(page.locator('#script-panel .script-problems')).toHaveText('✓ no problems');
+  await expect.poll(() => lift.innerText(), NEXT).not.toBe(held);
+});
+
 test('a header with a mistake is not applied: the node keeps its script, its ports and its wires', async ({ page }) => {
   await loadDemo(page, 'pinball-script');
   const wires = (await autosaved(page)).edges.length;

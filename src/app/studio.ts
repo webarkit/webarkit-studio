@@ -355,7 +355,12 @@ async function run(reason = 'run') {
     runtime = new GraphRuntime(doc, {
       stage,
       log,
-      onReport: (nodeId, text) => studio.setNodeStatus(nodeId, { text }),
+      onReport: (nodeId, text) => {
+        // An empty report clears the status (no empty box left on the node).
+        studio.setNodeStatus(nodeId, text ? { text } : null);
+        // The code panel covers its node: it shows that node's runtime errors too.
+        scriptPanel.report(nodeId, text);
+      },
       studio: true,
       assets: (assetId) => assetStore.get(assetId),
     });

@@ -118,10 +118,12 @@ export const scriptLite: NodeFactory = (params, ctx) => {
   /** Why the latest script did not compile, while the last good one runs on; empty once one compiles. */
   let compileError = '';
 
+  /** Shows `text` on the node when it changes; an error also goes to the log once (the node may be out of sight). */
   const report = (text: string) => {
     if (text === reported) return;
     reported = text;
     ctx.report(text);
+    if (text.startsWith('✗ ')) ctx.log(`✗ ${ctx.nodeId}: ${text.slice(2)}`);
   };
 
   /** Compiles the script param; false (with the error on the node) when it does not compile. */
