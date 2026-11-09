@@ -16,11 +16,13 @@ import type { RenderSignal as AreaRenderSignal } from 'rete-area-plugin';
 import { classicConnectionPath, getDOMSocketPosition } from 'rete-render-utils';
 import type { StudioConnection, StudioNode } from './studio-node';
 import { SOCKET_TYPES, type SocketType } from '../core/sockets';
-import type { ParamSpec } from '../nodes/catalog';
+import type { NodeDefinition, ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
 import { renderContextMenu, type ContextMenuData, type MenuItem, type MenuSearch } from './context-menu';
 import { renderMinimap, type MinimapData } from './minimap-view';
 import { paramRow } from './param-editors';
+import { isScriptType } from '../core/script';
+import { scriptControls, SCRIPT_OWN_PARAMS, type ScriptHandlers } from './script-ui';
 
 type Position = { x: number; y: number };
 type Side = 'input' | 'output';
@@ -50,6 +52,8 @@ export interface LitRenderOptions {
   onRemoveConnection: (connection: StudioConnection) => void;
   /** Filters context menu items for the search bar. */
   searchMenu: MenuSearch;
+  /** A script node's Edit and Import (#35). */
+  script: ScriptHandlers;
 }
 
 interface ConnectionState {
@@ -61,7 +65,10 @@ interface ConnectionState {
 
 export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
   private readonly positions = getDOMSocketPosition<any, any>();
-  private readonly nodeSockets = new Map<HTMLElement, Set<HTMLElement>>();
+  /** Per node element: its registered socket elements, and the port ("side:key") each was registered for. */
+  private readonly nodeSockets = new Map<HTMLElement, Map<HTMLElement, string>>();
+  /** Per node element: the definition it was last drawn with. */
+  private readonly nodeDefs = new WeakMap<HTMLElement, NodeDefinition>();
   private readonly connections = new Map<HTMLElement, ConnectionState>();
 
   constructor(private readonly opts: LitRenderOptions) {
@@ -110,7 +117,10 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
         )}
         ${Object.keys(node.def.params).length
           ? html`<div class="params" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>
-              ${Object.entries(node.def.params).map(([key, spec]) => this.paramEditor(node, key, spec))}
+              ${isScriptType(node.type) ? scriptControls(node, this.opts.script) : nothing}
+              ${Object.entries(node.def.params)
+                .filter(([key]) => !(isScriptType(node.type) && SCRIPT_OWN_PARAMS.includes(key)))
+                .map(([key, spec]) => this.paramEditor(node, key, spec))}
             </div>`
           : nothing}
         ${node.status
@@ -132,15 +142,28 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
       node.height = drawn.offsetHeight;
     }
 
-    // Register socket elements (once per element) with the area / connection plugin.
+    // Register socket elements with the area / connection plugin: once per element and port. A script node's
+    // ports change with its script (#35), and lit reuses an element for another port: it is registered again,
+    // and an element no longer drawn is unregistered.
     const parent = this.parentScope();
-    const known = this.nodeSockets.get(data.element) ?? new Set<HTMLElement>();
+    const known = this.nodeSockets.get(data.element) ?? new Map<HTMLElement, string>();
     this.nodeSockets.set(data.element, known);
+    // Another definition (a script applied): rows may have moved, so every socket is registered (and measured) again.
+    const changed = this.nodeDefs.get(data.element) !== node.def;
+    this.nodeDefs.set(data.element, node.def);
+    for (const [el] of known) {
+      if (changed || !el.isConnected || !data.element.contains(el)) {
+        known.delete(el);
+        void parent.emit({ type: 'unmount', data: { element: el } });
+      }
+    }
     data.element.querySelectorAll<HTMLElement>('.socket').forEach((el) => {
-      if (known.has(el)) return;
-      known.add(el);
       const side = el.dataset.side as Side;
       const key = el.dataset.key!;
+      const port = `${side}:${key}`;
+      if (known.get(el) === port) return;
+      if (known.has(el)) void parent.emit({ type: 'unmount', data: { element: el } });
+      known.set(el, port);
       const payload = side === 'input' ? node.inputs[key]?.socket : node.outputs[key]?.socket;
       void parent.emit({ type: 'render', data: { type: 'socket', element: el, payload, nodeId: node.id, side, key } });
     });
@@ -191,7 +214,7 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
     const sockets = this.nodeSockets.get(element);
     if (sockets) {
       const parent = this.parentScope();
-      sockets.forEach((el) => void parent.emit({ type: 'unmount', data: { element: el } }));
+      sockets.forEach((_, el) => void parent.emit({ type: 'unmount', data: { element: el } }));
       this.nodeSockets.delete(element);
     }
     const conn = this.connections.get(element);

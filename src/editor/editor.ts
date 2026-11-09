@@ -10,7 +10,9 @@ import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'r
 import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
+import { effectiveDefinition, isScriptType, scriptHeaderOf, scriptTextOf } from '../core/script';
 import { layeredLayout } from './arrange';
+import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
 import { mergeParamEdit, ParamEditAction, sameParamValue } from './history';
@@ -31,6 +33,12 @@ export interface StudioEditorEvents {
   onWiresChange?: () => void;
   /** Undo or redo became available or unavailable. */
   onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  /** A script node's Edit was pressed (#35): open the code panel on it. */
+  onEditScript?: (node: StudioNode) => void;
+  /** A script the user gave a node (code panel, a file, an example) is about to be applied: they wrote or chose it. */
+  onScriptApplied?: (text: string) => void;
+  /** A script was not applied: its header has a mistake (the first one, with its line). */
+  onScriptRefused?: (nodeId: string, problem: string) => void;
 }
 
 export interface StudioEditor {
@@ -47,6 +55,12 @@ export interface StudioEditor {
   arrange(): Promise<void>;
   /** Sets a param as a user edit (undo, live runtime, autosave). */
   setParam(nodeId: string, key: string, value: ParamValue): void;
+  /**
+   * Gives a script node a new script (#35), as one undo step: the wires to ports it no longer has, or has with
+   * another socket type, are removed, with the param values that no longer fit, and the node's ports rebuilt.
+   * Undo brings back the script, its wires and its values. False, with nothing changed, when the header has mistakes.
+   */
+  applyScript(nodeId: string, text: string, file?: string): Promise<boolean>;
   destroy(): void;
 }
 
@@ -58,14 +72,72 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction>();
   let graphName = 'Untitled';
 
-  /** Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it. */
-  function applyParam(nodeId: string, key: string, value: ParamValue) {
+  /**
+   * Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it.
+   * Undefined removes the stored value (a script param dropped with its header line, #35), so its default applies.
+   */
+  function applyParam(nodeId: string, key: string, value: ParamValue | undefined) {
     const node = editor.getNode(nodeId);
     if (!node) return;
+    if (value === undefined) {
+      delete node.params[key];
+      void area.update('node', nodeId);
+      onChange();
+      return;
+    }
     node.params[key] = value;
+    // A script node's ports follow its script (#35), on an edit and on its undo or redo alike.
+    if (key === 'script' && isScriptType(node.type)) {
+      node.syncPorts();
+      updateDriven(nodeId);
+    }
     void area.update('node', nodeId);
     events.onParamChange?.(nodeId, key, value);
     onChange();
+  }
+
+  /** Records a param edit inside a larger step (applyScript): no separation, no merging. */
+  function recordInStep(node: StudioNode, key: string, value: ParamValue): boolean {
+    const stored = node.params[key] ?? node.def.params[key]?.default;
+    const before = Array.isArray(stored) ? [...stored] : stored;
+    if (before === undefined || sameParamValue(before, value)) return false;
+    history.add(new ParamEditAction(node.id, key, before, value, Date.now(), applyParam));
+    lastParamEdit = undefined;
+    return true;
+  }
+
+  /** Records and applies the removal of a stored param value inside a larger step: undo puts it back. */
+  function removeInStep(node: StudioNode, key: string) {
+    const stored = node.params[key];
+    if (stored === undefined) return;
+    history.add(new ParamEditAction(node.id, key, Array.isArray(stored) ? [...stored] : stored, undefined, Date.now(), applyParam));
+    lastParamEdit = undefined;
+    applyParam(node.id, key, undefined);
+  }
+
+  /** Applies a script: false, and nothing changed, when its header has mistakes (it would leave the node without ports). */
+  async function applyScript(nodeId: string, text: string, file?: string): Promise<boolean> {
+    const node = editor.getNode(nodeId);
+    if (!node || !isScriptType(node.type)) return false;
+    const { errors } = scriptHeaderOf(text);
+    if (errors.length) {
+      events.onScriptRefused?.(nodeId, `line ${errors[0].line}: ${errors[0].message}`);
+      return false;
+    }
+    // The user wrote, imported or picked it: trusted, unless it is the text the node already has (Apply on an
+    // opened script someone else wrote is not an allow).
+    if (text !== scriptTextOf(node.params)) events.onScriptApplied?.(text);
+    const next = effectiveDefinition({ type: node.type, params: { ...node.params, script: text } })!;
+    const stale = staleConnections(nodeId, node.def, next, editor.getConnections());
+    const dropped = staleParams(node.params, node.def, next);
+    await oneStep(async () => {
+      // The wires and the values that no longer fit first: undo then restores the script (and its ports) before them.
+      for (const c of stale) await editor.removeConnection(c.id);
+      for (const key of dropped) removeInStep(node, key);
+      if (recordInStep(node, 'script', text)) applyParam(nodeId, 'script', text);
+      if (file !== undefined && recordInStep(node, 'file', file)) applyParam(nodeId, 'file', file);
+    });
+    return true;
   }
 
   let lastParamEdit: ParamEditAction | undefined;
@@ -88,6 +160,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     onParamChange: (node, key, value: ParamValue) => editParam(node.id, key, value),
     onRemoveNode: (node) => removeNode(node.id),
     onRemoveConnection: (c) => void editor.removeConnection(c.id),
+    script: {
+      edit: (node) => events.onEditScript?.(node),
+      apply: (node, text, file) => void serial(async () => void (await applyScript(node.id, text, file))),
+    },
     searchMenu: (query, items) => {
       const byType = new Map(items.map((item) => [item.key, item]));
       const defs = searchNodes(query, Object.values(NODE_CATALOG).filter((d) => byType.has(d.type)));
@@ -356,6 +432,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   function editParam(nodeId: string, key: string, value: ParamValue) {
     const node = editor.getNode(nodeId);
     if (!node) return;
+    // A script changes the node's ports: only applyScript drops the wires that no longer fit (#35).
+    if (key === 'script' && isScriptType(node.type)) {
+      if (typeof value === 'string') void serial(async () => void (await applyScript(nodeId, value)));
+      return;
+    }
     const current = node.params[key] ?? node.def.params[key]?.default;
     if (current !== undefined && sameParamValue(current, value)) return; // e.g. Identity on an identity matrix
     recordParamEdit(node, key, value);
@@ -496,6 +577,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
     arrange: () => serial(arrange),
     setParam: editParam,
+    applyScript: async (nodeId, text, file) => {
+      let applied = false;
+      await serial(async () => void (applied = await applyScript(nodeId, text, file)));
+      return applied;
+    },
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);

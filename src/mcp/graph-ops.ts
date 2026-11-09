@@ -6,6 +6,7 @@
  */
 import { ARRAY_PARAM_LENGTH, graphPlugins, namespaceOf, type GraphDocument, type ParamValue, type PortRef } from '../core/graph';
 import { LOADED_PLUGINS } from '../core/plugins';
+import { effectiveDefinition } from '../core/script';
 import { socketsCompatible } from '../core/sockets';
 import { NODE_CATALOG, type NodeDefinition, type ParamSpec } from '../nodes/catalog';
 
@@ -68,8 +69,11 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       if (op.id !== undefined && ids.has(op.id)) throw new Error(`the graph already has a node "${op.id}"`);
       const id = op.id ?? freeId(op.type.slice(op.type.lastIndexOf('.') + 1), ids);
       const params: Record<string, ParamValue> = {};
+      // A script node's params beyond `script` come from its header: read with the script given, if any.
+      const script = op.params?.script;
+      const effective = effectiveDefinition({ type: op.type, params: typeof script === 'string' ? { script } : {} }, catalog) ?? def;
       for (const [key, value] of Object.entries(op.params ?? {})) {
-        checkParam(def, key, value);
+        checkParam(effective, key, value);
         params[key] = value;
       }
       doc.nodes.push({ id, type: op.type, params, ...(op.position && { position: op.position }) });
@@ -83,10 +87,12 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
     case 'connect': {
       const src = node(op.from.node);
       const dst = node(op.to.node);
-      const out = own(own(catalog, src.type)?.outputs, op.from.port);
-      const inp = own(own(catalog, dst.type)?.inputs, op.to.port);
-      if (!out) throw new Error(`${src.type} has no output "${op.from.port}" (outputs: ${Object.keys(own(catalog, src.type)?.outputs ?? {}).join(', ') || 'none'})`);
-      if (!inp) throw new Error(`${dst.type} has no input "${op.to.port}" (inputs: ${Object.keys(own(catalog, dst.type)?.inputs ?? {}).join(', ') || 'none'})`);
+      // Effective ports: a script node's come from its header (src/core/script.ts).
+      const [srcDef, dstDef] = [own(catalog, src.type) && effectiveDefinition(src, catalog), own(catalog, dst.type) && effectiveDefinition(dst, catalog)];
+      const out = own(srcDef?.outputs, op.from.port);
+      const inp = own(dstDef?.inputs, op.to.port);
+      if (!out) throw new Error(`${src.type} has no output "${op.from.port}" (outputs: ${Object.keys(srcDef?.outputs ?? {}).join(', ') || 'none'})`);
+      if (!inp) throw new Error(`${dst.type} has no input "${op.to.port}" (inputs: ${Object.keys(dstDef?.inputs ?? {}).join(', ') || 'none'})`);
       if (!socketsCompatible(out.type, inp.type)) throw new Error(`cannot connect ${out.type} (${op.from.node}.${op.from.port}) to ${inp.type} (${op.to.node}.${op.to.port})`);
       const into = doc.edges.filter((e) => e.to.node === op.to.node && e.to.port === op.to.port);
       const same = into.find((e) => e.from.node === op.from.node && e.from.port === op.from.port);
@@ -107,7 +113,7 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       const n = node(op.node);
       const def = own(catalog, n.type);
       if (!def) throw new Error(`node "${n.id}" has an unknown type "${n.type}"`);
-      checkParam(def, op.key, op.value);
+      checkParam(effectiveDefinition(n, catalog) ?? def, op.key, op.value);
       n.params = { ...n.params, [op.key]: op.value };
       return;
     }

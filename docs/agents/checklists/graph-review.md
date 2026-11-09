@@ -79,6 +79,8 @@ key by key; a renamed key looks like one removal plus one addition.
   param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
   no valid value (AGENTS.md, "Inputs override params"). An optional input without a
   same-named param documents what the node does when it is unwired.
+- Code that reads a node's ports or params reads them through `effectiveDefinition()` (`src/core/script.ts`),
+  not the catalog alone: a script node's come from its header (#35).
 
 ## 6. Units and spaces
 

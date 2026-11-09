@@ -7,7 +7,7 @@ import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
-import { emptyGraph, type GraphDocument } from '../core/graph';
+import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
 import { HANDOFF_KEY } from './handoff';
 import { EXPORTERS } from '../export/exporters';
@@ -18,6 +18,11 @@ import { parseAssetRef } from '../core/assets';
 import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
+import { isScriptType, scriptTextOf } from '../core/script';
+import { SCRIPT_EXAMPLES } from '../editor/script-examples';
+import type { ScriptHandlers } from '../editor/script-ui';
+import { createScriptPanel } from './script-panel';
+import { askToRunScripts, createScriptTrust } from './script-trust';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -36,11 +41,49 @@ const log = (msg: string) => {
 await loadPlugins(studioConfig).catch((err) => log(`✗ plugins: ${(err as Error).message}`));
 const assetStore = await openAssetStore(log);
 
+// ---------------------------------------------------------------- scripts (#35)
+// The node's default script and the examples ship with the studio: always trusted.
+const DEFAULT_SCRIPT = String(NODE_CATALOG['script.lite'].params.script.default);
+const scriptTrust = createScriptTrust([DEFAULT_SCRIPT, ...SCRIPT_EXAMPLES.map((e) => e.text)]);
+const trustDialog = $<HTMLDialogElement>('script-trust');
+/** Scripts the user gave a node here, being remembered: a Run right after waits for them. Never left rejected. */
+let trusting: Promise<void> = Promise.resolve();
+const trustScripts = (texts: string[]) => (trusting = trusting.then(() => scriptTrust.trust(texts)).catch(() => {}));
+const scriptTexts = (nodes: readonly GraphNode[]) => nodes.filter((n) => isScriptType(n.type)).map((n) => scriptTextOf(n.params));
+
+/**
+ * True if `doc` may run: it has no script that was never allowed, or the user allows them now (remembered).
+ * `why` says what asked, in the log.
+ */
+async function scriptsAllowed(doc: GraphDocument, why: string): Promise<boolean> {
+  await trusting;
+  const untrusted = await scriptTrust.untrusted(doc);
+  if (!untrusted.length) return true;
+  log(`⚠ ${why}: the graph has scripts that run code in this page (${untrusted.map((n) => n.id).join(', ')})`);
+  if (!(await askToRunScripts(trustDialog, untrusted))) {
+    log('⚠ scripts not allowed: Run asks again');
+    return false;
+  }
+  // Only the scripts the question listed: never one added to the graph while it was open.
+  await trustScripts(scriptTexts(untrusted));
+  log('✓ scripts allowed for this graph');
+  return true;
+}
+
+/** Per script node, the number of its latest live `script` change: an older one checked later is dropped. */
+const scriptEdits = new Map<string, number>();
+
+const scriptPanel = createScriptPanel($<HTMLDialogElement>('script-panel'), (nodeId, text, file) => studio.applyScript(nodeId, text, file));
+const scriptHandlers: ScriptHandlers = {
+  edit: (node) => scriptPanel.open(node),
+  apply: (node, text, file) => void studio.applyScript(node.id, text, file),
+};
+
 const inspectorEl = $('inspector');
 let inspected: StudioNode | null = null;
 const showInspector = () => {
   const node = inspected; // bound here: the setter must not follow a later selection
-  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value));
+  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value), scriptHandlers);
 };
 
 const autosave = () => {
@@ -68,11 +111,31 @@ async function loadIntoEditor(doc: GraphDocument): Promise<void> {
 const studio = await createStudioEditor($('editor'), {
   onChange() {
     showInspector(); // params may have changed (in the node, by undo)
-    if (!loadingGraph) autosave();
+    if (!loadingGraph) {
+      autosave();
+      scriptPanel.sync(studio.toDocument());
+    }
   },
   // While the preview runs, live params reach the running node immediately.
   onParamChange(nodeId, key, value) {
-    if (runtime?.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
+    if (!runtime) return;
+    // A script reaches the running preview only if it is allowed: an undo can bring back one that never was (#35).
+    // Any value, text or not: the check reads it as the runtime does. The latest change per node wins.
+    if (key === 'script') {
+      const target = runtime;
+      const seq = (scriptEdits.get(nodeId) ?? 0) + 1;
+      scriptEdits.set(nodeId, seq);
+      void (async () => {
+        await trusting;
+        const doc = { ...studio.toDocument(), nodes: [{ id: nodeId, type: 'script.lite', params: { script: value } }] };
+        const untrusted = (await scriptTrust.untrusted(doc)).length > 0;
+        if (scriptEdits.get(nodeId) !== seq || runtime !== target) return; // a later change, or another run
+        if (untrusted) log(`⚠ ${nodeId}: this script was never allowed: press Reload, which asks`);
+        else target.setParam(nodeId, key, value);
+      })();
+      return;
+    }
+    if (runtime.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
   // Wires are read when the preview starts: say so once per run.
   onWiresChange() {
@@ -90,6 +153,10 @@ const studio = await createStudioEditor($('editor'), {
     $<HTMLButtonElement>('btn-undo').disabled = !canUndo;
     $<HTMLButtonElement>('btn-redo').disabled = !canRedo;
   },
+  onEditScript: (node) => scriptPanel.open(node),
+  // The user wrote, imported or picked it here: no need to ask before running it.
+  onScriptApplied: (text) => void trustScripts([text]),
+  onScriptRefused: (nodeId, problem) => log(`✗ ${nodeId}: the script was not applied, its header has a mistake: ${problem}`),
 });
 showInspector();
 $('btn-undo').onclick = () => void studio.undo();
@@ -149,7 +216,10 @@ async function show(loaded: MigrationResult<GraphDocument>): Promise<void> {
 async function load(doc: unknown, ticket = loads.begin(), check = loadGraphDocument): Promise<boolean> {
   try {
     const loaded = check(doc);
-    await loads.run(ticket, () => show(loaded));
+    const applied = await loads.run(ticket, () => show(loaded));
+    // Opening runs nothing; a graph with scripts that were never allowed asks now (and again at Run if refused).
+    // Only for the graph shown: a load that a newer one replaced asks nothing.
+    if (applied && ticket.current()) void scriptsAllowed(loaded.doc, 'opened');
     return true;
   } catch (err) {
     log(`✗ ${(err as Error).message}`);
@@ -167,6 +237,8 @@ async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
     log(`✗ demo ${name}: ${(err as Error).message}`);
     return;
   }
+  // A demo ships with the studio: its scripts are trusted.
+  if (doc && typeof doc === 'object' && Array.isArray((doc as GraphDocument).nodes)) await trustScripts(scriptTexts((doc as GraphDocument).nodes));
   if (ticket.current()) await load(doc, ticket);
 }
 
@@ -185,9 +257,12 @@ for (const exporter of EXPORTERS) {
   item.dataset.exporter = exporter.id;
   item.onclick = async () => {
     exportMenu.open = false;
+    const doc = studio.toDocument();
+    // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
+    if (!(await scriptsAllowed(doc, 'export'))) return;
     log(`⇩ export: ${exporter.label}`);
     try {
-      const { filename, blob } = await exporter.run(studio.toDocument(), { baseUrl: document.baseURI, log, assets: assetStore });
+      const { filename, blob } = await exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore });
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
@@ -214,11 +289,12 @@ fileInput.onchange = async () => {
       const project = await unpackProject(bytes);
       const loaded = loadGraphDocument(project.graph); // an unusable project must not replace the current assets
       // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
-      await loads.run(ticket, async () => {
+      const applied = await loads.run(ticket, async () => {
         await assetStore.replaceAll(project.assets);
         log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
         await show(loaded);
       });
+      if (applied && ticket.current()) void scriptsAllowed(loaded.doc, 'opened');
     } else {
       await load(JSON.parse(new TextDecoder().decode(bytes)), ticket);
     }
@@ -226,9 +302,12 @@ fileInput.onchange = async () => {
     log(`✗ import failed: ${(err as Error).message}`);
   }
 };
-$('btn-player').onclick = () => {
+$('btn-player').onclick = async () => {
+  const doc = studio.toDocument();
+  // The player runs a graph the studio hands over: its scripts are asked about here.
+  if (!(await scriptsAllowed(doc, 'open in player'))) return;
   try {
-    localStorage.setItem(HANDOFF_KEY, JSON.stringify(studio.toDocument()));
+    localStorage.setItem(HANDOFF_KEY, JSON.stringify(doc));
     window.open('player.html?source=studio', '_blank');
   } catch (err) {
     log(`✗ ${(err as Error).message}`);
@@ -265,11 +344,23 @@ async function run(reason = 'run') {
   runBtn.disabled = true;
   stopBtn.disabled = false;
   reloadBtn.disabled = false;
+  const doc = studio.toDocument();
+  // Scripts run in this page: never one the user has not allowed (#35).
+  if (!(await scriptsAllowed(doc, 'run'))) {
+    if (id === runId) stop();
+    return;
+  }
+  if (id !== runId) return; // superseded while asking
   try {
-    runtime = new GraphRuntime(studio.toDocument(), {
+    runtime = new GraphRuntime(doc, {
       stage,
       log,
-      onReport: (nodeId, text) => studio.setNodeStatus(nodeId, { text }),
+      onReport: (nodeId, text) => {
+        // An empty report clears the status (no empty box left on the node).
+        studio.setNodeStatus(nodeId, text ? { text } : null);
+        // The code panel covers its node: it shows that node's runtime errors too.
+        scriptPanel.report(nodeId, text);
+      },
       studio: true,
       assets: (assetId) => assetStore.get(assetId),
     });

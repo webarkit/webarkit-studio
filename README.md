@@ -36,7 +36,8 @@ assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · one formula" moves it the same way with a single `math.expression`
 (`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
 `onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
-with math nodes wired into its Position and Rotation. **⟳ Reload** restarts the preview (Stop + Run),
+with math nodes wired into its Position and Rotation; "pinball · one script" is the math demo in one
+Script node (see "Scripts"). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -279,6 +280,70 @@ has when the graph starts is the first value, and fires nothing.
   the graph starts, so a graph never reads what is typed in the page. An id
   that names nothing draws the control instead, and the node says so.
 
+## Scripts
+
+**Script** (`script.lite`) runs JavaScript whose header comment declares the
+node's interface, after Sverchok's Script Node Lite. "pinball · one script" is
+the math demo written that way:
+
+```js
+/*
+in  t       number  d=0
+in  height  number  d=30 min=0 max=200
+out position vector3
+*/
+position = [0, 0, 40 + height * Math.sin(t * Math.PI)];
+```
+
+- **The header**, a block comment at the very start, one declaration per line:
+  - `in <name> <socket> [d=<default>] [min=…] [max=…] [step=…]`: an input, a variable of the code;
+  - `out <name> <socket>`: an output, set by assigning to that variable;
+  - `enum <name> <a> <b> …`: a dropdown param, a string in the code;
+  - `run on-change`: run only when an input or a param changed (the default, `run every-frame`, runs every frame).
+
+  Sockets are values only: `number`, `boolean`, `vector2`, `vector3`,
+  `quaternion`, `color`, `matrix4`, `event`. A script never touches a renderer,
+  so it runs the same on both. A mistake in the header shows on the node with
+  its line, and the node then has no ports.
+- **Params:** an `in` of a `number`, `boolean`, `vector3` or `color` also gets a
+  param with its default; while the input is wired it wins and the param is
+  disabled. An `enum` is a param only.
+- **The code** gets its inputs, `time` and `delta` (seconds) and `state` (an
+  object kept between runs). An output it does not assign keeps its last value;
+  an `event` output fires when it is given a value (`true`, or the event's data),
+  and an `event` input is `true` on the frame it fires. Outputs are checked
+  against their socket (a colour is clamped to 0–1) and sent only when they
+  change.
+- **Errors never stop the graph:** an exception shows on the node with its line,
+  and the outputs keep their last values. A `return` (of anything) ends a run
+  early: no outputs that run. A live edit that does not compile stays shown on
+  the node while the last good script runs on, until a script compiles. An infinite loop, though, freezes the
+  page: nothing can stop code that runs in it.
+- **Editing:** the node shows the script's file name, its ports and params, not
+  its code. **Edit** opens a large code panel (Ctrl+Enter applies), **Import**
+  reads a `.js` file or one of the examples. Applying a script whose ports
+  changed rebuilds the node and drops the wires that no longer fit, as one undo
+  step. An imported file is copied into the graph: edit it in VS Code or
+  similar, then import it again. A live edit applies while the preview runs; one
+  that changes the ports, or a default (`d=`), applies on **⟳ Reload**. A
+  script whose header has a mistake is not applied: the panel and the log say
+  which line. Applying drops the values of params whose header line is gone or
+  changed kind, in the same undo step.
+
+**Trust.** A script runs in the page, with everything the page can do: your
+other graphs, your uploaded assets, the camera once allowed. So the studio asks
+before running scripts it did not get from you: opening a graph or a project with
+scripts, or restoring an autosave whose scripts were never allowed, shows which
+nodes have them, and **Run**, **⟳ Reload**, **Open in player** and **Export** ask
+again until you allow them. The answer is
+remembered per script text (in this browser). Scripts you write, import or pick
+from the examples here, and the demos', are allowed. The player runs the scripts
+of an exported app's own graph and of the studio's **Open in player**, but
+refuses a graph with scripts named by a link (`player.html?graph=…`). An
+exported app compiles its scripts with `new Function`: a Content Security
+Policy on its host needs `'unsafe-eval'`. The MCP server never runs a script
+(`tracking_run` refuses a graph with one).
+
 ## MCP server
 
 An [MCP](https://modelcontextprotocol.io) server lets an agent (Claude Code, Copilot in VS Code, Cursor,
@@ -510,6 +575,7 @@ Planned split once the format stabilises (npm workspaces):
 | `ui.slider` | ✅ ⚡ | → value (number, within *min* and *max*), onChange (a range or number input) |
 | `ui.colorPicker` | ✅ ⚡ | → value (color), onChange (a colour input) |
 | `ui.select` | ✅ ⚡ | → value (number: the option's index), onChange (a select; drawn with *options*) |
+| `script.lite` | ✅ ⚡ | the inputs and outputs its script's header declares (JavaScript; asks before running a script from someone else; see "Scripts") |
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |

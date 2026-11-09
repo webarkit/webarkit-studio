@@ -944,6 +944,33 @@ export const CORE_NODES: NodeDefinition[] = [
     params: { color: { kind: 'color', label: 'Color', default: '#ffffff', live: true } },
   },
 
+  // --------------------------------------------------------------- script
+  // Ports and params beyond these two come from the script's header (src/core/script.ts, effectiveDefinition).
+  {
+    type: 'script.lite',
+    label: 'Script',
+    category: 'logic',
+    provider: 'core',
+    description:
+      'JavaScript whose header comment declares its inputs (in name socket d=… min=… max=…), outputs (out name socket), ' +
+      'dropdowns (enum name a b …) and whether it runs on every frame or only on a change (run on-change). The code ' +
+      'reads its inputs, time and delta (seconds) and state (kept between frames), and sets its outputs. It runs in ' +
+      'the page, without a sandbox: a graph with scripts asks before running them.',
+    inputs: {},
+    outputs: {},
+    params: {
+      script: {
+        kind: 'string',
+        label: 'Script',
+        default:
+          '/*\nin  t       number  d=0\nin  height  number  d=30 min=0 max=200\nout position vector3\n*/\n' +
+          'position = [0, 0, 40 + height * Math.sin(t * Math.PI)];\n',
+        live: true,
+      },
+      file: { kind: 'string', label: 'File', default: 'script.js', live: true },
+    },
+  },
+
   // --------------------------------------------------------------- logic
   {
     type: 'logic.and',

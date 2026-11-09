@@ -145,3 +145,28 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 
 /* A formula error (math.expression), under its field. */
 .param-error { display: block; margin: -1px 0 4px; color: #ef9a9a; font-size: 10.5px; white-space: normal; }
+
+/* ---------------------------------------------------------------- script nodes (#35) */
+.script-controls { display: flex; align-items: center; gap: 6px; margin: 3px 0 6px; }
+.script-controls .script-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; color: var(--text); }
+.script-controls select { max-width: 90px; }
+.studio-node .script-errors { margin: 4px 0; }
+.inspector .script-errors { padding: 6px 8px; background: var(--bg); border-radius: 4px; color: #ef9a9a; white-space: pre-wrap; }
+/* The code panel: large, over the editor, apart from Properties. Non-modal: the graph stays usable. */
+/* Over the editor column only (the layout's 180px palette and 380px preview stay visible). */
+.script-panel { position: fixed; inset: 56px 392px 24px 192px; width: auto; height: auto; margin: 0; padding: 0; display: none; flex-direction: column;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 32px rgb(0 0 0 / 0.5); z-index: 20; }
+.script-panel[open] { display: flex; }
+.script-panel header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.script-panel header input { width: 160px; font-family: ui-monospace, monospace; }
+.script-panel header .hint { margin-left: auto; color: var(--muted); }
+.script-panel textarea { flex: 1; resize: none; border: none; padding: 10px; background: var(--bg); color: var(--text);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; outline: none; }
+.script-panel .script-problems { margin: 0; padding: 6px 10px; border-top: 1px solid var(--border); color: #a5d6a7; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+.script-panel .script-problems.error { color: #ef9a9a; }
+.script-trust { max-width: 480px; background: var(--panel); color: var(--text); border: 1px solid var(--accent); border-radius: 6px; padding: 16px 20px; }
+.script-trust::backdrop { background: rgb(0 0 0 / 0.6); }
+.script-trust h2 { margin: 0 0 8px; font-size: 16px; }
+.script-trust ul { font-family: ui-monospace, monospace; }
+.script-trust form { display: flex; justify-content: flex-end; gap: 8px; }
+.script-trust .primary { border-color: var(--accent); }

@@ -6,15 +6,15 @@
 import type { HistoryAction } from 'rete-history-plugin';
 import type { ParamValue } from '../core/graph';
 
-/** Applies a param value without recording it (the editor's own setter). */
-export type ApplyParam = (nodeId: string, key: string, value: ParamValue) => void | Promise<void>;
+/** Applies a param value without recording it (the editor's own setter). Undefined: no value stored, the default applies. */
+export type ApplyParam = (nodeId: string, key: string, value: ParamValue | undefined) => void | Promise<void>;
 
 export class ParamEditAction implements HistoryAction {
   constructor(
     readonly nodeId: string,
     readonly key: string,
-    readonly before: ParamValue,
-    public after: ParamValue,
+    readonly before: ParamValue | undefined,
+    public after: ParamValue | undefined,
     /** Time of the last edit folded into this action (ms). */
     public time: number,
     private readonly apply: ApplyParam,

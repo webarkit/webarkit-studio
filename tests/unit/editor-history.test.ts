@@ -4,9 +4,9 @@ import type { ParamValue } from '../../src/core/graph';
 
 /** A param store standing in for the editor: records every value applied to it. */
 function store() {
-  const values = new Map<string, ParamValue>();
+  const values = new Map<string, ParamValue | undefined>();
   const applied: string[] = [];
-  const apply = (nodeId: string, key: string, value: ParamValue) => {
+  const apply = (nodeId: string, key: string, value: ParamValue | undefined) => {
     values.set(`${nodeId}.${key}`, value);
     applied.push(`${nodeId}.${key}=${String(value)}`);
   };
@@ -14,6 +14,15 @@ function store() {
 }
 
 describe('param edit history', () => {
+  it('a removed value (undefined) comes back on undo, and goes again on redo (#35)', async () => {
+    const s = store();
+    const action = new ParamEditAction('s', 'height', 50, undefined, 0, s.apply);
+    await action.undo();
+    expect(s.values.get('s.height')).toBe(50);
+    await action.redo();
+    expect(s.values.get('s.height')).toBeUndefined();
+  });
+
   it('undo applies the previous value, redo the new one', async () => {
     const s = store();
     const action = new ParamEditAction('box', 'size', 80, 120, 0, s.apply);
