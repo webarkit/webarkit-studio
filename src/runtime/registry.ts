@@ -9,7 +9,32 @@ import { oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
-import { add, addVector3, multiply, number, NUMBER_FUNCTIONS, numberFunction, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
+import {
+  add,
+  addVector3,
+  cross,
+  decomposeMatrix4,
+  distance,
+  dot,
+  invert as invertMatrix,
+  matrix4,
+  matrixFromPose,
+  matrixMultiply,
+  multiply,
+  normalize,
+  number,
+  NUMBER_FUNCTIONS,
+  numberFunction,
+  scaleVector3,
+  sin,
+  splitVector2,
+  splitVector3,
+  time,
+  transformPoint,
+  vector2,
+  vector3,
+  vectorLength,
+} from './nodes/math';
 import { brightness, hex, hsv, invert, mix, rgba, split } from './nodes/color';
 import { expression } from './nodes/expression';
 import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
@@ -39,6 +64,19 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'math.splitVector3': splitVector3,
   'math.addVector3': addVector3,
   'math.scaleVector3': scaleVector3,
+  'math.vector2': vector2,
+  'math.splitVector2': splitVector2,
+  'math.length': vectorLength,
+  'math.normalize': normalize,
+  'math.dot': dot,
+  'math.cross': cross,
+  'math.distance': distance,
+  'math.matrix4': matrix4,
+  'math.decomposeMatrix4': decomposeMatrix4,
+  'math.matrixFromPose': matrixFromPose,
+  'math.matrixMultiply': matrixMultiply,
+  'math.invert': invertMatrix,
+  'math.transformPoint': transformPoint,
   'math.add': add,
   'math.multiply': multiply,
   'math.sin': sin,

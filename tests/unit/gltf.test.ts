@@ -261,6 +261,45 @@ describe('scene.gltf', () => {
     expect(calls.at(-1)).toEqual(['setMatrix', Array.from(transformMatrix({ position: [0, 0, 25], rotation: [0, 0, 0], scale: 100 }))]);
   });
 
+  it('position and rotation inputs override the params, and are applied again only when they change (#68)', async () => {
+    vi.stubGlobal('fetch', async () => new Response(cubeGlb() as BodyInit));
+    const { scene, calls } = fakeScene();
+    const p = { ...params, position: [1, 2, 3], rotation: [0, 0, 45] };
+    const node = gltf(p, ctx);
+    const matrix = (position: number[], rotation: number[]) =>
+      ['setMatrix', Array.from(transformMatrix({ position: position as never, rotation: rotation as never, scale: 100 }))];
+    const position = [10, 0, 0];
+    await node.init!({ scene, position });
+    expect(calls.at(-1)).toEqual(matrix([10, 0, 0], [0, 0, 45]));
+
+    const count = calls.length;
+    node.update!({ scene, position }, frame);
+    node.update!({ scene, position: [10, 0, 0] }, frame); // a new array, the same values
+    expect(calls.length).toBe(count);
+
+    node.update!({ scene, position: [20, 0, 0], rotation: [0, 0, 90] }, frame);
+    expect(calls.at(-1)).toEqual(matrix([20, 0, 0], [0, 0, 90]));
+
+    // A param change while its input is wired: the input still wins.
+    p.position = [5, 5, 5];
+    node.onParamChange!('position', p.position);
+    expect(calls.at(-1)).toEqual(matrix([20, 0, 0], [0, 0, 90]));
+
+    // Unwired, or not a vector: the params again.
+    node.update!({ scene, position: [Number.NaN, 0, 0], rotation: [0, 0, 90] }, frame);
+    expect(calls.at(-1)).toEqual(matrix([5, 5, 5], [0, 0, 90]));
+    node.update!({ scene }, frame);
+    expect(calls.at(-1)).toEqual(matrix([5, 5, 5], [0, 0, 45]));
+  });
+
+  it('declares the position and rotation inputs, optional, as vector3 (#68)', () => {
+    const { inputs, params: specs } = NODE_CATALOG['scene.gltf'];
+    for (const key of ['position', 'rotation']) {
+      expect(inputs[key], key).toMatchObject({ type: 'vector3', optional: true });
+      expect(specs[key], key).toMatchObject({ kind: 'vector3', live: true });
+    }
+  });
+
   it('applies every live catalog param of scene.gltf: the transform, and autoplay', () => {
     const live = Object.entries(NODE_CATALOG['scene.gltf'].params).filter(([, s]) => s.live).map(([k]) => k);
     expect([...GLTF_TRANSFORM_PARAMS, 'autoplay'].sort()).toEqual(live.sort());

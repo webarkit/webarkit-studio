@@ -7,6 +7,7 @@
  * computed only when an input or a live param changes (../computed.ts).
  */
 import type { ParamValue } from '../../core/graph';
+import * as m from '../../core/math';
 import { computed, numberOf } from '../computed';
 import type { NodeFactory, PortValues } from '../types';
 
@@ -129,3 +130,84 @@ export const numberFunction =
   (fn: (n: Read, params: Params) => number): NodeFactory =>
   (params) =>
     computed((inputs) => ({ value: fn((key) => numberOf(inputs, params, key), params) }));
+
+// ------------------------------------------------------ vectors and matrices (#68)
+// Every output is a new array, built from the inputs: never one changed in place, since readers compare
+// their inputs by reference (../computed.ts).
+
+/** 16 finite numbers (a matrix4 or a pose) as a new array, else null. */
+const matrixOrNull = (value: unknown): number[] | null => {
+  const v = value as ArrayLike<number> | null | undefined;
+  if (!v || typeof v !== 'object' || v.length !== 16) return null;
+  const out = Array.from(v);
+  return out.every(Number.isFinite) ? out : null;
+};
+/** A matrix input, or the identity when it is unwired or not a matrix. */
+const matrixOf = (value: unknown): number[] => matrixOrNull(value) ?? [...m.IDENTITY];
+
+/** math.vector2 — x, y → vector2. */
+export const vector2: NodeFactory = (params) =>
+  computed((inputs) => ({ vector: [numberOf(inputs, params, 'x'), numberOf(inputs, params, 'y')] }));
+
+/** math.splitVector2 — vector2 → x, y (zeros without a valid vector). */
+export const splitVector2: NodeFactory = () =>
+  computed(({ vector }) => {
+    const v = Array.isArray(vector) && vector.length === 2 && vector.every(Number.isFinite) ? (vector as number[]) : [0, 0];
+    return { x: v[0], y: v[1] };
+  });
+
+/** math.length — |vector|. */
+export const vectorLength: NodeFactory = (params) => computed((inputs) => ({ value: m.length(vectorOf(inputs, params, 'vector')) }));
+
+/** math.normalize — the unit vector; zero stays zero. */
+export const normalize: NodeFactory = (params) => computed((inputs) => ({ vector: m.normalize(vectorOf(inputs, params, 'vector')) }));
+
+/** math.dot — a · b. */
+export const dot: NodeFactory = (params) => computed((inputs) => ({ value: m.dot(vectorOf(inputs, params, 'a'), vectorOf(inputs, params, 'b')) }));
+
+/** math.cross — a × b. */
+export const cross: NodeFactory = (params) => computed((inputs) => ({ vector: m.cross(vectorOf(inputs, params, 'a'), vectorOf(inputs, params, 'b')) }));
+
+/** math.distance — |a − b|. */
+export const distance: NodeFactory = (params) =>
+  computed((inputs) => ({ value: m.distance(vectorOf(inputs, params, 'a'), vectorOf(inputs, params, 'b')) }));
+
+/** math.matrix4 — T · Rx · Ry · Rz · S from position, rotation (degrees) and scale, as models and primitives are placed. */
+export const matrix4: NodeFactory = (params) =>
+  computed((inputs) => ({
+    matrix: m.transformMatrix({
+      position: vectorOf(inputs, params, 'position'),
+      rotation: vectorOf(inputs, params, 'rotation'),
+      scale: numberOf(inputs, params, 'scale'),
+    }),
+  }));
+
+/** math.decomposeMatrix4 — position, rotation (degrees), quaternion and uniform scale (a non-uniform scale is lost). */
+export const decomposeMatrix4: NodeFactory = () =>
+  computed(({ matrix }) => {
+    const { position, rotation, quaternion, scale } = m.decomposeMatrix(matrixOf(matrix));
+    return { position, rotation, quaternion, scale };
+  });
+
+/** math.matrixFromPose — a pose as a matrix4 (identity without one), and whether there is one. */
+export const matrixFromPose: NodeFactory = () =>
+  computed(({ pose }) => {
+    const matrix = matrixOrNull(pose);
+    return { matrix: matrix ?? [...m.IDENTITY], valid: matrix !== null };
+  });
+
+/** math.matrixMultiply — a · b (b applies first); an unwired side is the identity. */
+export const matrixMultiply: NodeFactory = () => computed(({ a, b }) => ({ matrix: m.multiplyMatrices(matrixOf(a), matrixOf(b)) }));
+
+/** math.invert — the inverse, and whether there is one: a singular matrix gives the identity and false. */
+export const invert: NodeFactory = () =>
+  computed(({ matrix }) => {
+    // Not the identity fallback: something that is not a matrix has no inverse either.
+    const input = matrixOrNull(matrix);
+    const inverse = input && m.invertMatrix(input);
+    return { matrix: inverse ?? [...m.IDENTITY], valid: inverse !== null };
+  });
+
+/** math.transformPoint — matrix · point (divided by w). */
+export const transformPoint: NodeFactory = (params) =>
+  computed((inputs) => ({ point: m.transformPoint(matrixOf(inputs.matrix), vectorOf(inputs, params, 'point')) }));

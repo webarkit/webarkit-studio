@@ -35,7 +35,8 @@ assets before this demo existed, run `npm run assets` again for the photo).
 `math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
 "pinball · one formula" moves it the same way with a single `math.expression`
 (`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
-`onFound` and pauses it on `onLost`. **⟳ Reload** restarts the preview (Stop + Run),
+`onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
+with math nodes wired into its Position and Rotation. **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -522,7 +523,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
-| `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip) |
+| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |
@@ -538,6 +539,15 @@ Planned split once the format stabilises (npm workspaces):
 | `math.remap` | ✅ ⚡ | x?, inMin?, inMax?, outMin?, outMax? → number (not clamped) |
 | `math.pow` | ✅ ⚡ | base?, exponent? → number |
 | `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
+| `math.vector2` / `math.splitVector2` | ✅ ⚡ | x?, y? → vector2 / vector2 → x, y |
+| `math.length` / `math.normalize` | ✅ ⚡ | vector? → number / vector3 (zero stays zero) |
+| `math.dot` / `math.cross` / `math.distance` | ✅ ⚡ | a?, b? (vector3) → number / vector3 / number |
+| `math.matrix4` | ✅ ⚡ | position?, rotation? (degrees), scale? → matrix4 (T · R · S, column-major, as models are placed) |
+| `math.decomposeMatrix4` | ✅ | matrix4 → position, rotation (degrees), quaternion, scale (one uniform scale: a non-uniform scale or shear is lost) |
+| `math.matrixFromPose` | ✅ | pose → matrix4, valid (identity and false without a pose) |
+| `math.matrixMultiply` | ✅ | a?, b? (matrix4) → a · b (b first; unwired is the identity) |
+| `math.invert` | ✅ | matrix4 → inverse, valid (identity and false for a singular matrix) |
+| `math.transformPoint` | ✅ ⚡ | matrix4?, point? → point (divided by w) |
 | `math.sin` / `math.cos` / `math.tan` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin / cos / tan(x) |
 | `math.atan2` | ✅ ⚡ | y?, x? → angle in degrees (−180 to 180) |
 | `math.degToRad` / `math.radToDeg` | ✅ ⚡ | x? → number |

@@ -13,6 +13,8 @@
  *  - the camera sits at the origin looking down -Z (OpenGL convention); its
  *    projection comes from the AR Camera node.
  */
+import { transformMatrix } from '../../core/math';
+
 export interface SceneObject {
   /** Scene that created the object: objects cannot cross scenes. */
   readonly scene: SceneHandle;
@@ -78,25 +80,8 @@ export function gltfClipNames({ data, binary }: Pick<ModelSpec, 'data' | 'binary
   return animations.map((a, i) => a.name || `animation${i}`);
 }
 
-/** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and uniform scale. */
-export interface Transform {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  scale: number;
-}
-
-/** Column-major T · Rx · Ry · Rz · S. */
-export function transformMatrix({ position: [x, y, z], rotation, scale: s }: Transform): number[] {
-  const [a, b, c] = rotation.map((deg) => (deg * Math.PI) / 180);
-  const [cx, sx, cy, sy, cz, sz] = [Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b), Math.cos(c), Math.sin(c)];
-  // prettier-ignore
-  return [
-    s * cy * cz,                  s * (cx * sz + sx * sy * cz), s * (sx * sz - cx * sy * cz), 0,
-    -s * cy * sz,                 s * (cx * cz - sx * sy * sz), s * (sx * cz + cx * sy * sz), 0,
-    s * sy,                       -s * sx * cy,                 s * cx * cy,                  0,
-    x,                            y,                            z,                            1,
-  ];
-}
+// Moved to src/core/math.ts with the math nodes (#68); still exported here for the adapters and their users.
+export { transformMatrix, type Transform } from '../../core/math';
 
 /**
  * glTF is Y-up; marker space is Z-up: a quarter turn about X stands models up
