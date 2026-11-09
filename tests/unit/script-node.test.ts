@@ -177,6 +177,32 @@ describe('script.lite (#35)', () => {
     expect(reports.at(-1)).toBe('ports changed: press Reload to wire them');
   });
 
+  it('an early return, of anything, means no outputs this run, and never throws out of the node', () => {
+    for (const ret of ['return;', 'return null;', 'return 5;', 'return { y: 9 };']) {
+      const { node, reports } = make(head('in x number', 'out y number') + `if (x > 1) ${ret}\ny = x;`);
+      expect(node.init!({ x: 2 }), ret).toEqual({}); // returns at init
+      expect(node.update!({ x: 1 }, frame()), ret).toEqual({ y: 1 });
+      expect(() => node.update!({ x: 3 }, frame()), ret).not.toThrow();
+      expect(node.update!({ x: 4 }, frame()), ret).toBeUndefined(); // returned: nothing sent, y keeps 1
+      expect(reports.at(-1) ?? '', ret).toBe('');
+    }
+  });
+
+  it("a compile error from a live edit stays on the node while the last good script runs, until a script compiles", () => {
+    const { node, p, reports } = make(head('in x number', 'out y number') + 'y = x;');
+    node.init!({ x: 1 });
+    p.script = head('in x number', 'out y number') + 'y = ;';
+    node.onParamChange!('script', p.script);
+    const error = reports.at(-1)!;
+    expect(error).toMatch(/^✗ /);
+    // The last good script runs on, and its successful runs keep the error shown.
+    expect(node.update!({ x: 2 }, frame())).toEqual({ y: 2 });
+    expect(reports.at(-1)).toBe(error);
+    p.script = head('in x number', 'out y number') + 'y = x * 10;';
+    expect(node.onParamChange!('script', p.script)).toEqual({ y: 20 });
+    expect(reports.at(-1)).toBe('');
+  });
+
   it("does not let a script change an upstream node's array", () => {
     const shared = [1, 2, 3];
     const { node } = make(head('in v vector3', 'out w vector3') + 'v[0] = 99; w = v;');

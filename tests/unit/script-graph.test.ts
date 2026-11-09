@@ -85,6 +85,29 @@ describe('validateGraph with script nodes (#35)', () => {
     runtime.stop();
   });
 
+  it('a script that returns early, at init and in a frame, never stops the graph: the other nodes keep updating', async () => {
+    // Returns on its odd runs (the first is at init), sets its position on the even ones.
+    const early = '/*\nin t number\nout position vector3\n*/\nstate.n = (state.n ?? 0) + 1;\nif (state.n % 2) return;\nposition = [0, 0, state.n];\n';
+    const d = doc(early, {
+      nodes: [{ id: 'clock', type: 'debug.inspector', params: {} }],
+      edges: [{ id: 'e3', from: { node: 'time', port: 'seconds' }, to: { node: 'clock', port: 'value' } }],
+    });
+    const runtime = new GraphRuntime(d, { stage: {} as HTMLElement, baseUrl: 'http://localhost/', log: () => {}, frameLoop: false });
+    await runtime.start(); // run 1: returns at init
+    const seen = (runtime as unknown as { instances: Map<string, { outputs: Record<string, unknown> }> }).instances;
+    expect(seen.get('s')!.outputs.position).toBeUndefined();
+    expect(() => {
+      runtime.tick(1000); // run 2: sets it
+      runtime.tick(1500); // run 3: returns in a frame
+    }).not.toThrow();
+    expect(seen.get('s')!.outputs.position).toEqual([0, 0, 2]); // kept from run 2
+    const clock = seen.get('time')!.outputs.seconds as number;
+    runtime.tick(2000); // run 4
+    expect(seen.get('time')!.outputs.seconds).toBeGreaterThan(clock); // the graph goes on
+    expect(seen.get('s')!.outputs.position).toEqual([0, 0, 4]);
+    runtime.stop();
+  });
+
   it('the script namespace is reserved for built-in nodes', () => {
     expect(RESERVED_NAMESPACES).toContain('script');
   });

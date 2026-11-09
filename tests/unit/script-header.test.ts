@@ -88,7 +88,7 @@ describe('parseScriptHeader (#35)', () => {
       { line: 6, message: 'd=1,2 is not 3 numbers' },
       { line: 7, message: '"a" is already declared on line 2' },
       { line: 8, message: 'an output has no options: d=#fff' },
-      { line: 9, message: '"time" is reserved (time, delta, state, script, file and __last are the node\'s own)' },
+      { line: 9, message: '"time" is reserved (time, delta, state, script, file, __last and __done are the node\'s own)' },
       { line: 10, message: 'min=1 is above max=0' },
       { line: 11, message: 'run is "on-change" or "every-frame", not "sometimes"' },
       { line: 12, message: 'enum h needs at least one option' },
@@ -96,6 +96,12 @@ describe('parseScriptHeader (#35)', () => {
       { line: 14, message: 'unknown option "size" (in takes d, min, max and step)' },
     ]);
     expect(h.inputs.map((i) => i.name)).toEqual(['a']);
+  });
+
+  it('a run line takes exactly one word', () => {
+    expect(parseScriptHeader(header(['run on-change now'])).errors).toEqual([{ line: 2, message: 'run takes one word, on-change or every-frame: "run on-change now"' }]);
+    expect(parseScriptHeader(header(['run every-frame on-change'])).errors).toEqual([{ line: 2, message: 'run takes one word, on-change or every-frame: "run every-frame on-change"' }]);
+    expect(parseScriptHeader(header(['run on-change'])).header.runOnChange).toBe(true);
   });
 
   it('an unclosed header comment is an error on line 1', () => {
@@ -106,7 +112,8 @@ describe('parseScriptHeader (#35)', () => {
     for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
       expect(parseScriptHeader(header([`in ${name} number`])).errors, name).toEqual([{ line: 2, message: `"${name}" is a property every object has: pick another name` }]);
     }
-    expect(parseScriptHeader(header(['out __last number'])).errors[0].message).toBe('"__last" is reserved (time, delta, state, script, file and __last are the node\'s own)');
+    expect(parseScriptHeader(header(['out __last number'])).errors[0].message).toBe('"__last" is reserved (time, delta, state, script, file, __last and __done are the node\'s own)');
+    expect(parseScriptHeader(header(['in __done number'])).errors[0].message).toMatch(/^"__done" is reserved/);
   });
 
   it('JavaScript reserved words are not names', () => {

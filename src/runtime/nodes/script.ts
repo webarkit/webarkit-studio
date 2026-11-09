@@ -56,9 +56,12 @@ function describeError(err: unknown, firstLineOfText: number): string {
   return line >= 1 ? `line ${line}: ${message}` : message;
 }
 
+/** What a script's run gives when it reaches its end: its outputs, after this token. */
+const DONE = Object.freeze({});
+
 interface Compiled {
   header: ScriptHeader;
-  run: (...args: unknown[]) => Record<string, unknown>;
+  run: (...args: unknown[]) => unknown;
   /** The line of the generated function where the script's first line is. */
   firstLine: number;
   /** Its ports, to tell a live change that needs a Reload. */
@@ -75,10 +78,12 @@ function compile(text: string): Compiled {
   const prelude = ['"use strict";'];
   // Outputs start from their last value (`__last`), except events, which fire only when assigned.
   if (outs.length) prelude.push(`let ${header.outputs.map((o) => `${o.name} = ${o.socket === 'event' ? 'undefined' : `__last.${o.name}`}`).join(', ')};`);
-  const body = `${prelude.join('\n')}\n${text}\n;return { ${outs.join(', ')} };`;
+  // Ends with the node's own token: a script that returns early (with anything) gives something else, read as
+  // "no outputs this run".
+  const body = `${prelude.join('\n')}\n${text}\n;return [__done, { ${outs.join(', ')} }];`;
   const names = [...header.inputs.map((i) => i.name), ...header.enums.map((e) => e.name)];
   // `new Function` puts two lines before the body ("function anonymous(…" and ") {").
-  const run = new Function('time', 'delta', 'state', '__last', ...names, body) as Compiled['run'];
+  const run = new Function('time', 'delta', 'state', '__last', '__done', ...names, body) as Compiled['run'];
   return { header, run, firstLine: 2 + prelude.length + 1, ports: portsOf(header) };
 }
 
@@ -110,6 +115,8 @@ export const scriptLite: NodeFactory = (params, ctx) => {
   let events: Record<string, EventValue> = {};
   let watchers: Record<string, (value: unknown) => boolean> = {};
   let reported = '';
+  /** Why the latest script did not compile, while the last good one runs on; empty once one compiles. */
+  let compileError = '';
 
   const report = (text: string) => {
     if (text === reported) return;
@@ -124,10 +131,12 @@ export const scriptLite: NodeFactory = (params, ctx) => {
       const next = compile(scriptTextOf(params));
       if (compiled && next.ports !== compiled.ports) state = {};
       compiled = next;
+      compileError = '';
       watchers = Object.fromEntries(next.header.inputs.filter((i) => i.socket === 'event').map((i) => [i.name, eventWatcher()]));
       return true;
     } catch (err) {
-      report(`✗ ${(err as Error).message}`);
+      compileError = (err as Error).message;
+      report(`✗ ${compileError}`);
       return false;
     }
   };
@@ -155,41 +164,59 @@ export const scriptLite: NodeFactory = (params, ctx) => {
     ...header.enums.map((e) => String(params[e.name] ?? e.options[0])),
   ];
 
-  /** Runs the script once; the outputs that changed, or nothing. */
+  /**
+   * Runs the script once; the outputs that changed, or nothing. Nothing a script does throws out of the node: an
+   * exception, or anything else that goes wrong while its outputs are read, shows on the node instead.
+   */
   const run = (): PortValues | void => {
     if (!compiled) return;
-    const { header } = compiled;
-    let result: Record<string, unknown>;
-    // Copies of the last outputs: an output changed in place is then a new value, and never the array a reader holds.
-    const previous = Object.fromEntries(Object.entries(last).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
+    const { header, firstLine } = compiled;
     try {
-      result = compiled.run(seconds, delta, state, previous, ...values(header));
+      // Copies of the last outputs: an output changed in place is then a new value, and never the array a reader holds.
+      const previous = Object.fromEntries(Object.entries(last).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
+      const ran = compiled.run(seconds, delta, state, previous, DONE, ...values(header));
+      // A script that returned early, with anything: no outputs this run.
+      if (!Array.isArray(ran) || ran[0] !== DONE) {
+        status('');
+        return;
+      }
+      const result = ran[1] as Record<string, unknown>;
+      const changed: PortValues = {};
+      let wrong = '';
+      for (const o of header.outputs) {
+        const raw = result[o.name];
+        if (o.socket === 'event') {
+          if (raw === undefined || raw === null || raw === false) continue;
+          events[o.name] = fired(events[o.name] ?? NOT_FIRED, raw === true ? undefined : raw);
+          changed[o.name] = events[o.name];
+          continue;
+        }
+        if (raw === undefined) continue; // never assigned
+        const value = outputValue(o.socket, raw);
+        if (value === undefined) {
+          wrong ||= `✗ output "${o.name}" is not ${/^[aeiou]/.test(o.socket) ? 'an' : 'a'} ${o.socket}`;
+          continue;
+        }
+        if (Object.hasOwn(last, o.name) && same(value, last[o.name])) continue;
+        last[o.name] = value;
+        changed[o.name] = value;
+      }
+      status(wrong);
+      return Object.keys(changed).length ? changed : undefined;
     } catch (err) {
-      report(`✗ ${describeError(err, compiled.firstLine)}`);
+      report(`✗ ${describeError(err, firstLine)}`);
       return;
     }
-    const changed: PortValues = {};
-    let wrong = '';
-    for (const o of header.outputs) {
-      const raw = result[o.name];
-      if (o.socket === 'event') {
-        if (raw === undefined || raw === null || raw === false) continue;
-        events[o.name] = fired(events[o.name] ?? NOT_FIRED, raw === true ? undefined : raw);
-        changed[o.name] = events[o.name];
-        continue;
-      }
-      if (raw === undefined) continue; // never assigned
-      const value = outputValue(o.socket, raw);
-      if (value === undefined) {
-        wrong ||= `✗ output "${o.name}" is not ${/^[aeiou]/.test(o.socket) ? 'an' : 'a'} ${o.socket}`;
-        continue;
-      }
-      if (o.name in last && same(value, last[o.name])) continue;
-      last[o.name] = value;
-      changed[o.name] = value;
-    }
-    report(wrong || (compiled.ports !== startPorts ? 'ports changed: press Reload to wire them' : ''));
-    return Object.keys(changed).length ? changed : undefined;
+  };
+
+  /**
+   * What the node shows after a run that did not throw: a wrong output, else a live edit that did not compile
+   * (the last good script runs on, but the error stays until a script compiles), else ports that need a Reload.
+   */
+  const status = (wrong: string) => {
+    if (wrong) report(wrong);
+    else if (compileError) report(`✗ ${compileError}`);
+    else report(compiled && compiled.ports !== startPorts ? 'ports changed: press Reload to wire them' : '');
   };
 
   return {
@@ -223,10 +250,7 @@ export const scriptLite: NodeFactory = (params, ctx) => {
       if (key === 'file') return;
       if (key === 'script' && !load()) return;
       dirty = false;
-      const out = run();
-      // A run that sends nothing still says whether the ports changed.
-      if (!out && compiled && compiled.ports !== startPorts) report('ports changed: press Reload to wire them');
-      return out;
+      return run();
     },
   };
 };

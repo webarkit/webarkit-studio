@@ -315,7 +315,9 @@ position = [0, 0, 40 + height * Math.sin(t * Math.PI)];
   against their socket (a colour is clamped to 0–1) and sent only when they
   change.
 - **Errors never stop the graph:** an exception shows on the node with its line,
-  and the outputs keep their last values. An infinite loop, though, freezes the
+  and the outputs keep their last values. A `return` (of anything) ends a run
+  early: no outputs that run. A live edit that does not compile stays shown on
+  the node while the last good script runs on, until a script compiles. An infinite loop, though, freezes the
   page: nothing can stop code that runs in it.
 - **Editing:** the node shows the script's file name, its ports and params, not
   its code. **Edit** opens a large code panel (Ctrl+Enter applies), **Import**

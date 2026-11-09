@@ -28,8 +28,8 @@ export type ScriptSocket = (typeof SCRIPT_VALUE_SOCKETS)[number];
 /** A node whose code runs in the page: the `script` namespace. */
 export const isScriptType = (type: string) => type.startsWith('script.');
 
-/** The node's own params, and the variables every script has (`__last` is the node's): header names may not take them. */
-const OWN_NAMES = ['time', 'delta', 'state', 'script', 'file', '__last'];
+/** The node's own params, and the variables every script has (`__last` and `__done` are the node's): header names may not take them. */
+const OWN_NAMES = ['time', 'delta', 'state', 'script', 'file', '__last', '__done'];
 // prettier-ignore
 const RESERVED_WORDS = new Set([
   'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum',
@@ -109,6 +109,7 @@ export function parseScriptHeader(text: string): { header: ScriptHeader; errors:
     const [keyword, name, ...rest] = words;
 
     if (keyword === 'run') {
+      if (rest.length) return fail(`run takes one word, on-change or every-frame: "${words.join(' ')}"`);
       if (name === 'on-change' || name === 'every-frame') header.runOnChange = name === 'on-change';
       else fail(`run is "on-change" or "every-frame", not "${name ?? ''}"`);
       return;
@@ -117,7 +118,7 @@ export function parseScriptHeader(text: string): { header: ScriptHeader; errors:
     if (!name) return fail(`${keyword} needs a name`);
     if (!NAME.test(name)) return fail(`"${name}" is not a name: letters, digits and _, not starting with a digit`);
     if (RESERVED_WORDS.has(name)) return fail(`"${name}" is a JavaScript reserved word`);
-    if (OWN_NAMES.includes(name)) return fail(`"${name}" is reserved (time, delta, state, script, file and __last are the node's own)`);
+    if (OWN_NAMES.includes(name)) return fail(`"${name}" is reserved (time, delta, state, script, file, __last and __done are the node's own)`);
     // As a key of the node's port and param maps, these would set or read the object's own machinery.
     if (name in Object.prototype) return fail(`"${name}" is a property every object has: pick another name`);
     if (declared.has(name)) return fail(`"${name}" is already declared on line ${declared.get(name)}`);
