@@ -77,6 +77,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   exporting scripts from someone else (an opened graph or project, a restored autosave), the player refuses a graph with
   scripts named by a `?graph=` link, and the MCP server never runs one. A new demo, "pinball · one script". `script`
   is a reserved namespace for plugins. See "Scripts" in the README.
+- **three.js Script** node (#36, `three.script`): a three.js script builds part of the scene, wired into a Marker
+  Anchor like a Primitive. Its code defines `onInit({ THREE, group, inputs })`, `onFrame(…)` and `onDispose()`; its
+  header declares value inputs and dropdowns. A live code change rebuilds its group; errors show on the node, in the
+  code panel and the log. Three.js only: with Babylon.js it fails at start and says so. A new demo, "pinball · a
+  three.js script builds the scene". A node runs code when its definition says `runsCode: true` (plugin API types
+  package 1.3.0): the trust prompt, the player's `?graph=` refusal and the MCP server's refusal read that flag.
 
 ### Changed
 

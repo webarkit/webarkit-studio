@@ -52,3 +52,38 @@ count = state.count;
 `,
   },
 ];
+
+/** Example scripts for three.script (#36). */
+export const THREE_SCRIPT_EXAMPLES: ScriptExample[] = [
+  {
+    label: 'Ring: spheres that go round, and bob',
+    file: 'ring.js',
+    text: `/*
+in  count   number  d=8 min=1 max=32 step=1
+in  radius  number  d=50 min=0 max=200
+*/
+// A ring of spheres on the marker, turning; its colour from the hue of each sphere.
+const spheres = [];
+function onInit({ THREE, group, inputs }) {
+  for (let i = 0; i < inputs.count; i++) {
+    const colour = new THREE.Color().setHSL(i / inputs.count, 0.8, 0.5);
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(8, 24, 16), new THREE.MeshStandardMaterial({ color: colour }));
+    spheres.push(sphere);
+    group.add(sphere);
+  }
+}
+function onFrame({ time, inputs }) {
+  spheres.forEach((sphere, i) => {
+    const angle = time + (i / spheres.length) * Math.PI * 2;
+    sphere.position.set(inputs.radius * Math.cos(angle), inputs.radius * Math.sin(angle), 20 + 10 * Math.sin(time * 3 + i));
+  });
+}
+`,
+  },
+];
+
+/** The examples offered for a script node type. */
+export const examplesFor = (type: string): ScriptExample[] => (type === 'three.script' ? THREE_SCRIPT_EXAMPLES : SCRIPT_EXAMPLES);
+
+/** Every example: all ship with the studio, so they are trusted. */
+export const ALL_SCRIPT_EXAMPLES: ScriptExample[] = [...SCRIPT_EXAMPLES, ...THREE_SCRIPT_EXAMPLES];

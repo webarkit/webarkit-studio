@@ -4,7 +4,7 @@
  * not applied. Problems show with their line as the user types. The panel follows one node at a time, and its
  * script: an undo or redo shows in it, unless the text in it was changed since.
  */
-import { scriptTextOf } from '../core/script';
+import { nodeScriptText } from '../core/script';
 import type { GraphDocument } from '../core/graph';
 import type { StudioNode } from '../editor/studio-node';
 import { checkScript } from '../runtime/nodes/script';
@@ -24,6 +24,8 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   const problems = dialog.querySelector<HTMLElement>('.script-problems')!;
   const title = dialog.querySelector<HTMLElement>('.script-node')!;
   let nodeId: string | null = null;
+  /** The type of the node the panel follows: its own header rules. */
+  let nodeType = 'script.lite';
   /** The node's script as the panel last showed or applied it. */
   let shown = '';
   let timer = 0;
@@ -31,7 +33,7 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   let running = '';
 
   const check = () => {
-    const problem = checkScript(code.value);
+    const problem = checkScript(code.value, nodeType);
     const text = problem ? `✗ ${problem}` : running ? `✗ running: ${running}` : '✓ no problems';
     problems.textContent = text;
     problems.classList.toggle('error', text.startsWith('✗'));
@@ -78,9 +80,10 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
     open(node) {
       if (node.id !== nodeId) running = '';
       nodeId = node.id;
+      nodeType = node.type;
       title.textContent = node.id;
       file.value = String(node.params.file ?? node.def.params.file?.default ?? 'script.js');
-      show(scriptTextOf(node.params));
+      show(nodeScriptText(node));
       if (!dialog.open) dialog.show();
       code.focus();
     },
@@ -88,7 +91,7 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
       if (!nodeId) return;
       const node = doc.nodes.find((n) => n.id === nodeId);
       if (!node) return dialog.close();
-      const text = scriptTextOf(node.params);
+      const text = nodeScriptText(node);
       // Never over what the user is typing: only when the text in the panel is the one it showed.
       if (text !== shown && code.value === shown) show(text);
     },

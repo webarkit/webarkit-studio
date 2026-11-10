@@ -181,7 +181,7 @@ export function validateGraph(
     const def = effectiveDefinition(n, catalog);
     if (!def) continue;
     // A script's text is run (#35): never anything but text, whose String() would be read differently by each part.
-    if (isScriptType(n.type) && n.params && Object.hasOwn(n.params, 'script') && typeof n.params.script !== 'string') {
+    if (isScriptType(n.type, catalog) && n.params && Object.hasOwn(n.params, 'script') && typeof n.params.script !== 'string') {
       problems.push(`node ${n.id} (${def.label}): param "script" must be text`);
     }
     for (const [key, spec] of Object.entries(def.params)) {

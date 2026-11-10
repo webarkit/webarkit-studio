@@ -166,6 +166,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       return wrap(model);
     },
     createGroup: () => wrap(new TransformNode('group', scene)),
+    // Detached and disposed with its descendants, their materials and textures: the same as Three.js's release.
+    release: (o) => {
+      const n = node(o);
+      n.parent = null;
+      n.dispose(false, true);
+    },
     createLight(spec: LightSpec) {
       const light: Light =
         spec.kind === 'directional'

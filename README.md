@@ -342,7 +342,45 @@ of an exported app's own graph and of the studio's **Open in player**, but
 refuses a graph with scripts named by a link (`player.html?graph=…`). An
 exported app compiles its scripts with `new Function`: a Content Security
 Policy on its host needs `'unsafe-eval'`. The MCP server never runs a script
-(`tracking_run` refuses a graph with one).
+(`tracking_run` refuses a graph with one). All of this applies to every node
+that runs code (**Script** and **three.js Script**), as its catalog definition
+marks it (`runsCode`), never by its name.
+
+### three.js Script
+
+**three.js Script** (`three.script`) builds part of the scene with three.js.
+Wire its *Object* into a Marker Anchor's *Children*, like a Primitive: the
+studio keeps the camera, the marker pose, found / lost visibility and the
+export, and the script only creates and animates content. "pinball · a three.js
+script builds the scene" is a knot and a ring of spheres made that way.
+
+```js
+/*
+in  height  number  d=30 min=0 max=200
+*/
+let cube;
+function onInit({ THREE, group }) {
+  cube = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 40), new THREE.MeshStandardMaterial({ color: 0xff0055 }));
+  group.add(cube);
+}
+function onFrame({ group, time, inputs }) {
+  group.position.z = 40 + inputs.height * Math.sin(time * Math.PI);
+  cube.rotation.z = time;
+}
+```
+
+- `onInit({ THREE, group, inputs })` creates meshes, materials and lights in
+  `group`, a `THREE.Group` in marker space (mm, +Z up); `onFrame({ THREE, group,
+  time, delta, inputs })` animates (seconds); `onDispose()` releases what
+  `onInit` made. Each is optional. The geometries, materials and textures under
+  `group` are disposed anyway.
+- The header declares value inputs and dropdowns as Script's does (`in`, `enum`,
+  read in `inputs`); it has no `out` lines: what the script makes goes in its
+  group.
+- A live code change runs `onDispose`, frees the old group and runs `onInit` on a
+  fresh one; header params apply live. Errors show on the node with their line,
+  and in the code panel and the log, and never stop the graph.
+- It needs the Three.js renderer: with Babylon.js it fails at start and says so.
 
 ## MCP server
 
@@ -589,6 +627,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
+| `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
 | `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |

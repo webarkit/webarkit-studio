@@ -10,7 +10,7 @@ import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'r
 import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { effectiveDefinition, isScriptType, scriptHeaderOf, scriptTextOf } from '../core/script';
+import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
@@ -119,14 +119,14 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   async function applyScript(nodeId: string, text: string, file?: string): Promise<boolean> {
     const node = editor.getNode(nodeId);
     if (!node || !isScriptType(node.type)) return false;
-    const { errors } = scriptHeaderOf(text);
+    const { errors } = scriptHeaderOf(text, node.type);
     if (errors.length) {
       events.onScriptRefused?.(nodeId, `line ${errors[0].line}: ${errors[0].message}`);
       return false;
     }
     // The user wrote, imported or picked it: trusted, unless it is the text the node already has (Apply on an
     // opened script someone else wrote is not an allow).
-    if (text !== scriptTextOf(node.params)) events.onScriptApplied?.(text);
+    if (text !== nodeScriptText(node)) events.onScriptApplied?.(text);
     const next = effectiveDefinition({ type: node.type, params: { ...node.params, script: text } })!;
     const stale = staleConnections(nodeId, node.def, next, editor.getConnections());
     const dropped = staleParams(node.params, node.def, next);

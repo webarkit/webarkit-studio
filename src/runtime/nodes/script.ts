@@ -88,12 +88,59 @@ function compile(text: string): Compiled {
 }
 
 /**
+ * The value a script gets for each header input and enum, by name, in the header's order: a wired input when it is
+ * a valid value of its socket, else its param, else the socket's default (copies: a script must not change an
+ * upstream node's array). An event input is true on the frame it fires, through its watcher. Shared by every
+ * script node (#35, #36).
+ */
+export function readScriptInputs(
+  header: ScriptHeader,
+  inputs: PortValues,
+  params: Record<string, ParamValue>,
+  watchers: Record<string, (value: unknown) => boolean>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const i of header.inputs) {
+    const input = inputs[i.name];
+    if (i.socket === 'event') {
+      out[i.name] = watchers[i.name]?.(input) ?? false;
+      continue;
+    }
+    const param: unknown = params[i.name] ?? i.default;
+    switch (i.socket) {
+      case 'number':
+        out[i.name] = typeof input === 'number' && Number.isFinite(input) ? input : Number(param);
+        break;
+      case 'boolean':
+        out[i.name] = typeof input === 'boolean' ? input : Boolean(param);
+        break;
+      case 'color':
+        out[i.name] = isRgba(input) ? clampRgba(input) : hexToRgba(String(param));
+        break;
+      default: {
+        const length = LENGTH[i.socket]!;
+        out[i.name] = finiteArray(input, length) ?? finiteArray(param, length) ?? (i.socket === 'matrix4' ? [...IDENTITY_MATRIX] : []);
+      }
+    }
+  }
+  for (const e of header.enums) out[e.name] = String(params[e.name] ?? e.options[0]);
+  return out;
+}
+
+/** "message" with its line in the script, when the engine reports one; exported for the other script nodes. */
+export { describeError };
+
+/**
  * What is wrong with a script as the node would compile it (header, then syntax), or null. Compiling runs none of
  * its code: the code panel calls this as the user types.
  */
-export function checkScript(text: string): string | null {
+export function checkScript(text: string, type = 'script.lite'): string | null {
   try {
-    compile(text);
+    // The type's own header rules (three.script takes no out lines), then its syntax.
+    const { errors } = scriptHeaderOf(text, type);
+    if (errors.length) return `line ${errors[0].line}: ${errors[0].message}`;
+    if (type === 'script.lite') compile(text);
+    else new Function(`"use strict";\n${text}`);
     return null;
   } catch (err) {
     return (err as Error).message;
@@ -144,27 +191,7 @@ export const scriptLite: NodeFactory = (params, ctx) => {
   };
 
   /** The value the code gets for each input and enum. */
-  const values = (header: ScriptHeader): unknown[] => [
-    ...header.inputs.map((i) => {
-      const input = inputs[i.name];
-      if (i.socket === 'event') return watchers[i.name]?.(input) ?? false;
-      const param: unknown = params[i.name] ?? i.default;
-      switch (i.socket) {
-        case 'number':
-          return typeof input === 'number' && Number.isFinite(input) ? input : Number(param);
-        case 'boolean':
-          return typeof input === 'boolean' ? input : Boolean(param);
-        case 'color':
-          return isRgba(input) ? clampRgba(input) : hexToRgba(String(param));
-        default: {
-          // Copies: a script must not change an upstream node's array.
-          const length = LENGTH[i.socket]!;
-          return finiteArray(input, length) ?? finiteArray(param, length) ?? (i.socket === 'matrix4' ? [...IDENTITY_MATRIX] : []);
-        }
-      }
-    }),
-    ...header.enums.map((e) => String(params[e.name] ?? e.options[0])),
-  ];
+  const values = (header: ScriptHeader): unknown[] => Object.values(readScriptInputs(header, inputs, params, watchers));
 
   /**
    * Runs the script once; the outputs that changed, or nothing. Nothing a script does throws out of the node: an

@@ -6,7 +6,7 @@
  * asking again. Where the browser has no `crypto.subtle` (a plain http page that is not localhost), the answers
  * last for the session only.
  */
-import { isScriptType, scriptTextOf } from '../core/script';
+import { isScriptType, nodeScriptText } from '../core/script';
 import type { GraphDocument, GraphNode } from '../core/graph';
 
 const TRUSTED_KEY = 'webarkit-studio:trusted-scripts';
@@ -44,7 +44,7 @@ export function createScriptTrust(builtIn: readonly string[]): ScriptTrust {
       const trusted = new Set(read());
       const out: GraphNode[] = [];
       for (const node of doc.nodes.filter((n) => isScriptType(n.type))) {
-        const text = scriptTextOf(node.params);
+        const text = nodeScriptText(node);
         if (shipped.has(text) || session.has(text)) continue;
         const print = await fingerprint(text);
         if (!print || !trusted.has(print)) out.push(node);

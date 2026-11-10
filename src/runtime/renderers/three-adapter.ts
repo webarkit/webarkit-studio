@@ -12,6 +12,7 @@ import {
   type SceneHandle,
   type SceneObject,
 } from './adapter';
+import { disposeObject3D } from './three-dispose';
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
@@ -123,6 +124,7 @@ function createThreeScene(
       g.matrixAutoUpdate = false;
       return wrap(g);
     },
+    release: (o) => disposeObject3D(obj(o)),
     createLight(spec: LightSpec) {
       const color = new THREE.Color(spec.color);
       if (spec.kind === 'ambient') return wrap(new THREE.AmbientLight(color, spec.intensity));
