@@ -291,7 +291,8 @@ fileInput.onchange = async () => {
     if (isProjectFile(bytes)) {
       // A project brings its assets: they replace the current ones.
       const project = await unpackProject(bytes);
-      const loaded = loadGraphDocument(project.graph); // an unusable project must not replace the current assets
+      // An unusable project must not replace the current assets. Unfinished work opens, as an autosave does (#86).
+      const loaded = loadUnfinishedGraphDocument(project.graph);
       // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
       const applied = await loads.run(ticket, async () => {
         await assetStore.replaceAll(project.assets);
@@ -300,7 +301,8 @@ fileInput.onchange = async () => {
       });
       if (applied && ticket.current()) void scriptsAllowed(loaded.doc, 'opened');
     } else {
-      await load(JSON.parse(new TextDecoder().decode(bytes)), ticket);
+      // A graph saved unfinished opens as an autosave does: Run and the app export still report what it lacks (#86).
+      await load(JSON.parse(new TextDecoder().decode(bytes)), ticket, loadUnfinishedGraphDocument);
     }
   } catch (err) {
     log(`✗ import failed: ${(err as Error).message}`);

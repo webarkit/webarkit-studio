@@ -113,6 +113,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- An unfinished graph saved to a file opens again (#86): **Import…** takes a `.json` or a project whose
+  required inputs are not all connected, as an autosave reopens. **Run** and the standalone app export
+  still report what it lacks.
 - A graph is checked for what it names (#110): a node of type `constructor`, `toString` or `__proto__`
   is reported as an unknown type instead of an error, and a select param must hold one of its options
   (a `scene.light` of kind `laser` was a different light on Three.js and Babylon.js), in the studio,
