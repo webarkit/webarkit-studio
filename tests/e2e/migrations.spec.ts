@@ -165,11 +165,37 @@ test('a graph left unfinished in the editor reopens after a reload', async ({ pa
   await expect(page.locator('#log')).not.toContainText('could not be opened');
 });
 
-test('a file with an unfinished graph is still refused: only an autosave is taken as work in progress', async ({ page }) => {
+for (const kind of ['json', 'project'] as const) {
+  test(`an unfinished graph imported from a ${kind} file opens with every node and wire, and Run and export report the input (#86)`, async ({ page }) => {
+    await freshStudio(page);
+    // The first wire is gone: its required input is left unconnected.
+    const unfinished = { ...V5, edges: V5.edges.slice(1) };
+    if (kind === 'json') {
+      await importGraph(page, unfinished);
+    } else {
+      const project = zipSync({ 'graph.json': strToU8(JSON.stringify(unfinished)), 'assets.json': strToU8('[]') });
+      await page.setInputFiles('#file-import', { name: 'unfinished.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
+    }
+    const log = page.locator('#log');
+    await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
+    await expect(page.locator('svg.connection path')).toHaveCount(unfinished.edges.length);
+    await expect(log).not.toContainText('import failed');
+
+    await page.click('#btn-run');
+    await expect(log).toContainText('is not connected');
+    await expect(log).not.toContainText('✓ running');
+
+    await page.click('#export-menu summary');
+    await page.click('[data-exporter=app-bundle]');
+    await expect(log).toContainText(/export failed[^]*is not connected/);
+  });
+}
+
+test('a file with a graph that is broken, not just unfinished, is still refused', async ({ page }) => {
   await freshStudio(page);
   const nodes = await page.locator('.studio-node').count();
-  await importGraph(page, { ...V5, edges: V5.edges.slice(1) });
-  await expect(page.locator('#log')).toContainText('is not connected');
+  await importGraph(page, { ...V5, nodes: [...V5.nodes, { id: 'x', type: 'nope.node', params: {} }] });
+  await expect(page.locator('#log')).toContainText('unknown type "nope.node"');
   await expect(page.locator('.studio-node')).toHaveCount(nodes);
 });
 
