@@ -112,6 +112,21 @@ test('on the still photo, the knot lands where the Scene / Anchor / AR View pipe
   expect(Math.abs(a.share - b.share) / a.share, report).toBeLessThan(0.15);
 });
 
+test('an AR View and a render script on one video share it: the later frame stacks its canvas over the video', async ({ page }) => {
+  // The camera demo as it is (Scene, Anchor, AR View), plus a render script fed by the same camera.
+  const doc = readGraph('pinball-three');
+  const extra = photoGraph();
+  doc.nodes.push(extra.nodes.find((n) => n.id === 'render')!);
+  doc.edges.push(...extra.edges.filter((e) => e.to.node === 'render').map((e, i) => ({ ...e, id: `shared${i}`, from: e.from.node === 'image' ? { ...e.from, node: 'camera' } : e.from })));
+  await openStudio(page);
+  await importGraph(page, doc);
+  await page.click('#btn-run');
+  await expect(page.locator('.ar-view video')).toHaveCount(1, NEXT);
+  // Both canvases are over the video, in the frame that holds it: none is left in a frame without it.
+  await expect(page.locator('.ar-view:has(video) canvas')).toHaveCount(2, NEXT);
+  await expect(page.locator('.ar-view:not(:has(video))')).toHaveCount(0);
+});
+
 test('opening a graph with a render script from someone else asks before running it', async ({ page }) => {
   await openStudio(page);
   await importGraph(page, photoGraph('/*\n*/\nfunction onInit({ scene }) { scene.name = "someone else\'s"; }\n'));

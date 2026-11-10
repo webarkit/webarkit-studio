@@ -1,4 +1,5 @@
 /** Example scripts for script.lite (#35), offered by the node's Import control. */
+import { scriptHeaderOf } from '../core/script';
 export interface ScriptExample {
   label: string;
   file: string;
@@ -94,8 +95,70 @@ function onFrame({ THREE, group, time, inputs }) {
   },
 ];
 
-/** The examples offered for a script node type. */
-export const examplesFor = (type: string): ScriptExample[] => (type === 'three.script' ? THREE_SCRIPT_EXAMPLES : SCRIPT_EXAMPLES);
+/** Example scripts for three.renderScript (#37): the script owns the scene, and places its content on the marker. */
+export const RENDER_SCRIPT_EXAMPLES: ScriptExample[] = [
+  {
+    label: 'Cube: a cube that bobs and turns on the marker',
+    file: 'cube.js',
+    text: `/*
+in  size    number  d=40 min=5 max=200
+in  height  number  d=30 min=0 max=200
+*/
+// A cube on the marker, bobbing and turning. placeOnMarker places the group as a Marker Anchor does.
+let marker, cube;
+function onInit({ THREE, scene }) {
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const light = new THREE.DirectionalLight(0xffffff, 2.5);
+  light.position.set(0, 0, 1);
+  scene.add(light);
+  marker = new THREE.Group();
+  scene.add(marker);
+  cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x00a0ff }));
+  marker.add(cube);
+}
+function onFrame({ pose, found, markerInfo, helpers, time, inputs }) {
+  helpers.placeOnMarker(marker, pose, found, markerInfo);
+  cube.scale.setScalar(inputs.size);
+  cube.position.z = inputs.size / 2 + inputs.height * (1 + Math.sin(time * Math.PI)) / 2;
+  cube.rotation.z = time;
+}
+`,
+  },
+  {
+    label: 'Rainbow: a knot whose colour goes round the wheel',
+    file: 'rainbow.js',
+    text: `/*
+in  speed  number  d=0.2 min=0 max=2
+*/
+// A torus knot on the marker; its hue turns \`speed\` times a second.
+let marker, knot;
+function onInit({ THREE, scene }) {
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const light = new THREE.DirectionalLight(0xffffff, 2.5);
+  light.position.set(0, 0, 1);
+  scene.add(light);
+  marker = new THREE.Group();
+  scene.add(marker);
+  knot = new THREE.Mesh(new THREE.TorusKnotGeometry(25, 8, 100, 16), new THREE.MeshStandardMaterial());
+  knot.position.z = 40;
+  marker.add(knot);
+}
+function onFrame({ pose, found, markerInfo, helpers, time, inputs }) {
+  helpers.placeOnMarker(marker, pose, found, markerInfo);
+  knot.material.color.setHSL((time * inputs.speed) % 1, 0.8, 0.5);
+}
+`,
+  },
+];
+
+const BY_TYPE: Record<string, ScriptExample[]> = {
+  'three.script': THREE_SCRIPT_EXAMPLES,
+  'three.renderScript': RENDER_SCRIPT_EXAMPLES,
+};
+
+/** The examples offered for a script node type: only those whose header the type accepts. */
+export const examplesFor = (type: string): ScriptExample[] =>
+  (BY_TYPE[type] ?? SCRIPT_EXAMPLES).filter((ex) => scriptHeaderOf(ex.text, type).errors.length === 0);
 
 /** Every example: all ship with the studio, so they are trusted. */
-export const ALL_SCRIPT_EXAMPLES: ScriptExample[] = [...SCRIPT_EXAMPLES, ...THREE_SCRIPT_EXAMPLES];
+export const ALL_SCRIPT_EXAMPLES: ScriptExample[] = [...SCRIPT_EXAMPLES, ...THREE_SCRIPT_EXAMPLES, ...RENDER_SCRIPT_EXAMPLES];

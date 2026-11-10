@@ -67,6 +67,7 @@ export const threeRenderScript: NodeFactory = (params, ctx) => {
   let time = 0;
   let reported = '';
   let compileError = '';
+  let disposed = false;
 
   const report = (text: string) => {
     if (text === reported) return;
@@ -127,7 +128,9 @@ export const threeRenderScript: NodeFactory = (params, ctx) => {
     async init(i) {
       inputs = i;
       const video = i.video as VideoValue;
-      lib = (await import('three')) as typeof THREE;
+      const three = (await import('three')) as typeof THREE;
+      if (disposed) return {}; // stopped while three.js loaded: mount nothing
+      lib = three;
       canvas = document.createElement('canvas');
       renderer = new lib.WebGLRenderer({ canvas, alpha: true, antialias: true });
       camera = new lib.Camera();
@@ -147,6 +150,7 @@ export const threeRenderScript: NodeFactory = (params, ctx) => {
       if (!renderer || !camera || !scene) return;
       applyArProjection(camera, i.projection as PoseValue);
       const onFrame = hooks.onFrame;
+      let framed = false;
       if (built && onFrame) {
         const context = {
           THREE: lib,
@@ -162,11 +166,14 @@ export const threeRenderScript: NodeFactory = (params, ctx) => {
           helpers: HELPERS,
           inputs: read(),
         };
-        if (guarded(() => onFrame(context))) report(compileError ? `✗ ${compileError}` : '');
+        framed = guarded(() => onFrame(context));
       } else {
         for (const [name, watch] of Object.entries(watchers)) watch(i[name]);
       }
-      renderer.render(scene, camera);
+      // The script holds the renderer and the scene: a render that throws shows on the node, and the graph runs on.
+      const [r, s, c] = [renderer, scene, camera];
+      // One report per frame: the error clears only when both onFrame and the render went through.
+      if (guarded(() => r.render(s, c)) && framed) report(compileError ? `✗ ${compileError}` : '');
     },
     onParamChange(key: string, _value: ParamValue) {
       if (key !== 'script' || !load()) return;
@@ -174,6 +181,7 @@ export const threeRenderScript: NodeFactory = (params, ctx) => {
       build();
     },
     dispose() {
+      disposed = true;
       tearDown();
       renderer?.dispose();
       frame?.remove();

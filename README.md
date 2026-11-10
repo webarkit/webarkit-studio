@@ -404,6 +404,10 @@ and renders. "pinball · one three.js script renders it all" is its demo.
   studio's own, so a render script lines up with the standard pipeline.
 - The header declares value inputs and dropdowns; no `out` lines. A live code
   change rebuilds the scene. Errors show on the node and never stop the graph.
+- Import offers its own examples (a bobbing cube, a rainbow knot); the menu
+  lists only examples the node accepts.
+- An AR View and a render script on one video share it: the later one stacks
+  its canvas over the frame that holds the video.
 - It needs no renderer node: an exported app with only this node ships three.js
   without the studio's Three.js adapter.
 
