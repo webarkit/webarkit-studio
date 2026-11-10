@@ -66,6 +66,12 @@ export interface NodeDefinition {
   inputs: Record<string, PortSpec>;
   outputs: Record<string, PortSpec>;
   params: Record<string, ParamSpec>;
+  /**
+   * The node runs code its graph holds (#35, #36): its `script` param, whose header comment adds ports and
+   * params (src/core/script.ts). Code runs in the page, so the studio asks before running it, the player refuses
+   * it from a `?graph=` link and the MCP server never runs it. These read this flag, never the node's name.
+   */
+  runsCode?: true;
 }
 
 /** A number input and the live param of the same name that it overrides: key, label, default, step. */
@@ -969,6 +975,42 @@ export const CORE_NODES: NodeDefinition[] = [
       },
       file: { kind: 'string', label: 'File', default: 'script.js', live: true },
     },
+    runsCode: true,
+  },
+  {
+    type: 'three.script',
+    label: 'three.js Script',
+    category: 'scene',
+    provider: 'Three.js',
+    description:
+      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Primitive. ' +
+      'Define onInit({ THREE, group, inputs }) to create meshes, materials and lights in group (marker space: mm, +Z up), ' +
+      'onFrame({ THREE, group, time, delta, inputs }) to animate, and onDispose() to release what onInit made. The header ' +
+      'declares value inputs (in name socket d=…) and dropdowns (enum), as Script\'s does; it has no out lines. Needs the ' +
+      'Three.js renderer. It runs in the page: a graph with scripts asks before running them.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Object' } },
+    params: {
+      script: {
+        kind: 'string',
+        label: 'Script',
+        default:
+          '/*\nin  height  number  d=30 min=0 max=200\n*/\n' +
+          '// group is on the marker once Object is wired into an Anchor: millimetres, +Z up.\n' +
+          'let cube;\n' +
+          'function onInit({ THREE, group }) {\n' +
+          '  cube = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 40), new THREE.MeshStandardMaterial({ color: 0xff0055 }));\n' +
+          '  group.add(cube);\n' +
+          '}\n' +
+          'function onFrame({ group, time, inputs }) {\n' +
+          '  group.position.z = 40 + inputs.height * Math.sin(time * Math.PI);\n' +
+          '  cube.rotation.z = time;\n' +
+          '}\n',
+        live: true,
+      },
+      file: { kind: 'string', label: 'File', default: 'scene.js', live: true },
+    },
+    runsCode: true,
   },
 
   // --------------------------------------------------------------- logic

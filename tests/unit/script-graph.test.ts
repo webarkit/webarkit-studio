@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPH_FORMAT, GRAPH_VERSION, validateGraph, type GraphDocument, type GraphValidationError } from '../../src/core/graph';
 import { RESERVED_NAMESPACES } from '../../src/core/plugins';
+import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { GraphRuntime } from '../../src/runtime/runtime';
 
 const SCRIPT = '/*\nin t number\nin height number d=30\nin move vector3\nout position vector3\n*/\nposition = [0, 0, height];\n';
@@ -52,6 +53,12 @@ describe('validateGraph with script nodes (#35)', () => {
     const d = doc();
     d.nodes[1].params.script = ['/*\nout x number\n*/\nx = 1;'] as never;
     expect(problems(d)).toContain('node s (Script): param "script" must be text');
+  });
+
+  it('the "script must be text" check reads the catalog it validates against (#36)', () => {
+    const catalog = { ...NODE_CATALOG, 'acme.code': { ...NODE_CATALOG['script.lite'], type: 'acme.code', label: 'Acme code' } };
+    const d = { format: GRAPH_FORMAT, version: GRAPH_VERSION, nodes: [{ id: 'c', type: 'acme.code', params: { script: 42 } }], edges: [] };
+    expect(() => validateGraph(d, catalog, {})).toThrow('node c (Acme code): param "script" must be text');
   });
 
   it('socket types are checked against the header', () => {

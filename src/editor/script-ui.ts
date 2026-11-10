@@ -3,8 +3,8 @@
  * Edit (the code panel) and Import (a .js file, or an example script). In the node and in Properties.
  */
 import { html, nothing, type TemplateResult } from 'lit';
-import { scriptHeaderOf } from '../core/script';
-import { SCRIPT_EXAMPLES } from './script-examples';
+import { nodeScriptText, scriptHeaderOf } from '../core/script';
+import { examplesFor } from './script-examples';
 import type { StudioNode } from './studio-node';
 
 export interface ScriptHandlers {
@@ -18,9 +18,9 @@ export interface ScriptHandlers {
 export const SCRIPT_OWN_PARAMS = ['script', 'file'];
 
 export function scriptControls(node: StudioNode, handlers: ScriptHandlers): TemplateResult {
-  const text = String(node.params.script ?? node.def.params.script?.default ?? '');
+  const text = nodeScriptText(node);
   const file = String(node.params.file ?? node.def.params.file?.default ?? 'script.js');
-  const { errors } = scriptHeaderOf(text);
+  const { errors } = scriptHeaderOf(text, node.type);
 
   const onImport = async (e: Event) => {
     const select = e.target as HTMLSelectElement;
@@ -35,7 +35,7 @@ export function scriptControls(node: StudioNode, handlers: ScriptHandlers): Temp
       input.click();
       return;
     }
-    const example = SCRIPT_EXAMPLES[Number(choice)];
+    const example = examplesFor(node.type)[Number(choice)];
     if (example) handlers.apply(node, example.text, example.file);
   };
 
@@ -45,7 +45,7 @@ export function scriptControls(node: StudioNode, handlers: ScriptHandlers): Temp
       <select class="script-import" aria-label="Import a script" @change=${onImport}>
         <option value="">Import…</option>
         <option value="file">From a .js file…</option>
-        <optgroup label="Examples">${SCRIPT_EXAMPLES.map((ex, i) => html`<option value=${i}>${ex.label}</option>`)}</optgroup>
+        <optgroup label="Examples">${examplesFor(node.type).map((ex, i) => html`<option value=${i}>${ex.label}</option>`)}</optgroup>
       </select>
     </div>
     ${errors.length

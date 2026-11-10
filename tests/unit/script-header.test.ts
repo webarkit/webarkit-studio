@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { effectiveDefinition, isScriptType, parseScriptHeader, SCRIPT_VALUE_SOCKETS, scriptTextOf } from '../../src/core/script';
+import { effectiveDefinition, isScriptType, parseScriptHeader, SCRIPT_VALUE_SOCKETS, scriptHeaderOf, scriptTextOf } from '../../src/core/script';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 
 const header = (lines: string[], body = 'position = [0, 0, 0];') => `/*\n${lines.join('\n')}\n*/\n${body}`;
@@ -123,6 +123,30 @@ describe('parseScriptHeader (#35)', () => {
 
 describe('effectiveDefinition (#35)', () => {
   const script = (text: string, params: Record<string, unknown> = {}) => ({ type: 'script.lite', params: { script: text, ...params } as never });
+
+  it('a node runs code when its definition says so (runsCode), whatever its name (#36)', () => {
+    const base = NODE_CATALOG['script.lite'];
+    const catalog = { ...NODE_CATALOG, 'acme.code': { ...base, type: 'acme.code' }, 'script.fake': { ...NODE_CATALOG['math.add'], type: 'script.fake' } };
+    expect(isScriptType('acme.code', catalog)).toBe(true);
+    expect(isScriptType('script.fake', catalog)).toBe(false);
+    expect(isScriptType('three.script')).toBe(true);
+    expect(isScriptType('three.renderer')).toBe(false);
+    expect(Object.values(NODE_CATALOG).filter((d) => d.runsCode).map((d) => d.type).sort()).toEqual(['script.lite', 'three.script']);
+  });
+
+  it("three.script keeps its scene and object ports and adds its header's inputs; it takes no out lines (#36)", () => {
+    const def = effectiveDefinition({ type: 'three.script', params: { script: header(['in height number d=5', 'enum mode a b'], '') } })!;
+    expect(Object.keys(def.inputs)).toEqual(['scene', 'height']);
+    expect(def.inputs.scene).toMatchObject({ type: 'scene' });
+    expect(def.outputs).toEqual({ object: { type: 'sceneObject', label: 'Object' } });
+    expect(def.params.height).toMatchObject({ kind: 'number', default: 5 });
+    expect(def.params.mode).toMatchObject({ kind: 'select' });
+    const withOut = header(['in a number', 'out b number'], '');
+    expect(scriptHeaderOf(withOut, 'three.script').errors).toEqual([{ line: 3, message: 'three.js Script has no out lines: what it makes goes in its group' }]);
+    expect(Object.keys(effectiveDefinition({ type: 'three.script', params: { script: withOut } })!.inputs)).toEqual(['scene']);
+    // The default script of each script type is its own.
+    expect(scriptTextOf({}, NODE_CATALOG['three.script'])).toMatch(/function onInit/);
+  });
 
   it('is the catalog definition for every other node type', () => {
     expect(effectiveDefinition({ type: 'math.add', params: {} })).toBe(NODE_CATALOG['math.add']);

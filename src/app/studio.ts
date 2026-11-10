@@ -18,8 +18,8 @@ import { parseAssetRef } from '../core/assets';
 import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
-import { isScriptType, scriptTextOf } from '../core/script';
-import { SCRIPT_EXAMPLES } from '../editor/script-examples';
+import { isScriptType, nodeScriptText } from '../core/script';
+import { ALL_SCRIPT_EXAMPLES } from '../editor/script-examples';
 import type { ScriptHandlers } from '../editor/script-ui';
 import { createScriptPanel } from './script-panel';
 import { askToRunScripts, createScriptTrust } from './script-trust';
@@ -42,14 +42,16 @@ await loadPlugins(studioConfig).catch((err) => log(`✗ plugins: ${(err as Error
 const assetStore = await openAssetStore(log);
 
 // ---------------------------------------------------------------- scripts (#35)
-// The node's default script and the examples ship with the studio: always trusted.
-const DEFAULT_SCRIPT = String(NODE_CATALOG['script.lite'].params.script.default);
-const scriptTrust = createScriptTrust([DEFAULT_SCRIPT, ...SCRIPT_EXAMPLES.map((e) => e.text)]);
+// Every script node type's default script and the examples ship with the studio: always trusted.
+const DEFAULT_SCRIPTS = Object.values(NODE_CATALOG)
+  .filter((d) => d.runsCode)
+  .map((d) => String(d.params.script?.default ?? ''));
+const scriptTrust = createScriptTrust([...DEFAULT_SCRIPTS, ...ALL_SCRIPT_EXAMPLES.map((e) => e.text)]);
 const trustDialog = $<HTMLDialogElement>('script-trust');
 /** Scripts the user gave a node here, being remembered: a Run right after waits for them. Never left rejected. */
 let trusting: Promise<void> = Promise.resolve();
 const trustScripts = (texts: string[]) => (trusting = trusting.then(() => scriptTrust.trust(texts)).catch(() => {}));
-const scriptTexts = (nodes: readonly GraphNode[]) => nodes.filter((n) => isScriptType(n.type)).map((n) => scriptTextOf(n.params));
+const scriptTexts = (nodes: readonly GraphNode[]) => nodes.filter((n) => isScriptType(n.type)).map(nodeScriptText);
 
 /**
  * True if `doc` may run: it has no script that was never allowed, or the user allows them now (remembered).
@@ -127,7 +129,9 @@ const studio = await createStudioEditor($('editor'), {
       scriptEdits.set(nodeId, seq);
       void (async () => {
         await trusting;
-        const doc = { ...studio.toDocument(), nodes: [{ id: nodeId, type: 'script.lite', params: { script: value } }] };
+        const current = studio.toDocument();
+        const type = current.nodes.find((n) => n.id === nodeId)?.type ?? 'script.lite';
+        const doc = { ...current, nodes: [{ id: nodeId, type, params: { script: value } }] };
         const untrusted = (await scriptTrust.untrusted(doc)).length > 0;
         if (scriptEdits.get(nodeId) !== seq || runtime !== target) return; // a later change, or another run
         if (untrusted) log(`⚠ ${nodeId}: this script was never allowed: press Reload, which asks`);

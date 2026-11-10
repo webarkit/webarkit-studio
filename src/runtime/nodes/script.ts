@@ -18,6 +18,7 @@ import type { ParamValue } from '../../core/graph';
 import { IDENTITY_MATRIX, scriptHeaderOf, scriptTextOf, type ScriptHeader, type ScriptSocket } from '../../core/script';
 import { eventWatcher, fired, NOT_FIRED } from '../events';
 import type { EventValue, NodeFactory, PortValues } from '../types';
+import { compileScript, reportCompileError, scriptLines } from './compile-script';
 
 const LENGTH: Partial<Record<ScriptSocket, number>> = { vector2: 2, vector3: 3, quaternion: 4, color: 4, matrix4: 16 };
 
@@ -83,20 +84,76 @@ function compile(text: string): Compiled {
   const body = `${prelude.join('\n')}\n${text}\n;return [__done, { ${outs.join(', ')} }];`;
   const names = [...header.inputs.map((i) => i.name), ...header.enums.map((e) => e.name)];
   // `new Function` puts two lines before the body ("function anonymous(…" and ") {").
-  const run = new Function('time', 'delta', 'state', '__last', '__done', ...names, body) as Compiled['run'];
-  return { header, run, firstLine: 2 + prelude.length + 1, ports: portsOf(header) };
+  const firstLine = 2 + prelude.length + 1;
+  const run = compileScript<Compiled['run']>(['time', 'delta', 'state', '__last', '__done', ...names], body, firstLine, scriptLines(text));
+  return { header, run, firstLine, ports: portsOf(header) };
 }
+
+/**
+ * The value a script gets for each header input and enum, by name, in the header's order: a wired input when it is
+ * a valid value of its socket, else its param, else the socket's default (copies: a script must not change an
+ * upstream node's array). An event input is true on the frame it fires, through its watcher. Shared by every
+ * script node (#35, #36).
+ */
+export function readScriptInputs(
+  header: ScriptHeader,
+  inputs: PortValues,
+  params: Record<string, ParamValue>,
+  watchers: Record<string, (value: unknown) => boolean>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const i of header.inputs) {
+    const input = inputs[i.name];
+    if (i.socket === 'event') {
+      out[i.name] = watchers[i.name]?.(input) ?? false;
+      continue;
+    }
+    const param: unknown = params[i.name] ?? i.default;
+    switch (i.socket) {
+      case 'number':
+        out[i.name] = typeof input === 'number' && Number.isFinite(input) ? input : Number(param);
+        break;
+      case 'boolean':
+        out[i.name] = typeof input === 'boolean' ? input : Boolean(param);
+        break;
+      case 'color':
+        out[i.name] = isRgba(input) ? clampRgba(input) : hexToRgba(String(param));
+        break;
+      default: {
+        const length = LENGTH[i.socket]!;
+        out[i.name] = finiteArray(input, length) ?? finiteArray(param, length) ?? (i.socket === 'matrix4' ? [...IDENTITY_MATRIX] : []);
+      }
+    }
+  }
+  for (const e of header.enums) out[e.name] = String(params[e.name] ?? e.options[0]);
+  return out;
+}
+
+/** "message" with its line in the script, when the engine reports one; exported for the other script nodes. */
+export { describeError };
 
 /**
  * What is wrong with a script as the node would compile it (header, then syntax), or null. Compiling runs none of
  * its code: the code panel calls this as the user types.
  */
-export function checkScript(text: string): string | null {
+export function checkScript(text: string, type = 'script.lite'): string | null {
+  return scriptProblem(text, type)?.message ?? null;
+}
+
+/**
+ * The same check, as the error itself: a syntax error is a ScriptSyntaxError, whose line the code panel adds when
+ * acorn answers (reportCompileError).
+ */
+export function scriptProblem(text: string, type = 'script.lite'): Error | null {
   try {
-    compile(text);
+    // The type's own header rules (three.script takes no out lines), then its syntax.
+    const { errors } = scriptHeaderOf(text, type);
+    if (errors.length) return new Error(`line ${errors[0].line}: ${errors[0].message}`);
+    if (type === 'script.lite') compile(text);
+    else compileScript([], `"use strict";\n${text}`, 4, scriptLines(text));
     return null;
   } catch (err) {
-    return (err as Error).message;
+    return err as Error;
   }
 }
 
@@ -137,34 +194,18 @@ export const scriptLite: NodeFactory = (params, ctx) => {
       watchers = Object.fromEntries(next.header.inputs.filter((i) => i.socket === 'event').map((i) => [i.name, eventWatcher()]));
       return true;
     } catch (err) {
-      compileError = (err as Error).message;
-      report(`✗ ${compileError}`);
+      // Now, then with its line once acorn answers (a syntax error), if it is still the error shown.
+      reportCompileError(
+        err,
+        (message) => report(`✗ ${(compileError = message)}`),
+        (message) => compileError === message,
+      );
       return false;
     }
   };
 
   /** The value the code gets for each input and enum. */
-  const values = (header: ScriptHeader): unknown[] => [
-    ...header.inputs.map((i) => {
-      const input = inputs[i.name];
-      if (i.socket === 'event') return watchers[i.name]?.(input) ?? false;
-      const param: unknown = params[i.name] ?? i.default;
-      switch (i.socket) {
-        case 'number':
-          return typeof input === 'number' && Number.isFinite(input) ? input : Number(param);
-        case 'boolean':
-          return typeof input === 'boolean' ? input : Boolean(param);
-        case 'color':
-          return isRgba(input) ? clampRgba(input) : hexToRgba(String(param));
-        default: {
-          // Copies: a script must not change an upstream node's array.
-          const length = LENGTH[i.socket]!;
-          return finiteArray(input, length) ?? finiteArray(param, length) ?? (i.socket === 'matrix4' ? [...IDENTITY_MATRIX] : []);
-        }
-      }
-    }),
-    ...header.enums.map((e) => String(params[e.name] ?? e.options[0])),
-  ];
+  const values = (header: ScriptHeader): unknown[] => Object.values(readScriptInputs(header, inputs, params, watchers));
 
   /**
    * Runs the script once; the outputs that changed, or nothing. Nothing a script does throws out of the node: an

@@ -41,6 +41,29 @@ describe('MCP tools and script nodes (#35)', () => {
     expect(ran()).toBe(false);
   });
 
+  it('a three.script is refused the same way: by its definition (runsCode), not its name (#36)', async () => {
+    const graph = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8')) as GraphDocument;
+    const code = '/*\n*/\nglobalThis.__scriptRan = true;\nfunction onInit() { globalThis.__scriptRan = true; }\n';
+    graph.nodes.push({ id: 'scenery', type: 'three.script', params: { script: code } });
+    graph.edges.push({ id: 'x1', from: { node: 'scene', port: 'scene' }, to: { node: 'scenery', port: 'scene' } });
+    const result = await call(client, 'tracking_run', { graph, frames: [{ image: 'blank', count: 1 }] });
+    expect(result.ok).toBe(false);
+    expect(String((result as { error: string }).error)).toContain('tracking_run never runs scripts: scenery (three.script)');
+
+    // Upstream of the evaluated node: refused before any node runs.
+    const doc: GraphDocument = {
+      format: GRAPH_FORMAT,
+      version: GRAPH_VERSION,
+      nodes: [
+        { id: 'scenery', type: 'three.script', params: { script: code } },
+        { id: 'anchor', type: 'scene.anchor', params: {} },
+      ],
+      edges: [{ id: 'e1', from: { node: 'scenery', port: 'object' }, to: { node: 'anchor', port: 'children' } }],
+    };
+    await expect(evaluateInputs(doc, 'anchor', [], 'file:///', () => {})).rejects.toThrow('node scenery (three.script) is a script: the MCP server never runs scripts');
+    expect(ran()).toBe(false);
+  });
+
   it('graph_validate, graph_edit and export_bundle read a script header: its ports are wired and checked', async () => {
     const doc = applyOps({ format: GRAPH_FORMAT, version: GRAPH_VERSION, nodes: [], edges: [] }, [
       { op: 'addNode', type: 'math.time', id: 'time' },

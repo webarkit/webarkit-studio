@@ -44,6 +44,7 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@webarkit/camera-view": "^0.1.0",
     "@webarkit/jsartoolkit-nft": "^1.16.0",
+    "acorn": "8.19.0",
     "fflate": "^0.8.3",
     "jpeg-js": "^0.4.4",
     "lit": "^3.3.3",

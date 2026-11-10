@@ -41,6 +41,7 @@ import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from '
 import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
 import { pageEvent } from './nodes/page';
 import { scriptLite } from './nodes/script';
+import { threeScript } from './nodes/three-script';
 import { button, colorPicker, select, slider, toggle as uiToggle } from './nodes/ui';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
@@ -108,6 +109,7 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'action.dispatchEvent': dispatchEvent,
   'page.event': pageEvent,
   'script.lite': scriptLite,
+  'three.script': threeScript,
   'ui.button': button,
   'ui.toggle': uiToggle,
   'ui.slider': slider,

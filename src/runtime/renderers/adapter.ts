@@ -114,6 +114,13 @@ export interface SceneHandle {
    */
   loadModel(spec: ModelSpec): Promise<SceneObject>;
   createGroup(): SceneObject;
+  /**
+   * Detaches an object from its parent and frees what it holds: the geometries, materials and textures under it
+   * (#36: a script's group, rebuilt on a live code change). The object is not used again. Called only on a script
+   * node's own groups, never on an object the adapter made with its own state, such as a loaded model's animation
+   * mixer, which this would not stop.
+   */
+  release(object: SceneObject): void;
   createLight(spec: LightSpec): SceneObject;
   /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;

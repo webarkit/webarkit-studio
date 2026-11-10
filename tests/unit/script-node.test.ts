@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { scriptLite } from '../../src/runtime/nodes/script';
 import { NODE_REGISTRY } from '../../src/runtime/registry';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
@@ -201,6 +201,24 @@ describe('script.lite (#35)', () => {
     p.script = head('in x number', 'out y number') + 'y = x * 10;';
     expect(node.onParamChange!('script', p.script)).toEqual({ y: 20 });
     expect(reports.at(-1)).toBe('');
+  });
+
+  it('a syntax error shows its line, at start and on a live edit: a stray token, an unbalanced brace (Qodo, #101)', async () => {
+    // The error shows at once, without its line; the line follows when acorn, loaded on demand, answers.
+    const stray = make(head('in x number', 'out y number') + 'const a = 1;\ny = x 2;\n');
+    expect(stray.node.init!({})).toEqual({});
+    expect(stray.reports.at(-1)).toMatch(/^✗ (?!line)/);
+    await vi.waitFor(() => expect(stray.reports.at(-1)).toMatch(/^✗ line 6: /));
+    // An unbalanced brace is found at the end: the script's last line.
+    const open = make(head('in x number', 'out y number') + 'if (x > 0) {\n  y = x;\n');
+    expect(open.node.init!({})).toEqual({});
+    await vi.waitFor(() => expect(open.reports.at(-1)).toMatch(/^✗ line 6: /));
+    // On a live edit, the same, while the last good script runs on.
+    const { node, p, reports } = make(head('in x number', 'out y number') + 'y = x;');
+    node.init!({ x: 1 });
+    p.script = head('in x number', 'out y number') + 'y = x;\ny = x )\n';
+    node.onParamChange!('script', p.script);
+    await vi.waitFor(() => expect(reports.at(-1)).toMatch(/^✗ line 6: /));
   });
 
   it("does not let a script change an upstream node's array", () => {

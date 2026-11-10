@@ -23,12 +23,13 @@ async function studioAssets(): Promise<AssetLookup | undefined> {
   return (id) => store.get(id);
 }
 
-async function loadGraph(): Promise<unknown> {
+/** The graph to run, and the URL it came from when a `?graph=` link named it (null otherwise). */
+async function loadGraph(): Promise<{ graph: unknown; linked: string | null }> {
   const params = new URLSearchParams(location.search);
   if (params.get('source') === 'studio') {
     try {
       const raw = localStorage.getItem(HANDOFF_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) return { graph: JSON.parse(raw), linked: null };
     } catch {
       /* storage unavailable: fall through to the URL */
     }
@@ -38,19 +39,22 @@ async function loadGraph(): Promise<unknown> {
   const url = linked ?? meta ?? 'graphs/pinball-three.json';
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Cannot load ${url}: HTTP ${res.status}`);
-  const graph: unknown = await res.json();
-  // A script runs in this page (#35). The app's own graph and the studio's (which asked) run theirs; a graph named
-  // by a link could be anyone's, on this site's origin, with no one asked: it is refused.
-  if (linked !== null) {
-    const nodes = (graph as { nodes?: Array<{ id?: unknown; type?: unknown }> }).nodes;
-    const scripts = Array.isArray(nodes) ? nodes.filter((n) => typeof n?.type === 'string' && isScriptType(n.type)) : [];
-    if (scripts.length) {
-      throw new Error(
-        `${url} has scripts (${scripts.map((n) => String(n.id)).join(', ')}), and the player does not run scripts from a link: open the graph in the studio, which asks before running them`,
-      );
-    }
+  return { graph: await res.json(), linked: linked === null ? null : url };
+}
+
+/**
+ * Code runs in this page (#35, #36). The app's own graph and the studio's (which asked) run theirs; a graph named
+ * by a link could be anyone's, on this site's origin, with no one asked: one with a node that runs code is
+ * refused. Called once the plugins are loaded, so a plugin's code node is known by its definition, not its name.
+ */
+function refuseLinkedCode(graph: unknown, url: string): void {
+  const nodes = (graph as { nodes?: Array<{ id?: unknown; type?: unknown }> }).nodes;
+  const scripts = Array.isArray(nodes) ? nodes.filter((n) => typeof n?.type === 'string' && isScriptType(n.type)) : [];
+  if (scripts.length) {
+    throw new Error(
+      `${url} has scripts (${scripts.map((n) => String(n.id)).join(', ')}), and the player does not run scripts from a link: open the graph in the studio, which asks before running them`,
+    );
   }
-  return graph;
 }
 
 const stage = document.getElementById('stage')!;
@@ -61,11 +65,12 @@ const errorBox = document.getElementById('error')!;
 startButton.addEventListener('click', async () => {
   startButton.disabled = true;
   try {
-    const graph = await loadGraph();
+    const { graph, linked } = await loadGraph();
     const name = (graph as { name?: unknown }).name;
     if (typeof name === 'string' && name) document.title = name;
     // Only the plugins the graph needs; validation names any this build does not have.
     await loadPlugins(studioConfig, pluginIdsOf(graph));
+    if (linked !== null) refuseLinkedCode(graph, linked);
     const runtime = new GraphRuntime(graph, { stage, assets: await studioAssets() });
     await runtime.start();
     startButton.remove();

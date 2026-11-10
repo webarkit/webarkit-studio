@@ -25,8 +25,12 @@ import type { CoreSocketType } from './sockets';
 export const SCRIPT_VALUE_SOCKETS = ['number', 'boolean', 'vector2', 'vector3', 'quaternion', 'color', 'matrix4', 'event'] as const;
 export type ScriptSocket = (typeof SCRIPT_VALUE_SOCKETS)[number];
 
-/** A node whose code runs in the page: the `script` namespace. */
-export const isScriptType = (type: string) => type.startsWith('script.');
+/**
+ * A node whose code runs in the page: its definition says so (`runsCode`), whatever its name (#36). The trust
+ * prompt, the player's `?graph=` refusal and every MCP refusal read this.
+ */
+export const isScriptType = (type: string, catalog: Record<string, NodeDefinition> = NODE_CATALOG): boolean =>
+  Object.hasOwn(catalog, type) && catalog[type].runsCode === true;
 
 /** The node's own params, and the variables every script has (`__last` and `__done` are the node's): header names may not take them. */
 const OWN_NAMES = ['time', 'delta', 'state', 'script', 'file', '__last', '__done'];
@@ -209,13 +213,36 @@ export function scriptTextOf(params: Record<string, ParamValue> | undefined, bas
   return typeof text === 'string' ? text : String(base.params.script?.default ?? '');
 }
 
+/**
+ * A script node's text, with its own type's default (three.script's is not Script's). An unknown type falls back to
+ * Script's rules on purpose: callers check the type first, and validation reports an unknown one.
+ */
+export const nodeScriptText = (node: { type: string; params?: Record<string, ParamValue> }): string =>
+  scriptTextOf(node.params, NODE_CATALOG[node.type] ?? NODE_CATALOG['script.lite']);
+
 /** The header of a script text, and the definition it gives, parsed once per text and base definition. */
 const caches = new WeakMap<NodeDefinition, Map<string, { parsed: ReturnType<typeof parseScriptHeader>; def: NodeDefinition }>>();
 const CACHE_SIZE = 64;
 
-/** The parsed header of a script node (cached). */
-export function scriptHeaderOf(text: string): { header: ScriptHeader; errors: ScriptProblem[] } {
-  return entry(NODE_CATALOG['script.lite'], text).parsed;
+/** The parsed header of a script node of `type` (cached), with that type's own rules. */
+export function scriptHeaderOf(text: string, type = 'script.lite'): { header: ScriptHeader; errors: ScriptProblem[] } {
+  return entry(NODE_CATALOG[type] ?? NODE_CATALOG['script.lite'], text).parsed;
+}
+
+/**
+ * The rules a node type's own ports add to its header: a type with fixed outputs (three.script: its group)
+ * takes no out lines, and no header name may take a fixed port's name.
+ */
+function typeErrors(base: NodeDefinition, header: ScriptHeader): ScriptProblem[] {
+  const errors: ScriptProblem[] = [];
+  const fixed = new Set([...Object.keys(base.inputs), ...Object.keys(base.outputs)]);
+  if (Object.keys(base.outputs).length) {
+    for (const o of header.outputs) errors.push({ line: o.line, message: `${base.label} has no out lines: what it makes goes in its group` });
+  }
+  for (const d of [...header.inputs, ...header.enums]) {
+    if (fixed.has(d.name)) errors.push({ line: d.line, message: `"${d.name}" is ${base.label}'s own port: pick another name` });
+  }
+  return errors.sort((a, b) => a.line - b.line);
 }
 
 function entry(base: NodeDefinition, text: string) {
@@ -224,9 +251,11 @@ function entry(base: NodeDefinition, text: string) {
   const key = text;
   const hit = cache.get(key);
   if (hit) return hit;
-  const parsed = parseScriptHeader(text);
-  const inputs: Record<string, PortSpec> = {};
-  const outputs: Record<string, PortSpec> = {};
+  const own = parseScriptHeader(text);
+  const parsed = { header: own.header, errors: [...own.errors, ...typeErrors(base, own.header)].sort((a, b) => a.line - b.line) };
+  // The type's fixed ports first (three.script's scene and object), then the header's.
+  const inputs: Record<string, PortSpec> = { ...base.inputs };
+  const outputs: Record<string, PortSpec> = { ...base.outputs };
   const params: Record<string, ParamSpec> = { ...base.params };
   // A header with mistakes gives no ports: the node shows the errors, not half an interface.
   if (!parsed.errors.length) {
@@ -270,6 +299,6 @@ export function effectiveDefinition(
   catalog: Record<string, NodeDefinition> = NODE_CATALOG,
 ): NodeDefinition | undefined {
   const base = catalog[node.type];
-  if (!base || !isScriptType(node.type)) return base;
+  if (!base?.runsCode) return base;
   return entry(base, scriptTextOf(node.params, base)).def;
 }

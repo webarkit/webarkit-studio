@@ -52,3 +52,50 @@ count = state.count;
 `,
   },
 ];
+
+/** Example scripts for three.script (#36). */
+export const THREE_SCRIPT_EXAMPLES: ScriptExample[] = [
+  {
+    label: 'Ring: spheres that go round, and bob',
+    file: 'ring.js',
+    text: `/*
+in  count   number  d=8 min=1 max=32 step=1
+in  radius  number  d=50 min=0 max=200
+*/
+// A ring of spheres on the marker, turning, each its own hue. count applies live: onFrame adds or removes spheres.
+const spheres = [];
+const target = (count) => Math.max(1, Math.round(count));
+function setCount(THREE, group, count) {
+  const n = target(count);
+  while (spheres.length > n) {
+    const sphere = spheres.pop();
+    group.remove(sphere);
+    sphere.geometry.dispose();
+    sphere.material.dispose();
+  }
+  while (spheres.length < n) {
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(8, 24, 16), new THREE.MeshStandardMaterial());
+    spheres.push(sphere);
+    group.add(sphere);
+  }
+  spheres.forEach((sphere, i) => sphere.material.color.setHSL(i / n, 0.8, 0.5));
+}
+function onInit({ THREE, group, inputs }) {
+  setCount(THREE, group, inputs.count);
+}
+function onFrame({ THREE, group, time, inputs }) {
+  if (target(inputs.count) !== spheres.length) setCount(THREE, group, inputs.count);
+  spheres.forEach((sphere, i) => {
+    const angle = time + (i / spheres.length) * Math.PI * 2;
+    sphere.position.set(inputs.radius * Math.cos(angle), inputs.radius * Math.sin(angle), 20 + 10 * Math.sin(time * 3 + i));
+  });
+}
+`,
+  },
+];
+
+/** The examples offered for a script node type. */
+export const examplesFor = (type: string): ScriptExample[] => (type === 'three.script' ? THREE_SCRIPT_EXAMPLES : SCRIPT_EXAMPLES);
+
+/** Every example: all ship with the studio, so they are trusted. */
+export const ALL_SCRIPT_EXAMPLES: ScriptExample[] = [...SCRIPT_EXAMPLES, ...THREE_SCRIPT_EXAMPLES];

@@ -53,6 +53,11 @@ every node's ports through `effectiveDefinition()` (`src/core/script.ts`), so a 
 to know about scripts, and a script can feed it like any node of the same socket types. Scripts run in
 the page: the studio asks before running scripts from someone else, and the MCP server never runs them.
 
+A node that runs code its graph holds sets `runsCode: true` in its definition (types package 1.3.0, #36), as
+`script.lite` and `three.script` do. Its `script` param is then that code, with a header, and the studio's
+trust prompt, the player's `?graph=` refusal and the MCP server's refusal cover it, by that flag and never by
+its name. A plugin node that runs code it was given must set it.
+
 ## Registering it
 
 List the plugin in [`webarkit-studio.config.ts`](../webarkit-studio.config.ts), under its id,
@@ -230,10 +235,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.2.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.3.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.2.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.3.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
