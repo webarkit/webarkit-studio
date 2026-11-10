@@ -35,6 +35,12 @@ describe('catalog_list', () => {
   it('filters by category and by type', async () => {
     const byCategory = (await call(client, 'catalog_list', { category: 'filter' })) as { value: any };
     expect(new Set(byCategory.value.nodes.map((n: { category: string }) => n.category))).toEqual(new Set(['filter']));
+    // The colour nodes have a category of their own (#104).
+    const colour = (await call(client, 'catalog_list', { category: 'color' })) as { value: any };
+    expect(colour.value.nodes.length).toBeGreaterThanOrEqual(7);
+    expect(colour.value.nodes.every((n: { type: string; category: string }) => n.category === 'color' && n.type.startsWith('color.'))).toBe(true);
+    const math = (await call(client, 'catalog_list', { category: 'math' })) as { value: any };
+    expect(math.value.nodes.some((n: { type: string }) => n.type.startsWith('color.'))).toBe(false);
     const byType = (await call(client, 'catalog_list', { types: ['math.add'] })) as { value: any };
     expect(byType.value.nodes.map((n: { type: string }) => n.type)).toEqual(['math.add']);
   });

@@ -13,6 +13,7 @@
   --cat-scene: #81c784;
   --cat-output: #ba68c8;
   --cat-math: #ffcc80;
+  --cat-color: #fff176;
   --cat-logic: #9fa8da;
   --cat-action: #ffab91;
   --cat-debug: #bdbdbd;
@@ -59,6 +60,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-scene { --c: var(--cat-scene); }
 .cat-output { --c: var(--cat-output); }
 .cat-math { --c: var(--cat-math); }
+.cat-color { --c: var(--cat-color); }
 .cat-logic { --c: var(--cat-logic); }
 .cat-action { --c: var(--cat-action); }
 .cat-debug { --c: var(--cat-debug); }

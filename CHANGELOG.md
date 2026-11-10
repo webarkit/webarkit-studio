@@ -97,6 +97,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Changed
 
+- The colour nodes have a palette group of their own, **color**, after **math** (#104): a new node category,
+  `color`, with its own colour in the palette, the node header and Properties. The MCP server's `catalog_list`
+  filters by it. Plugin API types package 1.5.0 (`NodeCategory` gains `color`).
 - An exported app ships three.js only when its graph has a Three.js node; since #36 a Babylon.js export carried it too.
 - A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).
   `nftDataset` is no longer built in: a plugin that reads those files declares the same kind.
