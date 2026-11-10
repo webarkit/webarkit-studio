@@ -113,6 +113,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- A graph is checked for what it names (#110): a node of type `constructor`, `toString` or `__proto__`
+  is reported as an unknown type instead of an error, and a select param must hold one of its options
+  (a `scene.light` of kind `laser` was a different light on Three.js and Babylon.js), in the studio,
+  on import and in the MCP server's `graph_validate`. A saved file holding such a value is now refused
+  on open, with the node and the param named.
 - A demo or file opened while another graph is still loading is no longer replaced by it (#77), such
   as a demo chosen while a slow startup demo is arriving: the graph opened last is the one shown.
 - An autosave the studio cannot open is no longer lost when the demo opens (#61): it is kept in

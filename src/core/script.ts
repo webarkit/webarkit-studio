@@ -299,6 +299,7 @@ export function effectiveDefinition(
   node: { type: string; params?: Record<string, ParamValue> },
   catalog: Record<string, NodeDefinition> = NODE_CATALOG,
 ): NodeDefinition | undefined {
+  if (!Object.hasOwn(catalog, node.type)) return undefined;
   const base = catalog[node.type];
   if (!base?.runsCode) return base;
   return entry(base, scriptTextOf(node.params, base)).def;

@@ -67,6 +67,7 @@ export async function evaluateInputs(doc: GraphDocument, nodeId: string, skip: r
         studio: false,
         virtualFiles: {},
       };
+      if (!Object.hasOwn(NODE_REGISTRY, node.type)) throw new Error(`node ${node.id}: no runtime implementation for "${node.type}"`);
       const instance = NODE_REGISTRY[node.type](params, ctx);
       instances.push(instance);
       outputs.set(node.id, { ...((await instance.init?.(gather(node, () => true))) ?? {}) });
