@@ -54,7 +54,7 @@ to know about scripts, and a script can feed it like any node of the same socket
 the page: the studio asks before running scripts from someone else, and the MCP server never runs them.
 
 A node that runs code its graph holds sets `runsCode: true` in its definition (types package 1.3.0, #36), as
-`script.lite` and `three.script` do. Its `script` param is then that code, with a header, and the studio's
+`script.lite`, `three.script` and `three.renderScript` do. Its `script` param is then that code, with a header, and the studio's
 trust prompt, the player's `?graph=` refusal and the MCP server's refusal cover it, by that flag and never by
 its name. A plugin node that runs code it was given must set it.
 

@@ -4,6 +4,7 @@
  */
 import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/color';
 import type { ParamValue } from '../../core/graph';
+import { markerOffset } from '../../core/math';
 import { transformMatrix, type LightSpec, type PrimitiveSpec } from '../renderers/adapter';
 import type {
   CameraValue,
@@ -179,8 +180,8 @@ export const anchor: NodeFactory = (params) => {
 
   const applyCenter = () => {
     if (!scene || !content) return;
-    if (params.center && info) scene.setPosition(content, info.widthMM / 2, info.heightMM / 2, 0);
-    else scene.setPosition(content, 0, 0, 0);
+    // The same offset three.renderScript applies (markerOffset, #37).
+    scene.setPosition(content, ...markerOffset(info, Boolean(params.center)));
   };
 
   return {

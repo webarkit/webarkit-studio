@@ -31,7 +31,7 @@ describe('node search', () => {
   });
 
   it('matches the type namespace', () => {
-    expect(types('three').sort()).toEqual(['three.renderer', 'three.script']);
+    expect(types('three').sort()).toEqual(['three.renderScript', 'three.renderer', 'three.script']);
   });
 
   it('requires every word to match: category plus label', () => {

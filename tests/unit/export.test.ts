@@ -55,6 +55,22 @@ describe('selectPlayerFiles', () => {
     expect(files.has('assets/three-adapter.js')).toBe(false);
   });
 
+  it('ships three.js only for a graph with a Three.js node, even when the player imports it on demand (#36, #37)', () => {
+    // As the real build has it since three.script: the player imports three.js itself, beside the adapter's import.
+    const real = structuredClone(manifest);
+    real.files.push('assets/three.module.js');
+    real.chunks['assets/three.module.js'] = { imports: [], dynamicImports: [], modules: ['node_modules/three/build/three.module.js'] };
+    real.chunks['assets/three-adapter.js'].imports = ['assets/three.module.js'];
+    real.chunks['assets/player.js'].dynamicImports.push('assets/three.module.js');
+    const babylon = selectPlayerFiles(real, html, doc([['babylon.renderer']]));
+    expect(babylon.has('assets/three.module.js')).toBe(false);
+    // three.renderScript renders on its own: three.js, but not the adapter.
+    const own = selectPlayerFiles(real, html, doc([['three.renderScript']]));
+    expect(own.has('assets/three.module.js')).toBe(true);
+    expect(own.has('assets/three-adapter.js')).toBe(false);
+    expect(selectPlayerFiles(real, html, doc([['three.renderer'], ['three.script']])).has('assets/three.module.js')).toBe(true);
+  });
+
   it("copies only the tracker worker of the controllers' build (jsartoolkitNFT plugin)", async () => {
     const fetched: string[] = [];
     vi.stubGlobal('fetch', async (url: string) => {

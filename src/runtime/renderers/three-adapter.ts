@@ -13,6 +13,7 @@ import {
   type SceneObject,
 } from './adapter';
 import { disposeObject3D } from './three-dispose';
+import { applyArProjection } from './three-ar';
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
@@ -231,10 +232,7 @@ function createThreeScene(
       lastRender = now;
       for (const mixer of mixers) mixer.update(justStarted.has(mixer) ? 0 : delta);
       justStarted.clear();
-      if (projection) {
-        camera.projectionMatrix.fromArray(Array.from(projection));
-        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
-      }
+      applyArProjection(camera, projection); // shared with three.renderScript (#37)
       for (const [hemi, parent] of adoptedHemis) {
         parent.updateWorldMatrix(true, false);
         hemi.position.copy(scratch.copy(SKY).transformDirection(parent.matrixWorld));

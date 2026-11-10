@@ -176,3 +176,16 @@ function rawQuaternion(m11: number, m12: number, m13: number, m21: number, m22: 
   const s = 2 * Math.sqrt(1 + m33 - m11 - m22);
   return [(m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s];
 }
+
+// ------------------------------------------------------------ marker space (#37)
+// Shared by the Marker Anchor and three.renderScript, so a script places content exactly as the Anchor does.
+
+/** Where content sits on a marker, in marker space (mm): its centre when `center`, else its corner (the pose's origin). */
+export function markerOffset(info: { widthMM: number; heightMM: number } | undefined, center: boolean): Vec3 {
+  return center && info ? [info.widthMM / 2, info.heightMM / 2, 0] : [0, 0, 0];
+}
+
+/** The pose (marker to camera, column-major), then `offset` in marker space: pose · T(offset). */
+export function markerMatrix(pose: ArrayLike<number>, offset: readonly number[]): number[] {
+  return multiplyMatrices(pose, transformMatrix({ position: [offset[0], offset[1], offset[2]], rotation: [0, 0, 0], scale: 1 }));
+}
