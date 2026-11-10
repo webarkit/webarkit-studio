@@ -13,7 +13,11 @@ export function disposeObject3D(object: THREE.Object3D): void {
     const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
     for (const material of materials) {
       // Textures held as the material's properties (map, normalMap…), or in a ShaderMaterial's uniforms.
-      const uniforms = Object.values((material as THREE.ShaderMaterial).uniforms ?? {}).map((u) => (u as { value?: unknown })?.value);
+      // A uniform may hold an array of textures: those are walked too.
+      const uniforms = Object.values((material as THREE.ShaderMaterial).uniforms ?? {}).flatMap((u) => {
+        const value = (u as { value?: unknown })?.value;
+        return Array.isArray(value) ? value : [value];
+      });
       for (const value of [...Object.values(material), ...uniforms]) {
         if (value && typeof value === 'object' && (value as THREE.Texture).isTexture) (value as THREE.Texture).dispose();
       }

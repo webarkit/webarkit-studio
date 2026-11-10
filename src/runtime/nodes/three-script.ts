@@ -20,6 +20,7 @@ import { eventWatcher } from '../events';
 import type { SceneHandle, SceneObject } from '../renderers/adapter';
 import type { NodeFactory, PortValues } from '../types';
 import { describeError, readScriptInputs } from './script';
+import { compileScript, scriptLines } from './compile-script';
 
 const TYPE = 'three.script';
 
@@ -44,7 +45,8 @@ function compile(text: string): Compiled {
   const pick = (name: string) => `${name}: typeof ${name} === 'function' ? ${name} : undefined`;
   const body = `${prelude.join('\n')}\n${text}\n;return { ${['onInit', 'onFrame', 'onDispose'].map(pick).join(', ')} };`;
   // `new Function` puts two lines before the body ("function anonymous(…" and ") {").
-  return { header, make: new Function(body) as () => Hooks, firstLine: 2 + prelude.length + 1 };
+  const firstLine = 2 + prelude.length + 1;
+  return { header, make: compileScript<() => Hooks>([], body, firstLine, scriptLines(text)), firstLine };
 }
 
 export const threeScript: NodeFactory = (params, ctx) => {
@@ -56,6 +58,8 @@ export const threeScript: NodeFactory = (params, ctx) => {
   let inner: SceneObject | null = null;
   let compiled: Compiled | null = null;
   let hooks: Hooks = {};
+  /** The script's group was built: its onInit finished. Until then, no onFrame. */
+  let built = false;
   let inputs: PortValues = {};
   let watchers: Record<string, (value: unknown) => boolean> = {};
   let time = 0;
@@ -104,11 +108,14 @@ export const threeScript: NodeFactory = (params, ctx) => {
     (inner.native as THREE.Object3D).matrixAutoUpdate = true;
     scene.addChild(outer, inner);
     hooks = {};
+    built = false;
     const make = compiled.make;
     if (!guarded(() => (hooks = make() ?? {}))) return;
     const group = inner.native as THREE.Group;
     const THREE = lib;
-    if (guarded(() => hooks.onInit?.({ THREE, group, inputs: read() }))) report(compileError ? `✗ ${compileError}` : '');
+    // onFrame runs only on a group whose onInit finished: never on a half-built one, whose error then stays shown.
+    built = guarded(() => hooks.onInit?.({ THREE, group, inputs: read() }));
+    if (built) report(compileError ? `✗ ${compileError}` : '');
   };
 
   /** onDispose, then the adapter frees the group and what it holds. */
@@ -139,7 +146,7 @@ export const threeScript: NodeFactory = (params, ctx) => {
       inputs = i;
       const delta = frame.delta / 1000;
       time += delta;
-      if (!inner || !lib || !hooks.onFrame) {
+      if (!inner || !lib || !hooks.onFrame || !built) {
         for (const [name, watch] of Object.entries(watchers)) watch(i[name]);
         return;
       }

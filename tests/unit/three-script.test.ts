@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { threeScript } from '../../src/runtime/nodes/three-script';
 import { disposeObject3D } from '../../src/runtime/renderers/three-dispose';
 import { NODE_REGISTRY } from '../../src/runtime/registry';
+import { THREE_SCRIPT_EXAMPLES } from '../../src/editor/script-examples';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { effectiveDefinition } from '../../src/core/script';
 import { resolveParams, type ParamValue } from '../../src/core/graph';
@@ -125,6 +126,37 @@ describe('three.script (#36)', () => {
     expect(reports.at(-1)).toBe(error);
   });
 
+  it('a syntax error shows its line, at start and on a live edit (Qodo, #101)', async () => {
+    const stray = make(head() + 'let a = 1;\nfunction onInit() { a = a 2; }\n');
+    await stray.node.init!({ scene: fakeScene().scene });
+    expect(stray.reports.at(-1)).toMatch(/^✗ line 5: /);
+    const open = make(head() + 'function onFrame({ group }) {\n  group.position.x = 1;\n');
+    await open.node.init!({ scene: fakeScene().scene });
+    expect(open.reports.at(-1)).toMatch(/^✗ line 5: /);
+    const { node, p, reports } = make(head() + 'function onFrame() {}');
+    await node.init!({ scene: fakeScene().scene });
+    p.script = head() + 'function onFrame() {}\nfunction onInit( {\n';
+    node.onParamChange!('script', p.script);
+    expect(reports.at(-1)).toMatch(/^✗ line 5: /);
+  });
+
+  it('after onInit throws, onFrame does not run on the half-built group, and the error stays until a build succeeds (Qodo, #101)', async () => {
+    const { scene } = fakeScene();
+    const script = head() + 'function onInit() {\n  throw new Error("half");\n}\nfunction onFrame({ group }) { group.position.x += 1; }\n';
+    const { node, p, reports } = make(script);
+    const out = (await node.init!({ scene })) as { object: SceneObject };
+    expect(reports.at(-1)).toBe('✗ line 5: half');
+    node.update!({ scene }, frame());
+    node.update!({ scene }, frame());
+    expect(children(out.object)[0].position.x).toBe(0); // onFrame never ran
+    expect(reports.at(-1)).toBe('✗ line 5: half');
+    p.script = head() + 'function onInit() {}\nfunction onFrame({ group }) { group.position.x += 1; }\n';
+    node.onParamChange!('script', p.script);
+    expect(reports.at(-1)).toBe('');
+    node.update!({ scene }, frame());
+    expect(children(out.object)[0].position.x).toBe(1);
+  });
+
   it('with another renderer, it fails at init with a message that names what it needs', async () => {
     const { scene } = fakeScene('Babylon.js');
     const { node } = make(head());
@@ -145,5 +177,30 @@ describe('three.script (#36)', () => {
     disposeObject3D(group);
     expect(parent.children).toEqual([]);
     expect(disposed.sort()).toEqual(['geometry', 'material', 'texture']);
+  });
+
+  it("disposeObject3D disposes a uniform's array of textures too (Qodo, #101)", () => {
+    const textures = [new THREE.Texture(), new THREE.Texture()];
+    const material = new THREE.ShaderMaterial({ uniforms: { maps: { value: textures } } });
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(), material));
+    let disposed = 0;
+    for (const t of textures) t.addEventListener('dispose', () => disposed++);
+    disposeObject3D(group);
+    expect(disposed).toBe(2);
+  });
+
+  it("the ring example follows its count live: onFrame adds or removes spheres (Qodo, #101)", async () => {
+    const ring = THREE_SCRIPT_EXAMPLES.find((e) => e.file === 'ring.js')!;
+    const { scene } = fakeScene();
+    const { node, reports } = make(ring.text);
+    const out = (await node.init!({ scene })) as { object: SceneObject };
+    const group = children(out.object)[0];
+    expect(group.children).toHaveLength(8);
+    node.update!({ scene, count: 3 }, frame());
+    expect(group.children).toHaveLength(3);
+    node.update!({ scene, count: 12 }, frame());
+    expect(group.children).toHaveLength(12);
+    expect(reports.filter((r) => r)).toEqual([]);
   });
 });

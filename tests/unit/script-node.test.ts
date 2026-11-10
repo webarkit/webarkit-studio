@@ -203,6 +203,22 @@ describe('script.lite (#35)', () => {
     expect(reports.at(-1)).toBe('');
   });
 
+  it('a syntax error shows its line, at start and on a live edit: a stray token, an unbalanced brace (Qodo, #101)', () => {
+    const stray = make(head('in x number', 'out y number') + 'const a = 1;\ny = x 2;\n');
+    expect(stray.node.init!({})).toEqual({});
+    expect(stray.reports.at(-1)).toMatch(/^✗ line 6: /);
+    // An unbalanced brace is found at the end: the script's last line.
+    const open = make(head('in x number', 'out y number') + 'if (x > 0) {\n  y = x;\n');
+    expect(open.node.init!({})).toEqual({});
+    expect(open.reports.at(-1)).toMatch(/^✗ line 6: /);
+    // On a live edit, the same, while the last good script runs on.
+    const { node, p, reports } = make(head('in x number', 'out y number') + 'y = x;');
+    node.init!({ x: 1 });
+    p.script = head('in x number', 'out y number') + 'y = x;\ny = x )\n';
+    node.onParamChange!('script', p.script);
+    expect(reports.at(-1)).toMatch(/^✗ line 6: /);
+  });
+
   it("does not let a script change an upstream node's array", () => {
     const shared = [1, 2, 3];
     const { node } = make(head('in v vector3', 'out w vector3') + 'v[0] = 99; w = v;');

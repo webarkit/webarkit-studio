@@ -18,6 +18,7 @@ import type { ParamValue } from '../../core/graph';
 import { IDENTITY_MATRIX, scriptHeaderOf, scriptTextOf, type ScriptHeader, type ScriptSocket } from '../../core/script';
 import { eventWatcher, fired, NOT_FIRED } from '../events';
 import type { EventValue, NodeFactory, PortValues } from '../types';
+import { compileScript, scriptLines } from './compile-script';
 
 const LENGTH: Partial<Record<ScriptSocket, number>> = { vector2: 2, vector3: 3, quaternion: 4, color: 4, matrix4: 16 };
 
@@ -83,8 +84,9 @@ function compile(text: string): Compiled {
   const body = `${prelude.join('\n')}\n${text}\n;return [__done, { ${outs.join(', ')} }];`;
   const names = [...header.inputs.map((i) => i.name), ...header.enums.map((e) => e.name)];
   // `new Function` puts two lines before the body ("function anonymous(…" and ") {").
-  const run = new Function('time', 'delta', 'state', '__last', '__done', ...names, body) as Compiled['run'];
-  return { header, run, firstLine: 2 + prelude.length + 1, ports: portsOf(header) };
+  const firstLine = 2 + prelude.length + 1;
+  const run = compileScript<Compiled['run']>(['time', 'delta', 'state', '__last', '__done', ...names], body, firstLine, scriptLines(text));
+  return { header, run, firstLine, ports: portsOf(header) };
 }
 
 /**
@@ -140,7 +142,7 @@ export function checkScript(text: string, type = 'script.lite'): string | null {
     const { errors } = scriptHeaderOf(text, type);
     if (errors.length) return `line ${errors[0].line}: ${errors[0].message}`;
     if (type === 'script.lite') compile(text);
-    else new Function(`"use strict";\n${text}`);
+    else compileScript([], `"use strict";\n${text}`, 4, scriptLines(text));
     return null;
   } catch (err) {
     return (err as Error).message;

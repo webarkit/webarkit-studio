@@ -62,17 +62,29 @@ export const THREE_SCRIPT_EXAMPLES: ScriptExample[] = [
 in  count   number  d=8 min=1 max=32 step=1
 in  radius  number  d=50 min=0 max=200
 */
-// A ring of spheres on the marker, turning; its colour from the hue of each sphere.
+// A ring of spheres on the marker, turning, each its own hue. count applies live: onFrame adds or removes spheres.
 const spheres = [];
-function onInit({ THREE, group, inputs }) {
-  for (let i = 0; i < inputs.count; i++) {
-    const colour = new THREE.Color().setHSL(i / inputs.count, 0.8, 0.5);
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(8, 24, 16), new THREE.MeshStandardMaterial({ color: colour }));
+const target = (count) => Math.max(1, Math.round(count));
+function setCount(THREE, group, count) {
+  const n = target(count);
+  while (spheres.length > n) {
+    const sphere = spheres.pop();
+    group.remove(sphere);
+    sphere.geometry.dispose();
+    sphere.material.dispose();
+  }
+  while (spheres.length < n) {
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(8, 24, 16), new THREE.MeshStandardMaterial());
     spheres.push(sphere);
     group.add(sphere);
   }
+  spheres.forEach((sphere, i) => sphere.material.color.setHSL(i / n, 0.8, 0.5));
 }
-function onFrame({ time, inputs }) {
+function onInit({ THREE, group, inputs }) {
+  setCount(THREE, group, inputs.count);
+}
+function onFrame({ THREE, group, time, inputs }) {
+  if (target(inputs.count) !== spheres.length) setCount(THREE, group, inputs.count);
   spheres.forEach((sphere, i) => {
     const angle = time + (i / spheres.length) * Math.PI * 2;
     sphere.position.set(inputs.radius * Math.cos(angle), inputs.radius * Math.sin(angle), 20 + 10 * Math.sin(time * 3 + i));
