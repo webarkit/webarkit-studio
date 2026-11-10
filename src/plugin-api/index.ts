@@ -47,6 +47,8 @@ export type {
 export type { PoseFilterConfig } from '../runtime/filters/pose-filter';
 export type { TraceFrame, TraceHeader, TraceRecord, TraceSettings, TraceSource } from '../runtime/trackers/trace';
 import type { TraceFrame, TraceHeader, TraceSource } from '../runtime/trackers/trace';
+export type { CodeEmitContext, CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from '../export/codegen/types';
+import type { CodeEmitters } from '../export/codegen/types';
 
 /** Origin of the virtual URLs of uploaded assets with several files (RuntimeContext.virtualFiles keys), for a worker that serves them. */
 export type VirtualAssetOrigin = typeof VIRTUAL_ASSET_ORIGIN;
@@ -97,6 +99,11 @@ export interface StudioPlugin {
    * cannot, and a `_headers` file for hosts that can. The studio's own page is never isolated.
    */
   crossOriginIsolation?: (nodes: GraphNode[]) => boolean;
+  /**
+   * Source code export (#64): an emitter per node type of the plugin, keyed by target (`three` today), so a
+   * later target is added without changing this field. A node with no emitter for the target is refused.
+   */
+  codeEmitters?: CodeEmitters;
 }
 
 /** RGBA pixels, row by row (an ImageData without the DOM). */

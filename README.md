@@ -142,7 +142,7 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | Project (.zip) | the graph and its uploaded assets; open it with **Import…** |
 | Standalone app (.zip) | player + graph + assets, runs on any static web server |
 | GitHub Pages project (.zip) | the standalone app in `site/`, a GitHub Actions workflow that deploys it, and a README with the steps |
-| Source code (.zip) | planned: readable code generated from the graph ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
+| Source code (.zip) | a small Vite project with the graph as readable code (Three.js): `npm install`, `npm run dev`; see "Source code" below ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
 
 The standalone app is the prebuilt player (`npm run build:player`, run
 automatically by `dev` and `build`) plus `graph.json` and the files its nodes
@@ -410,6 +410,28 @@ and renders. "pinball · one three.js script renders it all" is its demo.
   its canvas over the frame that holds the video.
 - It needs no renderer node: an exported app with only this node ships three.js
   without the studio's Three.js adapter.
+
+### Source code
+
+**Export ▾ → Source code (.zip)** writes the graph as a small Vite project that depends on
+three.js, `@webarkit/jsartoolkit-nft` and `@webarkit/camera-view` (the exact versions the studio
+uses), and on nothing of the studio:
+
+- `src/main.js`, one file to read top to bottom: the setup, then the frame loop. Each part is one
+  node of the graph, in the order the graph runs them, under a `// <node id> (<node type>)` comment;
+  variable names come from the node ids;
+- `index.html`, `vite.config.js`, `package.json` and a `README.md` (`npm install`, `npm run dev`);
+- `public/data/`, the assets, collected as the standalone app does, and
+  `scripts/copy-jsartoolkit-nft.mjs`, which copies the tracker's worker file from `node_modules`
+  before `dev` and `build`.
+
+The first version writes the nodes of "pinball · Three.js" (camera, the jsartoolkitNFT camera
+parameters, dataset, settings and controller, the One Euro filter, Select Marker, Three.js renderer,
+scene, AR camera, light, primitive, anchor, AR view, Inspector and Tracking stats) and glTF models. A
+graph with any other node (math, logic, actions, scripts, `page.*`, `ui.*`, Babylon.js…) is refused,
+with the list of those nodes: export a Standalone app for it. The controller's Threaded and Auto
+builds are refused too, as they need a cross-origin isolated page. Plugins write their own nodes'
+code: see `codeEmitters` in [docs/plugins.md](docs/plugins.md).
 
 ## MCP server
 

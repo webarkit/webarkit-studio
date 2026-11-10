@@ -10,6 +10,7 @@ import { ASSET_KINDS, NODES, SOCKETS } from './catalog';
 import { PLUGIN_ID } from './nft-session';
 import { artkCameraParams, artkController, artkNativeFilter, artkNftDataset, artkSettings } from './nodes';
 import { WORKER_DIR, workerFiles, type WorkerBuild } from './worker-files';
+import { CODE_EMITTERS } from './codegen';
 
 const builds = (nodes: GraphNode[]) => nodes.filter((n) => n.type === 'jsartoolkitNFT.controller').map((n) => n.params.build ?? 'simd');
 
@@ -43,6 +44,8 @@ const plugin: StudioPlugin = {
   ],
   // The threaded build needs SharedArrayBuffer; `auto` picks it on an isolated page.
   crossOriginIsolation: (nodes) => builds(nodes).some((b) => b === 'td' || b === 'auto'),
+  // Source code export (#64): the tracker's nodes as code calling the facade.
+  codeEmitters: { three: CODE_EMITTERS },
 };
 
 export default plugin;

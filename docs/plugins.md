@@ -235,10 +235,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.3.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.4.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.3.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.4.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
@@ -360,6 +360,39 @@ The studio's own page is never isolated: `require-corp` would block a model or a
 another origin without CORP. So in the studio's preview, a node that needs isolation must say so
 itself (read `globalThis.crossOriginIsolated` in `init`), rather than wait for a worker that cannot
 start. The jsartoolkitNFT plugin does this for its Threaded build.
+
+## Source code export
+
+**Export → Source code** (#64) writes a graph as a Vite project with one readable `src/main.js`
+(`src/export/codegen/`). Each node's part comes from an emitter for its type: the core's in
+`src/export/codegen/three.ts`, a plugin's in its manifest's optional `codeEmitters`, keyed by target
+(`three` is the only one; another, such as an A-Frame page, is added beside it without changing the
+field). A node with no emitter for the target is refused by name, as is one whose emitter throws.
+
+```ts
+import type { CodeEmitter } from '@webarkit/studio-plugin-api';
+
+const tracker: CodeEmitter = ({ name, params, inputs, literal }) => ({
+  imports: ["import { createAcmeTracker } from '@acme/tracker';"],
+  setup: `const ${name()} = await createAcmeTracker(${inputs.video}, ${literal(params.mode)});`,
+  frame: `${name()}.update();`,
+  outputs: { markers: `${name()}.markers` },
+  dependencies: { '@acme/tracker': '2.1.0' },
+});
+
+codeEmitters: { three: { 'acme.tracker': tracker } },
+```
+
+- An emitter gets its node, the params with their defaults, and for each wired input the expression
+  the upstream emitter gave for that output (an array for a port with several links). `from(port)`
+  gives everything that node exposed, extra keys included. Values are the studio's port values: a
+  `video` is a playing `HTMLVideoElement`, a `trackingResult` the array of markers.
+- `name()` is the node's variable, `name('x')` one derived from it, unique in the file; `literal()`
+  writes a value as JavaScript. Setup code runs once, in the graph's order, with top-level `await`;
+  frame code runs every frame, with `delta` and `time` (ms) in scope.
+- `dependencies` (exact versions), `files` and `prepare` (commands run before `dev` and `build`) are
+  added to the project. The jsartoolkitNFT plugin's emitters (`plugins/jsartoolkit-nft/codegen.ts`)
+  call the tracker facade directly and copy its worker file with a `prepare` script.
 
 ## Testing with the Node build
 
