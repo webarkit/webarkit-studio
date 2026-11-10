@@ -41,10 +41,11 @@ In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) 
 - Dev server: `npm run dev` (builds the standalone player first, then Vite).
 - Typecheck: `npm run typecheck`
 - Unit + integration tests: `npm test`. Integration tests use the Node build of `@webarkit/jsartoolkit-nft` and read the assets with paths relative to the repository root, so run them from the root.
+- Unit tests run in Node, with no DOM: a factory that needs one gets a minimal fake `document` and a mocked `WebGLRenderer` (as `tests/unit/render-script-node.test.ts` does).
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
 - E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock.
 - Benchmarks: `npm run bench` (tinybench through tsx).
-- Plugin API package: `npm pack -w @webarkit/studio-plugin-api` generates the types in `packages/studio-plugin-api/` and packs them; `npm run build:plugin-api` only generates them. Not published (#29).
+- Plugin API package: `npm pack -w @webarkit/studio-plugin-api` generates the types in `packages/studio-plugin-api/` and packs them; `npm run build:plugin-api` only generates them. Not published (#29). A version bump of the package also updates its entry in `package-lock.json` (`npm install --package-lock-only`).
 - Agent files: `npm run check:agents`.
 - MCP server: `npm run mcp:studio` (stdio; see `src/mcp/AGENTS.md`).
 - Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
@@ -83,6 +84,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
   - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
   - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
   - `webarkit.*` is reserved for webarkit/webarkit trackers.
+  - A new reserved namespace updates every list of them: `RESERVED_NAMESPACES` (`src/core/plugins.ts`), the naming rules here, the graph-review checklist, `CONTRIBUTING.md` and the README (#81, #90, #92).
   - Do not name nodes after packages they do not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 - **Units and space:**
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
@@ -92,7 +94,15 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 - **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param, `color` for a color param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired. An optional input without a same-named param falls back to the node's documented behaviour when unwired (for example `math.expression`'s `t` is its own clock).
 - **Both renderer adapters keep the same semantics.** `SceneHandle` (`src/runtime/renderers/adapter.ts`) means the same on Three.js and Babylon.js, on plain values with no engine types, down to the clip names and the pose a stopped clip holds. Where the engines differ, the adapter hides it, and a behaviour goes in the table of tests that runs on both (`tests/e2e/animations.spec.ts` for animations).
-- **Math and colour nodes** (`math.*`, `color.*`) compute on plain numbers and arrays (marker space; colours `[r, g, b, a]` 0–1 in sRGB), never on renderer types; only the renderer adapters convert.
+- **Math and colour nodes** (`math.*`, `color.*`) compute on plain numbers and arrays (marker space; colours `[r, g, b, a]` 0–1 in sRGB), never on renderer types; only the renderer adapters convert. Each of them, and each `logic.*` node, decides and documents what a non-finite input (NaN, ±Infinity) gives, with a test (#81, #96, #97, #98; animations, #80).
+- **Names that come from a graph** (a param value, a key, an operator, a select option) are looked up with `Object.hasOwn`, never `obj[name]`, which also finds `__proto__`, `constructor` and `toString` (#81: `Object.hasOwn(COMPARISONS, op)` after `op: '__proto__'` threw at init; `isScriptType()`, #101; `math.expression`). Keys that come from a graph are written with `Object.defineProperty`, never `obj[key] = …`, which sets the prototype for `"__proto__"` (#90). An unknown value gives the node's safe default, never a throw (#81, #99).
+- **An array output is always a new array**, never one changed in place: `computed()` and the nodes reading it compare inputs by reference, so a change in place is never seen (#96, #98, #99; a script's outputs too, #100). Make a new array only when a value changes.
+- **Nothing a script does may throw out of its node**: its compile, its hooks, an early return, and a render it drives (#100, #102). An error shows on the node and in the log, and the graph runs on. Generated code follows the same rule: a marker that is not loaded is logged, not thrown (#103).
+- **An async `init` checks that the node was not disposed during its awaits** before it mounts or creates anything: a Stop during startup otherwise leaves a canvas, a renderer or a listener behind (#102). `dispose` releases everything `init` made (#90, #101).
+- **Source code export** (#64, `src/export/codegen/`): a node is written only if an emitter exists for its type and target (`three`); otherwise it is refused by name, never dropped.
+  - Graph text (ids, names, params) reaches the generated code only through `literal()`, or `commentText()` in comments (`src/export/codegen/text.ts`, #103): `JSON.stringify` leaves U+2028 / U+2029 as they are, and inside a `//` comment they end it, so what follows runs as code.
+  - Variable names come from the context's `name()`; names an emitter's code declares itself (block locals, callback parameters) go in its `locals`, so no node is given them (#103).
+  - Exact versions of the core's dependencies come from `__CODEGEN_VERSIONS__`, which `vite.config.ts` and `vitest.config.ts` define (`scripts/package-versions.mjs`): three does not export its `package.json`.
 
 ## Adding a node
 
@@ -129,6 +139,7 @@ Work is tracked with GitHub issues and milestones. The roadmap is #1; each phase
   4. Implement, run the commands above and the matching review checklist.
   5. Open the PR against `dev`, with `Closes #<n>` in the body. The default branch is `master`, so **merging into `dev` does not close the issue**: the keyword only takes effect when the release reaches `master`.
   6. After the PR is merged into `dev`, tick the issue's task list and comment on the issue with the PR link and what is left, if anything.
+- **An issue that contradicts this file:** stop and report the conflict, with the file and line of each side, propose a reading, and wait for the maintainer's ruling. The issue may mean to change the rule (#81).
 - **An issue is done** when a PR that references it is merged into `dev`, every task in its body is ticked (or struck out with a reason), its acceptance criteria are met and all its sub-issues are done.
 - **Releases close milestones, nothing else.** Before a release, audit the milestone with [`docs/agents/checklists/milestone-audit.md`](docs/agents/checklists/milestone-audit.md). Release only when every issue is done or explicitly moved to another milestone. Close the milestone only after the release (`dev` merged into `master`, tag and GitHub release) exists. Never close a milestone, publish a release or move issues between milestones without the maintainer's confirmation.
 
@@ -140,5 +151,6 @@ In Claude Code, the `work-on-issue` skill follows these steps, the `milestone-au
 - Conventional Commits; branch from `dev` and open PRs against `dev`, never `master`.
 - License: LGPL-3.0-or-later.
 - Small, reviewable diffs that match the surrounding style.
+- Write U+2028 and U+2029 in source and tests as the escapes `\u2028` / `\u2029`, never as the characters, which end a line in JavaScript; check a file with `grep -n $'\xe2\x80\xa8\|\xe2\x80\xa9'`.
 - A change a user can see adds a line under `## [Unreleased]` in `CHANGELOG.md`; documentation, test and tooling changes add none (`CONTRIBUTING.md`, "Changelog").
 - Don't state facts about sibling repositories (jsartoolkitNFT, ARnft, webarkit/webarkit) from memory: check the repository, because they move fast. In Claude Code, the `check-upstream` skill does this for the jsartoolkitNFT facade.

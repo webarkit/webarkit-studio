@@ -387,9 +387,18 @@ codeEmitters: { three: { 'acme.tracker': tracker } },
   the upstream emitter gave for that output (an array for a port with several links). `from(port)`
   gives everything that node exposed, extra keys included. Values are the studio's port values: a
   `video` is a playing `HTMLVideoElement`, a `trackingResult` the array of markers.
+- An input's value is resolved when the emitter reads it, so an input it never reads (an Inspector's)
+  needs no value upstream. `port in inputs` tells whether a port is wired without reading it.
+  `fromEach(port)` gives, for each link of a port that takes several, the upstream node's id and
+  everything it exposed (the Anchor reads its children's `lightKind` this way).
 - `name()` is the node's variable, `name('x')` one derived from it, unique in the file; `literal()`
   writes a value as JavaScript. Setup code runs once, in the graph's order, with top-level `await`;
   frame code runs every frame, with `delta` and `time` (ms) in scope.
+- `locals` lists the names the code declares itself, other than through `name()`: block locals,
+  callback parameters, destructured names. No node is given one of them, so none is shadowed or
+  declared twice. Throwing an `Error` refuses the node, with its message.
+- Graph text goes into the code only through `literal()`; text in a comment must stay on one line
+  (no U+2028 / U+2029, no `*/`).
 - `dependencies` (exact versions), `files` and `prepare` (commands run before `dev` and `build`) are
   added to the project. The jsartoolkitNFT plugin's emitters (`plugins/jsartoolkit-nft/codegen.ts`)
   call the tracker facade directly and copy its worker file with a `prepare` script.
