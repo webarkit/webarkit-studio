@@ -8,10 +8,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The e2e suite alone takes about 18 min (#108): room for it and the steps before it.
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -26,10 +27,14 @@ jobs:
       - name: Build (studio + standalone player)
         run: npm run build
       - run: npx playwright install --with-deps chromium
+      # A step timeout below the job's: a slow suite fails this step, and the report below uploads under failure()
+      # while the job is still alive. A job timeout cancels the job, which runs only the cancelled() steps, if any.
       - name: End-to-end tests
         run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
+        timeout-minutes: 28
+      # On a failure, and on a cancelled run too: what ran is still worth reading.
+      - uses: actions/upload-artifact@v6
+        if: failure() || cancelled()
         with:
           name: playwright-report
           path: |
@@ -43,8 +48,8 @@ jobs:
     needs: test
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
