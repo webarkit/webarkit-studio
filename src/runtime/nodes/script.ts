@@ -18,7 +18,7 @@ import type { ParamValue } from '../../core/graph';
 import { IDENTITY_MATRIX, scriptHeaderOf, scriptTextOf, type ScriptHeader, type ScriptSocket } from '../../core/script';
 import { eventWatcher, fired, NOT_FIRED } from '../events';
 import type { EventValue, NodeFactory, PortValues } from '../types';
-import { compileScript, scriptLines } from './compile-script';
+import { compileScript, reportCompileError, scriptLines } from './compile-script';
 
 const LENGTH: Partial<Record<ScriptSocket, number>> = { vector2: 2, vector3: 3, quaternion: 4, color: 4, matrix4: 16 };
 
@@ -137,15 +137,23 @@ export { describeError };
  * its code: the code panel calls this as the user types.
  */
 export function checkScript(text: string, type = 'script.lite'): string | null {
+  return scriptProblem(text, type)?.message ?? null;
+}
+
+/**
+ * The same check, as the error itself: a syntax error is a ScriptSyntaxError, whose line the code panel adds when
+ * acorn answers (reportCompileError).
+ */
+export function scriptProblem(text: string, type = 'script.lite'): Error | null {
   try {
     // The type's own header rules (three.script takes no out lines), then its syntax.
     const { errors } = scriptHeaderOf(text, type);
-    if (errors.length) return `line ${errors[0].line}: ${errors[0].message}`;
+    if (errors.length) return new Error(`line ${errors[0].line}: ${errors[0].message}`);
     if (type === 'script.lite') compile(text);
     else compileScript([], `"use strict";\n${text}`, 4, scriptLines(text));
     return null;
   } catch (err) {
-    return (err as Error).message;
+    return err as Error;
   }
 }
 
@@ -186,8 +194,12 @@ export const scriptLite: NodeFactory = (params, ctx) => {
       watchers = Object.fromEntries(next.header.inputs.filter((i) => i.socket === 'event').map((i) => [i.name, eventWatcher()]));
       return true;
     } catch (err) {
-      compileError = (err as Error).message;
-      report(`✗ ${compileError}`);
+      // Now, then with its line once acorn answers (a syntax error), if it is still the error shown.
+      reportCompileError(
+        err,
+        (message) => report(`✗ ${(compileError = message)}`),
+        (message) => compileError === message,
+      );
       return false;
     }
   };

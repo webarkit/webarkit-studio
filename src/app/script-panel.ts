@@ -7,7 +7,8 @@
 import { nodeScriptText } from '../core/script';
 import type { GraphDocument } from '../core/graph';
 import type { StudioNode } from '../editor/studio-node';
-import { checkScript } from '../runtime/nodes/script';
+import { scriptProblem } from '../runtime/nodes/script';
+import { reportCompileError } from '../runtime/nodes/compile-script';
 
 export interface ScriptPanel {
   open(node: StudioNode): void;
@@ -32,11 +33,17 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   /** The node's runtime error while the preview runs (what it shows itself), or empty. */
   let running = '';
 
-  const check = () => {
-    const problem = checkScript(code.value, nodeType);
+  const render = (problem: string | null) => {
     const text = problem ? `✗ ${problem}` : running ? `✗ running: ${running}` : '✓ no problems';
     problems.textContent = text;
     problems.classList.toggle('error', text.startsWith('✗'));
+  };
+  const check = () => {
+    const checked = code.value;
+    const error = scriptProblem(checked, nodeType);
+    if (!error) return render(null);
+    // A syntax error now, and with its line once acorn answers, if the code is still the one checked.
+    reportCompileError(error, render, () => code.value === checked);
   };
   const show = (text: string) => {
     code.value = shown = text;

@@ -20,7 +20,7 @@ import { eventWatcher } from '../events';
 import type { SceneHandle, SceneObject } from '../renderers/adapter';
 import type { NodeFactory, PortValues } from '../types';
 import { describeError, readScriptInputs } from './script';
-import { compileScript, scriptLines } from './compile-script';
+import { compileScript, reportCompileError, scriptLines } from './compile-script';
 
 const TYPE = 'three.script';
 
@@ -94,8 +94,12 @@ export const threeScript: NodeFactory = (params, ctx) => {
       watchers = Object.fromEntries(compiled.header.inputs.filter((i) => i.socket === 'event').map((i) => [i.name, eventWatcher()]));
       return true;
     } catch (err) {
-      compileError = (err as Error).message;
-      report(`✗ ${compileError}`);
+      // Now, then with its line once acorn answers (a syntax error), if it is still the error shown.
+      reportCompileError(
+        err,
+        (message) => report(`✗ ${(compileError = message)}`),
+        (message) => compileError === message,
+      );
       return false;
     }
   };

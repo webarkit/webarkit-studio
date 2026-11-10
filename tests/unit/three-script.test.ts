@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { threeScript } from '../../src/runtime/nodes/three-script';
 import { disposeObject3D } from '../../src/runtime/renderers/three-dispose';
@@ -127,17 +127,19 @@ describe('three.script (#36)', () => {
   });
 
   it('a syntax error shows its line, at start and on a live edit (Qodo, #101)', async () => {
+    // At once without its line, then with it when acorn, loaded on demand, answers.
     const stray = make(head() + 'let a = 1;\nfunction onInit() { a = a 2; }\n');
     await stray.node.init!({ scene: fakeScene().scene });
-    expect(stray.reports.at(-1)).toMatch(/^✗ line 5: /);
+    expect(stray.reports.at(-1)).toMatch(/^✗ (?!line)/);
+    await vi.waitFor(() => expect(stray.reports.at(-1)).toMatch(/^✗ line 5: /));
     const open = make(head() + 'function onFrame({ group }) {\n  group.position.x = 1;\n');
     await open.node.init!({ scene: fakeScene().scene });
-    expect(open.reports.at(-1)).toMatch(/^✗ line 5: /);
+    await vi.waitFor(() => expect(open.reports.at(-1)).toMatch(/^✗ line 5: /));
     const { node, p, reports } = make(head() + 'function onFrame() {}');
     await node.init!({ scene: fakeScene().scene });
     p.script = head() + 'function onFrame() {}\nfunction onInit( {\n';
     node.onParamChange!('script', p.script);
-    expect(reports.at(-1)).toMatch(/^✗ line 5: /);
+    await vi.waitFor(() => expect(reports.at(-1)).toMatch(/^✗ line 5: /));
   });
 
   it('after onInit throws, onFrame does not run on the half-built group, and the error stays until a build succeeds (Qodo, #101)', async () => {
