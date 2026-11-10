@@ -370,6 +370,22 @@ test.describe('editor', () => {
     await expect(page.locator('#inspector h2')).toHaveText('Scene');
   });
 
+  test('the palette has a color group right after math, with the colour nodes in their own colour (#104)', async ({ page }) => {
+    await loadDemo(page, 'pinball-three');
+    const headings = await page.locator('#palette .palette-group h3').allTextContents();
+    expect(headings.indexOf('color')).toBe(headings.indexOf('math') + 1);
+    const colour = page.locator('#palette .palette-group:has(h3:text-is("color")) button');
+    await expect(colour.first()).toBeVisible();
+    expect(await colour.allTextContents()).toContain('Mix Colors');
+    const math = await page.locator('#palette .palette-group:has(h3:text-is("math")) button').allTextContents();
+    expect(math).not.toContain('Mix Colors');
+    // Its own colour: the group's buttons take --cat-color, which no other category has.
+    const tint = (selector: string) => page.locator(selector).first().evaluate((el) => getComputedStyle(el).getPropertyValue('--c').trim());
+    const [colourTint, mathTint] = [await tint('#palette .cat-color'), await tint('#palette .cat-math')];
+    expect(colourTint).not.toBe('');
+    expect(colourTint).not.toBe(mathTint);
+  });
+
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');

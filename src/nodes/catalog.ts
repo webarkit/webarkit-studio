@@ -54,7 +54,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'logic' | 'action' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -837,7 +837,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.rgba',
     label: 'RGBA Color',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
     inputs: {
@@ -857,7 +857,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.split',
     label: 'Split Color',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description: 'The red, green, blue and alpha of a colour (0–1).',
     inputs: { color: { type: 'color', label: 'Color' } },
@@ -872,7 +872,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.hex',
     label: 'Hex Color',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description: 'A colour from the picker, opaque.',
     inputs: {},
@@ -882,7 +882,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.hsv',
     label: 'HSV Color',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description:
       'A colour from hue (degrees, around the wheel: 0 red, 120 green, 240 blue, and on past 360), saturation, ' +
@@ -904,7 +904,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.mix',
     label: 'Mix Colors',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description:
       'A colour between A and B: each channel and alpha, in sRGB. T is 0 for A and 1 for B, clamped. ' +
@@ -924,7 +924,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.brightness',
     label: 'Brightness',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description:
       'A colour with its red, green and blue multiplied by Factor and clamped to 0–1; alpha is kept. ' +
@@ -942,7 +942,7 @@ export const CORE_NODES: NodeDefinition[] = [
   {
     type: 'color.invert',
     label: 'Invert Color',
-    category: 'math',
+    category: 'color',
     provider: 'core',
     description: 'A colour with its red, green and blue inverted (1 − each); alpha is kept. A connected input overrides the param.',
     inputs: { color: { type: 'color', label: 'Color', optional: true } },

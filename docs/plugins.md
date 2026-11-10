@@ -235,10 +235,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.4.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.5.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.4.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.5.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs
