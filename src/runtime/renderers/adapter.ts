@@ -33,6 +33,15 @@ export interface LightSpec {
   intensity: number;
 }
 
+const LIGHT_KINDS: Record<LightSpec['kind'], true> = { directional: true, hemisphere: true, ambient: true };
+
+/**
+ * A light's kind as both adapters read it (#110): one they know, or `directional` (scene.light's default) for
+ * anything else, which reaches an adapter only on a path that skips validation. Both engines then build the same light.
+ */
+export const lightKind = (kind: unknown): LightSpec['kind'] =>
+  typeof kind === 'string' && Object.hasOwn(LIGHT_KINDS, kind) ? (kind as LightSpec['kind']) : 'directional';
+
 /** A glTF 2.0 model, as scene.gltf fetched it. */
 export interface ModelSpec {
   /** The .glb or .gltf file. */

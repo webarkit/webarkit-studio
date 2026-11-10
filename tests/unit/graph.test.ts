@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph } from '../../src/core/graph';
+import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type ParamValue } from '../../src/core/graph';
+import { LOADED_PLUGINS } from '../../src/core/plugins';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { effectiveDefinition } from '../../src/core/script';
 import { CORE_SOCKET_TYPES, isSocketType, socketsCompatible } from '../../src/core/sockets';
@@ -103,6 +104,27 @@ describe('validateGraph', () => {
       }
       expect(found).toEqual(['node s (test.select): param "kind" must be one of "a", "b"']);
     }
+  });
+
+  it("checks a plugin's select too: jsartoolkitNFT.controller's build", () => {
+    const spec = NODE_CATALOG['jsartoolkitNFT.controller'].params.build;
+    const values = spec.kind === 'select' ? Object.values(spec.options) : [];
+    expect(values.length).toBeGreaterThan(1);
+    const doc = graph([['c', 'jsartoolkitNFT.controller']], []);
+    doc.plugins = [{ id: 'jsartoolkitNFT', version: LOADED_PLUGINS.jsartoolkitNFT }];
+    const found = (build: ParamValue) => {
+      doc.nodes[0].params = { build };
+      try {
+        validateGraph(doc, NODE_CATALOG, undefined, { unfinished: true });
+        return [];
+      } catch (err) {
+        return (err as GraphValidationError).problems;
+      }
+    };
+    for (const build of values) expect(found(build)).toEqual([]);
+    expect(found('turbo')).toEqual([
+      `node c (${NODE_CATALOG['jsartoolkitNFT.controller'].label}): param "build" must be one of ${values.map((v) => JSON.stringify(v)).join(', ')}`,
+    ]);
   });
 
   it('refuses a scene.light of kind "laser" against the real catalog, naming the node and the param', () => {

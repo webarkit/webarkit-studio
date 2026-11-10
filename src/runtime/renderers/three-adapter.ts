@@ -11,6 +11,7 @@ import {
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
+  lightKind,
 } from './adapter';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
@@ -126,7 +127,8 @@ function createThreeScene(
       return wrap(g);
     },
     release: (o) => disposeObject3D(obj(o)),
-    createLight(spec: LightSpec) {
+    createLight(given: LightSpec) {
+      const spec = { ...given, kind: lightKind(given.kind) };
       const color = new THREE.Color(spec.color);
       if (spec.kind === 'ambient') return wrap(new THREE.AmbientLight(color, spec.intensity));
       if (spec.kind === 'hemisphere') {
