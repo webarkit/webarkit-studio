@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'acorn';
 import type { GraphDocument } from '../../src/core/graph';
 import { generateSource, CodegenError, codeEmittersFor } from '../../src/export/codegen';
+import { literal } from '../../src/export/codegen/text';
 
 const graph = (name: string): GraphDocument => JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
 const lf = (text: string) => text.replace(/\r\n/g, '\n');
@@ -98,6 +99,39 @@ describe('source code export, Three.js (#64)', () => {
   it('the first frame has a delta of 0, as the renderer adapters do', () => {
     const main = generateSource(graph('pinball-three'), 'three', codeEmittersFor('three')).files['src/main.js'];
     expect(main).toContain('const delta = last === null ? 0 : time - last;');
+  });
+
+  it('literal() escapes U+2028 and U+2029, which JSON leaves as they are and JavaScript reads as line breaks', () => {
+    const text = `a${String.fromCharCode(0x2028)}b${String.fromCharCode(0x2029)}c`;
+    const out = literal(text);
+    expect(out).toBe('"a\\u2028b\\u2029c"');
+    expect(out).not.toMatch(/[\u2028\u2029]/);
+    expect(new Function(`return ${out};`)()).toBe(text);
+  });
+
+  it('a Select Marker key cannot end a comment and run as code (U+2028 / U+2029)', () => {
+    const doc = graph('pinball-three');
+    for (const sep of [0x2028, 0x2029]) {
+      const key = `x${String.fromCharCode(sep)}globalThis.ran = true;//`;
+      doc.nodes.find((n) => n.id === 'select_pinball')!.params.marker = key;
+      const main = generateSource(doc, 'three', codeEmittersFor('three')).files['src/main.js'];
+      expect(main).not.toMatch(/[\u2028\u2029]/);
+      // Every line that is a comment stays one: the key's text is never a statement.
+      const program = parse(main, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as { body: Array<{ type: string; start: number; end: number }> };
+      const statements = program.body.map((s) => main.slice(s.start, s.end));
+      expect(statements.some((s) => /^globalThis\.ran/.test(s.trim())), statements.join('\n---\n')).toBe(false);
+    }
+  });
+
+  it('no line terminator but \\n reaches any generated file, whatever the graph holds', () => {
+    const doc = graph('pinball-three');
+    const ls = String.fromCharCode(0x2028);
+    doc.name = `name${ls}x`;
+    doc.nodes.find((n) => n.id === 'select_pinball')!.params.marker = `m${ls}`;
+    doc.nodes.find((n) => n.id === 'dataset')!.params.name = `d${ls}`;
+    doc.nodes.find((n) => n.id === 'prim_pinball')!.params.color = `#ff0055${ls}`;
+    const { files } = generateSource(doc, 'three', codeEmittersFor('three'));
+    for (const [path, text] of Object.entries(files)) expect(text, path).not.toMatch(/[\u2028\u2029\r]/);
   });
 
   it('node ids become distinct, valid variable names', () => {

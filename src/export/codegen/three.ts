@@ -5,6 +5,7 @@
  * the marker on the XY plane, +Z up; rotations in degrees, applied X, then Y, then Z (Euler 'XYZ').
  */
 import type { CodeEmitContext, CodeEmitter } from './types';
+import { commentText, templateText } from './text';
 
 const THREE_IMPORT = "import * as THREE from 'three';";
 
@@ -241,14 +242,13 @@ const selectMarker: CodeEmitter = (ctx) => {
   const key = String(params.marker).trim();
   const pick = /^\d+$/.test(key) ? `${markers}.find((m) => m.name === ${literal(key)}) ?? ${markers}[${Number(key)}]` : `${markers}.find((m) => m.name === ${literal(key)})`;
   return {
-    setup: `// The marker ${literal(key)}${/^\d+$/.test(key) ? ' (by name, or else by index)' : ''}: its pose, found and size, kept current by the tracker.
+    // Graph text: on one line in the comment (commentText), escaped in the template literal (templateText).
+    setup: `// The marker "${commentText(key)}"${/^\d+$/.test(key) ? ' (by name, or else by index)' : ''}: its pose, found and size, kept current by the tracker.
 const ${m} = ${pick};
-if (!${m}) throw new Error(\`no marker ${commentSafe(key)} (markers: \${${markers}.map((m) => m.name).join(', ')})\`);`,
+if (!${m}) throw new Error(\`no marker ${templateText(key)} (markers: \${${markers}.map((m) => m.name).join(', ')})\`);`,
     outputs: { pose: `${m}.pose`, found: `${m}.found`, markerInfo: `${m}.info` },
   };
 };
-/** Text inside a template literal. */
-const commentSafe = (text: string) => JSON.stringify(text).replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 
 const oneEuro: CodeEmitter = ({ name, params, literal }) => {
   const f = name();
