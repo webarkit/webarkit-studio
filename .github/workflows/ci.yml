@@ -27,9 +27,12 @@ jobs:
       - name: Build (studio + standalone player)
         run: npm run build
       - run: npx playwright install --with-deps chromium
+      # A step timeout below the job's: a slow suite fails this step, and the report below uploads under failure()
+      # while the job is still alive. A job timeout cancels the job, which runs only the cancelled() steps, if any.
       - name: End-to-end tests
         run: npm run test:e2e
-      # Also on a cancelled run (a timeout): what ran is still worth reading.
+        timeout-minutes: 28
+      # On a failure, and on a cancelled run too: what ran is still worth reading.
       - uses: actions/upload-artifact@v6
         if: failure() || cancelled()
         with:
