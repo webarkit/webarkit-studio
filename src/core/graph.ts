@@ -147,7 +147,8 @@ export function validateGraph(
     nodes.set(n.id, n);
     const ns = namespaceOf(n.type);
     if (missing.has(ns)) continue;
-    if (!catalog[n.type]) problems.push(`node ${n.id}: unknown type "${n.type}"`);
+    // Object.hasOwn: "constructor", "toString" or "__proto__" is an unknown type, not what the object inherits (#110).
+    if (!Object.hasOwn(catalog, n.type)) problems.push(`node ${n.id}: unknown type "${n.type}"`);
     else if (Object.hasOwn(loaded, ns) && !listed.has(ns)) {
       problems.push(`node ${n.id}: type "${n.type}" is from plugin ${ns}, which the graph's plugins do not list`);
     }
@@ -185,6 +186,14 @@ export function validateGraph(
       problems.push(`node ${n.id} (${def.label}): param "script" must be text`);
     }
     for (const [key, spec] of Object.entries(def.params)) {
+      // A select holds one of its options' values; anything else was never valid, only unchecked (#110).
+      if (spec.kind === 'select' && n.params && Object.hasOwn(n.params, key)) {
+        const values = Object.values(spec.options);
+        if (!values.includes(n.params[key] as string)) {
+          problems.push(`node ${n.id} (${def.label}): param "${key}" must be one of ${values.map((v) => JSON.stringify(v)).join(', ')}`);
+        }
+        continue;
+      }
       if (!(spec.kind in ARRAY_PARAM_LENGTH) || !n.params || !Object.hasOwn(n.params, key)) continue;
       const length = ARRAY_PARAM_LENGTH[spec.kind as keyof typeof ARRAY_PARAM_LENGTH];
       const value = n.params[key];

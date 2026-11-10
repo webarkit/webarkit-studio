@@ -36,6 +36,7 @@ import {
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
+  lightKind,
 } from './adapter';
 
 /**
@@ -172,7 +173,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       n.parent = null;
       n.dispose(false, true);
     },
-    createLight(spec: LightSpec) {
+    createLight(given: LightSpec) {
+      const spec = { ...given, kind: lightKind(given.kind) };
       const light: Light =
         spec.kind === 'directional'
           ? new DirectionalLight('directional', new Vector3(-0.2, 0.3, -1), scene)

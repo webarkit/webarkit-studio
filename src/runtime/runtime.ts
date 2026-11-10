@@ -89,7 +89,7 @@ export class GraphRuntime {
     const assets = (this.assets = new RuntimeAssets(this.opts.assets ?? (() => undefined)));
 
     for (const node of topologicalOrder(this.doc)) {
-      const factory = this.registry[node.type];
+      const factory = Object.hasOwn(this.registry, node.type) ? this.registry[node.type] : undefined;
       if (!factory) throw new NodeRuntimeError(node.id, `No runtime implementation for "${node.type}"`);
       const ctx: RuntimeContext = {
         nodeId: node.id,

@@ -91,8 +91,8 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 7. Tests and docs
 
 - New or changed node logic that does not need a browser has a unit test (`tests/unit/`).
-- A new demo graph in `public/graphs/` is added to the `it.each` list in `tests/unit/graph.test.ts`,
-  which validates each demo graph against the real catalog and `GRAPH_VERSION`.
+- A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
+  and validates it against the real catalog and `GRAPH_VERSION` (#110).
 - The README node table lists new nodes; ⚡ marks live params.
 
 ## Commands
