@@ -38,6 +38,8 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
+  // three.js itself: the player imports it on demand for three.script and three.renderScript (#36, #37), not only the adapter.
+  { module: 'node_modules/three/build/three.module.js', needed: (d) => d.nodes.some((n) => NODE_CATALOG[n.type]?.provider === 'Three.js') },
   // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
   { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },

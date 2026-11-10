@@ -42,6 +42,7 @@ import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './
 import { pageEvent } from './nodes/page';
 import { scriptLite } from './nodes/script';
 import { threeScript } from './nodes/three-script';
+import { threeRenderScript } from './nodes/three-render-script';
 import { button, colorPicker, select, slider, toggle as uiToggle } from './nodes/ui';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
@@ -110,6 +111,7 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'page.event': pageEvent,
   'script.lite': scriptLite,
   'three.script': threeScript,
+  'three.renderScript': threeRenderScript,
   'ui.button': button,
   'ui.toggle': uiToggle,
   'ui.slider': slider,

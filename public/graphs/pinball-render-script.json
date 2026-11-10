@@ -1,0 +1,271 @@
+{
+  "format": "webarkit-studio/graph",
+  "version": 5,
+  "name": "Pinball NFT · one three.js script renders it all (Three.js)",
+  "plugins": [
+    {
+      "id": "jsartoolkitNFT",
+      "version": "0.1.0"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "camera",
+      "type": "source.camera",
+      "params": {
+        "facingMode": "environment",
+        "width": 640,
+        "height": 480
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "camparams",
+      "type": "jsartoolkitNFT.cameraParams",
+      "params": {
+        "url": "data/camera_para.dat"
+      },
+      "position": {
+        "x": 0,
+        "y": 207
+      }
+    },
+    {
+      "id": "dataset",
+      "type": "jsartoolkitNFT.dataset",
+      "params": {
+        "url": "data/DataNFT/pinball",
+        "name": "pinball"
+      },
+      "position": {
+        "x": 0,
+        "y": 369
+      }
+    },
+    {
+      "id": "settings",
+      "type": "jsartoolkitNFT.settings",
+      "params": {
+        "continuousDetection": true,
+        "detectionInterval": 300,
+        "logLevel": "2"
+      },
+      "position": {
+        "x": 0,
+        "y": 559
+      }
+    },
+    {
+      "id": "filter",
+      "type": "filter.oneEuro",
+      "params": {
+        "minCutOff": 0.0001,
+        "beta": 0.01,
+        "warmUp": 5
+      },
+      "position": {
+        "x": 0,
+        "y": 1155
+      }
+    },
+    {
+      "id": "controller",
+      "type": "jsartoolkitNFT.controller",
+      "params": {
+        "build": "simd"
+      },
+      "position": {
+        "x": 320,
+        "y": 0
+      }
+    },
+    {
+      "id": "markers",
+      "type": "debug.inspector",
+      "params": {},
+      "position": {
+        "x": 640,
+        "y": 124
+      }
+    },
+    {
+      "id": "stats",
+      "type": "debug.stats",
+      "params": {
+        "overlay": true
+      },
+      "position": {
+        "x": 640,
+        "y": 284
+      }
+    },
+    {
+      "id": "select_pinball",
+      "type": "tracking.selectMarker",
+      "params": {
+        "marker": "pinball"
+      },
+      "position": {
+        "x": 640,
+        "y": 520
+      }
+    },
+    {
+      "id": "render",
+      "type": "three.renderScript",
+      "params": {},
+      "position": {
+        "x": 680,
+        "y": 300
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": {
+        "node": "camera",
+        "port": "video"
+      },
+      "to": {
+        "node": "controller",
+        "port": "video"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "camparams",
+        "port": "params"
+      },
+      "to": {
+        "node": "controller",
+        "port": "cameraParams"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "dataset",
+        "port": "dataset"
+      },
+      "to": {
+        "node": "controller",
+        "port": "dataset"
+      }
+    },
+    {
+      "id": "e4",
+      "from": {
+        "node": "settings",
+        "port": "settings"
+      },
+      "to": {
+        "node": "controller",
+        "port": "settings"
+      }
+    },
+    {
+      "id": "e5",
+      "from": {
+        "node": "filter",
+        "port": "filter"
+      },
+      "to": {
+        "node": "controller",
+        "port": "filter"
+      }
+    },
+    {
+      "id": "e6",
+      "from": {
+        "node": "controller",
+        "port": "markers"
+      },
+      "to": {
+        "node": "markers",
+        "port": "value"
+      }
+    },
+    {
+      "id": "e7",
+      "from": {
+        "node": "controller",
+        "port": "stats"
+      },
+      "to": {
+        "node": "stats",
+        "port": "stats"
+      }
+    },
+    {
+      "id": "e8",
+      "from": {
+        "node": "controller",
+        "port": "markers"
+      },
+      "to": {
+        "node": "select_pinball",
+        "port": "markers"
+      }
+    },
+    {
+      "id": "e9",
+      "from": {
+        "node": "camera",
+        "port": "video"
+      },
+      "to": {
+        "node": "render",
+        "port": "video"
+      }
+    },
+    {
+      "id": "e10",
+      "from": {
+        "node": "select_pinball",
+        "port": "pose"
+      },
+      "to": {
+        "node": "render",
+        "port": "pose"
+      }
+    },
+    {
+      "id": "e11",
+      "from": {
+        "node": "select_pinball",
+        "port": "found"
+      },
+      "to": {
+        "node": "render",
+        "port": "found"
+      }
+    },
+    {
+      "id": "e12",
+      "from": {
+        "node": "controller",
+        "port": "projection"
+      },
+      "to": {
+        "node": "render",
+        "port": "projection"
+      }
+    },
+    {
+      "id": "e13",
+      "from": {
+        "node": "select_pinball",
+        "port": "markerInfo"
+      },
+      "to": {
+        "node": "render",
+        "port": "markerInfo"
+      }
+    }
+  ]
+}

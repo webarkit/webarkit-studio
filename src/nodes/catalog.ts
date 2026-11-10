@@ -1012,6 +1012,56 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     runsCode: true,
   },
+  {
+    type: 'three.renderScript',
+    label: 'three.js Render Script',
+    category: 'output',
+    provider: 'Three.js',
+    description:
+      'A three.js script that renders on its own, in place of Scene, Renderer, AR Camera, Anchor and AR View for its content: ' +
+      'wire the tracker side (Video, Pose, Found, Projection, Marker info). The node makes a WebGLRenderer on its own canvas over ' +
+      'the video, a scene and a camera, and puts the tracker\'s projection on the camera each frame. Define onInit({ THREE, ' +
+      'renderer, scene, camera, helpers, inputs }), onFrame({ pose, found, markerInfo, projection, time, delta, helpers, inputs, … }) ' +
+      'and onDispose(); helpers.placeOnMarker(object, pose, found, markerInfo) places content as an Anchor does. The header ' +
+      'declares value inputs and dropdowns; it has no out lines. It runs in the page: a graph with scripts asks before running them.',
+    inputs: {
+      video: { type: 'video', label: 'Video' },
+      pose: { type: 'pose', label: 'Pose' },
+      found: { type: 'boolean', label: 'Found', optional: true },
+      projection: { type: 'projection', label: 'Projection' },
+      markerInfo: { type: 'markerInfo', label: 'Marker info', optional: true },
+    },
+    outputs: {},
+    params: {
+      script: {
+        kind: 'string',
+        label: 'Script',
+        default:
+          '/*\nin  size  number  d=80 min=10 max=300\n*/\n' +
+          "// Renders on its own: renderer, scene and camera are this node's, and it puts the tracker's projection on the camera.\n" +
+          'let marker, knot;\n' +
+          'function onInit({ THREE, scene }) {\n' +
+          '  scene.add(new THREE.AmbientLight(0xffffff, 0.6));\n' +
+          '  const light = new THREE.DirectionalLight(0xffffff, 2.5);\n' +
+          '  light.position.set(0, 0, 1); // camera space: lights what the camera sees\n' +
+          '  scene.add(light);\n' +
+          '  marker = new THREE.Group(); // on the marker: millimetres, +Z up\n' +
+          '  scene.add(marker);\n' +
+          '  knot = new THREE.Mesh(new THREE.TorusKnotGeometry(1 / 3, 1 / 10, 100, 16), new THREE.MeshStandardMaterial({ color: 0xff0055 }));\n' +
+          '  marker.add(knot);\n' +
+          '}\n' +
+          'function onFrame({ pose, found, markerInfo, helpers, time, inputs }) {\n' +
+          '  helpers.placeOnMarker(marker, pose, found, markerInfo); // as a Marker Anchor does: centred, hidden when lost\n' +
+          '  knot.scale.setScalar(inputs.size);\n' +
+          '  knot.position.z = inputs.size / 2;\n' +
+          '  knot.rotation.z = time;\n' +
+          '}\n',
+        live: true,
+      },
+      file: { kind: 'string', label: 'File', default: 'render.js', live: true },
+    },
+    runsCode: true,
+  },
 
   // --------------------------------------------------------------- logic
   {

@@ -236,8 +236,9 @@ export function scriptHeaderOf(text: string, type = 'script.lite'): { header: Sc
 function typeErrors(base: NodeDefinition, header: ScriptHeader): ScriptProblem[] {
   const errors: ScriptProblem[] = [];
   const fixed = new Set([...Object.keys(base.inputs), ...Object.keys(base.outputs)]);
-  if (Object.keys(base.outputs).length) {
-    for (const o of header.outputs) errors.push({ line: o.line, message: `${base.label} has no out lines: what it makes goes in its group` });
+  // Only a script with no ports of its own (Script) has outputs: three.script's go in its group, three.renderScript draws.
+  if (fixed.size) {
+    for (const o of header.outputs) errors.push({ line: o.line, message: `${base.label} has no out lines` });
   }
   for (const d of [...header.inputs, ...header.enums]) {
     if (fixed.has(d.name)) errors.push({ line: d.line, message: `"${d.name}" is ${base.label}'s own port: pick another name` });

@@ -84,8 +84,14 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   three.js script builds the scene". A node runs code when its definition says `runsCode: true` (plugin API types
   package 1.3.0): the trust prompt, the player's `?graph=` refusal and the MCP server's refusal read that flag.
 
+- **three.js Render Script** node (#37, `three.renderScript`): a three.js script with its own renderer, scene and
+  camera over the camera video, in place of Scene, Renderer, AR Camera, Anchor and AR View. Each frame it puts the
+  tracker's projection on the camera; `helpers.placeOnMarker()` places content as a Marker Anchor does. A new demo,
+  "pinball · one three.js script renders it all".
+
 ### Changed
 
+- An exported app ships three.js only when its graph has a Three.js node; since #36 a Babylon.js export carried it too.
 - A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).
   `nftDataset` is no longer built in: a plugin that reads those files declares the same kind.
 - An exported app's `README.txt` no longer names jsartoolkitNFT (#30): it says trackers probe for

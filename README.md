@@ -343,7 +343,7 @@ refuses a graph with scripts named by a link (`player.html?graph=…`). An
 exported app compiles its scripts with `new Function`: a Content Security
 Policy on its host needs `'unsafe-eval'`. The MCP server never runs a script
 (`tracking_run` refuses a graph with one). All of this applies to every node
-that runs code (**Script** and **three.js Script**), as its catalog definition
+that runs code (**Script**, **three.js Script** and **three.js Render Script**), as its catalog definition
 marks it (`runsCode`), never by its name.
 
 ### three.js Script
@@ -381,6 +381,35 @@ function onFrame({ group, time, inputs }) {
   fresh one; header params apply live. Errors show on the node with their line,
   and in the code panel and the log, and never stop the graph.
 - It needs the Three.js renderer: with Babylon.js it fails at start and says so.
+
+### three.js Render Script
+
+**three.js Render Script** (`three.renderScript`) renders on its own, in place of
+Scene, Renderer, AR Camera, Marker Anchor and AR View: wire the camera's
+*Video*, the controller's *Projection*, and a Select Marker's *Pose*, *Found*
+and *Marker info*. The node makes a `WebGLRenderer` on its own canvas, laid
+over the video as AR View's is, a scene and a camera at the origin looking down
+−Z; each frame it puts the tracker's projection on the camera, runs `onFrame`
+and renders. "pinball · one three.js script renders it all" is its demo.
+
+- `onInit({ THREE, canvas, renderer, scene, camera, helpers, inputs })` builds
+  the scene; `onFrame({ THREE, renderer, scene, camera, pose, found,
+  projection, markerInfo, time, delta, helpers, inputs })` places and animates;
+  `onDispose()` releases. The scene's geometries, materials and textures are
+  disposed anyway.
+- `helpers.placeOnMarker(object, pose, found, markerInfo)` places an object as a
+  Marker Anchor does (centred on the marker, hidden when lost);
+  `helpers.markerMatrix`, `helpers.markerOffset` and
+  `helpers.applyArProjection` are the same placement in parts. They are the
+  studio's own, so a render script lines up with the standard pipeline.
+- The header declares value inputs and dropdowns; no `out` lines. A live code
+  change rebuilds the scene. Errors show on the node and never stop the graph.
+- Import offers its own examples (a bobbing cube, a rainbow knot); the menu
+  lists only examples the node accepts.
+- An AR View and a render script on one video share it: the later one stacks
+  its canvas over the frame that holds the video.
+- It needs no renderer node: an exported app with only this node ships three.js
+  without the studio's Three.js adapter.
 
 ## MCP server
 
@@ -628,6 +657,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
 | `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
+| `three.renderScript` | ✅ ⚡ | video, pose, found, projection, markerInfo, the inputs its script's header declares → — (a three.js script with its own renderer, scene and camera over the video; asks before running a script from someone else; see "three.js Render Script") |
 | `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |

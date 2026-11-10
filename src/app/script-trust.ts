@@ -8,6 +8,7 @@
  */
 import { isScriptType, nodeScriptText } from '../core/script';
 import type { GraphDocument, GraphNode } from '../core/graph';
+import { NODE_CATALOG } from '../nodes/catalog';
 
 const TRUSTED_KEY = 'webarkit-studio:trusted-scripts';
 /** Fingerprints kept: the oldest go first. */
@@ -79,7 +80,8 @@ export function askToRunScripts(dialog: HTMLDialogElement, nodes: readonly Graph
         dialog.querySelector('ul')!.replaceChildren(
           ...nodes.map((n) => {
             const item = document.createElement('li');
-            item.textContent = `${n.id} (${typeof n.params?.file === 'string' ? n.params.file : 'script.js'})`;
+            const file = n.params?.file ?? NODE_CATALOG[n.type]?.params.file?.default; // as the node and its code panel name it
+            item.textContent = `${n.id} (${typeof file === 'string' ? file : 'script.js'})`;
             return item;
           }),
         );
