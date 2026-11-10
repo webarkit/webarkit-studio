@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { uploadAccept, uploadHint } from '../../src/app/assets-panel';
 import { CORE_SOCKET_TYPES } from '../../src/core/sockets';
 import { LOADED_PLUGINS } from '../../src/core/plugins';
@@ -47,7 +47,9 @@ describe('jsartoolkitNFT plugin (#12)', () => {
   it('leaves no jsartoolkitNFT code in src/', () => {
     for (const file of files('src')) {
       const text = readFileSync(file, 'utf8');
-      expect(imports(file).filter(({ from }) => /jsartoolkit-nft|camera-view|\.\.\/\.\.\/plugins\//.test(from)), file).toEqual([]);
+      // A relative import is resolved: `../../plugins/host` from src/export/codegen/ is src/plugins/, not the plugins.
+      const intoPlugins = (from: string) => from.startsWith('.') && relative('plugins', resolve(dirname(file), from)).split(sep)[0] !== '..';
+      expect(imports(file).filter(({ from }) => /jsartoolkit-nft|camera-view/.test(from) || intoPlugins(from)), file).toEqual([]);
       // A migration writes literal types, as frozen history (#61).
       if (file.replaceAll('\\', '/') !== 'src/core/migrations.ts') expect(text.match(/'jsartoolkitNFT\.\w+'/g), file).toBeNull();
     }

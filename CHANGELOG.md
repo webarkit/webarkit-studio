@@ -89,6 +89,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   tracker's projection on the camera; `helpers.placeOnMarker()` places content as a Marker Anchor does. A new demo,
   "pinball · one three.js script renders it all".
 
+- **Export → Source code (.zip)** (#64): the graph as a small Vite project with one readable `src/main.js` (Three.js),
+  each node a commented part of it, the assets in `public/`, and exact versions of three.js and jsartoolkitNFT. It
+  needs nothing of the studio: `npm install`, `npm run dev`. The first version writes the nodes of "pinball ·
+  Three.js" and glTF models, and refuses a graph with any other node, by name. Plugins write their nodes' code with
+  `codeEmitters`, keyed by target (plugin API types package 1.4.0).
+
 ### Changed
 
 - An exported app ships three.js only when its graph has a Three.js node; since #36 a Babylon.js export carried it too.

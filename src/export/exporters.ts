@@ -90,4 +90,15 @@ const pagesProject: Exporter = {
   },
 };
 
-export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, pagesProject];
+const sourceCode: Exporter = {
+  id: 'source-code',
+  label: 'Source code (.zip)',
+  description:
+    'A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "pinball · Three.js" demo, and refuses others by name.',
+  async run(doc, ctx) {
+    const { exportSourceCode } = await import('./codegen/export');
+    return exportSourceCode(doc, ctx);
+  },
+};
+
+export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, pagesProject, sourceCode];
