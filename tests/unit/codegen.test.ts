@@ -134,6 +134,54 @@ describe('source code export, Three.js (#64)', () => {
     for (const [path, text] of Object.entries(files)) expect(text, path).not.toMatch(/[\u2028\u2029\r]/);
   });
 
+  it('a Select Marker whose marker is not loaded logs it once and gives no pose, as the studio does: the app still starts', () => {
+    const doc = graph('pinball-three');
+    doc.nodes.find((n) => n.id === 'select_pinball')!.params.marker = 'kuva';
+    const main = generateSource(doc, 'three', codeEmittersFor('three')).files['src/main.js'];
+    const setup = main.slice(main.indexOf('// select_pinball (tracking.selectMarker)'), main.indexOf('// keylight (scene.light)'));
+    expect(setup).not.toMatch(/\bthrow\b/);
+    expect(setup).toMatch(/console\.(warn|error)\(/);
+    // The anchor reads no pose and stays hidden; its centre needs the marker's size, which it does not have.
+    expect(main).toContain('select_pinball?.pose ?? null');
+    expect(main).toMatch(/if \(select_pinball\?\.info\) anchor_pinball_content\.position\.set/);
+  });
+
+  it.each(['cameraMatrix', 'onFound', 'onLost', 'trace'])(
+    'an Inspector on the controller output %s, which no emitter writes, is not refused: the Inspector reads nothing',
+    (port) => {
+      const doc = graph('pinball-three');
+      const edge = doc.edges.find((e) => e.to.node === 'markers')!;
+      edge.from.port = port;
+      expect(() => generateSource(doc, 'three', codeEmittersFor('three'))).not.toThrow();
+    },
+  );
+
+  it("node ids never take a name the generated code uses itself: the controller's locals, the derived names", () => {
+    const doc = graph('pinball-three');
+    const rename = (from: string, to: string) => {
+      doc.nodes.find((n) => n.id === from)!.id = to;
+      for (const e of doc.edges) {
+        if (e.from.node === from) e.from.node = to;
+        if (e.to.node === from) e.to.node = to;
+      }
+    };
+    rename('camera', 'width'); // the controller's frame code destructures `width`
+    rename('camparams', 'image');
+    rename('dataset', 'info');
+    rename('filter', 'index');
+    rename('settings', 'x');
+    rename('keylight', 'stats_frames'); // the stats overlay's counter
+    rename('filllight', 'view_fps_time'); // the AR view's
+    const main = generateSource(doc, 'three', codeEmittersFor('three')).files['src/main.js'];
+    expect(() => parse(main, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow();
+    // The camera's video is never a name the frame code declares again: drawImage gets the video, not a width.
+    const video = /const (\w+) = document\.createElement\('video'\)/.exec(main)![1];
+    expect(video).not.toBe('width');
+    expect(main).toContain(`.drawImage(${video}, 0, 0`);
+    for (const id of ['image', 'info', 'index', 'x']) expect(main, id).not.toMatch(new RegExp(`^const ${id} = `, 'm'));
+    for (const id of ['stats_frames', 'view_fps_time']) expect(main.match(new RegExp(`^(const|let) ${id} = `, 'gm')) ?? [], id).toHaveLength(1);
+  });
+
   it('node ids become distinct, valid variable names', () => {
     const doc = graph('pinball-three');
     const rename = (from: string, to: string) => {

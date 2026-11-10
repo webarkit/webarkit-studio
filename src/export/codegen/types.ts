@@ -16,7 +16,8 @@ export interface CodeEmitContext {
   params: Record<string, ParamValue>;
   /**
    * The source expression of each wired input: the variable an upstream emitter named for that output. A port
-   * that takes several links gets an array (in link order); an unwired port is absent.
+   * that takes several links gets an array (in link order); an unwired port is absent. A value is resolved when it
+   * is read, so `port in inputs` tells whether a port is wired without needing an upstream value.
    */
   inputs: Record<string, string | string[] | undefined>;
   /**
@@ -45,6 +46,11 @@ export interface EmittedNode {
    * studio's ports (a `video` is a playing HTMLVideoElement). Extra keys are read through `from()`.
    */
   outputs?: Record<string, string>;
+  /**
+   * Names the code declares itself, other than through `name()`: its block locals, callback parameters and
+   * destructured names. No node gets one of them as its variable, so none is shadowed or declared twice.
+   */
+  locals?: string[];
   /** npm dependencies of the generated project: exact versions. */
   dependencies?: Record<string, string>;
   /** Files of the generated project, by path (text). */

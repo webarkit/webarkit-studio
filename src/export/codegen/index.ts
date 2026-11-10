@@ -121,10 +121,13 @@ export function generateSource(
       return out;
     };
     try {
+      // Resolved when the emitter reads one: an input it never reads (an Inspector's) needs no value upstream.
+      // A wired port is a key (`port in inputs`), so checking that it is wired reads nothing.
       const inputs: Record<string, string | string[] | undefined> = {};
       for (const [port, spec] of Object.entries(def.inputs)) {
         const edges = linked(port);
-        if (edges.length) inputs[port] = spec.multiple ? edges.map(value) : value(edges[0]);
+        if (edges.length)
+          Object.defineProperty(inputs, port, { enumerable: true, get: () => (spec.multiple ? edges.map(value) : value(edges[0])) });
       }
       emitted.set(
         node.id,
@@ -150,8 +153,10 @@ export function generateSource(
   const parts = order.map((node) => ({ node, code: emitted.get(node.id)! }));
   const heading = (node: GraphNode) => `// ${commentText(node.id)} (${commentText(node.type)})`;
   const imports = [...new Set(parts.flatMap((p) => p.code.imports ?? []))];
-  // A node named like an import (a node "THREE"): written again with the imports' names kept for them.
-  const clashes = importedNames(imports).filter((n) => name.used.has(n) && !reserved.has(n));
+  // A node named like an import (a node "THREE") or like a name an emitter's code declares itself (`width` in the
+  // controller's frame code): written again with those names kept for them.
+  const fixed = [...importedNames(imports), ...parts.flatMap((p) => p.code.locals ?? [])];
+  const clashes = [...new Set(fixed)].filter((n) => name.used.has(n) && !reserved.has(n));
   if (clashes.length) return generateSource(doc, target, emitters, new Set([...reserved, ...clashes]));
   const setup = parts.map(({ node, code }) => [heading(node), code.setup?.trimEnd()].filter(Boolean).join('\n')).join('\n\n');
   const frame = parts

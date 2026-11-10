@@ -190,6 +190,8 @@ if (!${busy}) {
     .finally(() => (${busy} = false));
 }`,
     outputs: { markers, projection, stats },
+    // Declared by the code above, in its blocks and callbacks: no node may be named like them.
+    locals: ['load', 'index', 'info', 'd', 'frameWidth', 'frameHeight', 'x', 'y', 'width', 'height', 'image', 'sentAt', 'result', 'marker', 'target', 'now', 'err'],
     dependencies: { '@webarkit/jsartoolkit-nft': nftPackage.version, '@webarkit/camera-view': cameraViewPackage.version },
     prepare: [`node ${COPY_SCRIPT}`],
     files: { [COPY_SCRIPT]: copyScript([WORKER_FILES[workerBuild]]) },

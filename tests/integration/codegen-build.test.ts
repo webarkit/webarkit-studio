@@ -8,12 +8,26 @@ import { dirname, join, resolve } from 'node:path';
 import type { GraphDocument } from '../../src/core/graph';
 import { codeEmittersFor, generateSource } from '../../src/export/codegen';
 
-const dir = mkdtempSync(join(tmpdir(), 'studio-codegen-'));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const dirs: string[] = [];
+afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
 describe('the generated project builds (#64)', () => {
-  it('pinball-three: vite build writes the app, with the tracker worker and the assets', async () => {
+  // Node ids that are names the generated code uses itself (#103's review): the project must still build.
+  const RENAMED: Record<string, string> = { camera: 'width', camparams: 'image', dataset: 'info', filter: 'index', keylight: 'stats_frames', filllight: 'view_fps_time' };
+  it.each([
+    ['pinball-three', {}],
+    ['pinball-three, with node ids the code uses itself', RENAMED],
+  ])('%s: vite build writes the app, with the tracker worker and the assets', async (_name, renamed: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-codegen-'));
+    dirs.push(dir);
     const doc = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as GraphDocument;
+    for (const [from, to] of Object.entries(renamed)) {
+      doc.nodes.find((n) => n.id === from)!.id = to;
+      for (const e of doc.edges) {
+        if (e.from.node === from) e.from.node = to;
+        if (e.to.node === from) e.to.node = to;
+      }
+    }
     const { files } = generateSource(doc, 'three', codeEmittersFor('three'));
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });

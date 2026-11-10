@@ -24,7 +24,7 @@ const list = (value: string | string[] | undefined) => (Array.isArray(value) ? v
 
 /** Inputs that drive a param (#68): the first version writes the params only, so a wired one is refused. */
 function paramsOnly(ctx: CodeEmitContext, ...ports: string[]) {
-  for (const port of ports) if (ctx.inputs[port] !== undefined) throw new Error(`its ${port} input is wired, and the source code export writes the ${port} param only for now`);
+  for (const port of ports) if (port in ctx.inputs) throw new Error(`its ${port} input is wired, and the source code export writes the ${port} param only for now`);
 }
 
 const cameraSource: CodeEmitter = ({ name, params, literal }) => {
@@ -178,7 +178,8 @@ const anchor: CodeEmitter = (ctx) => {
   // anchor. The studio keeps such a light in the root and turns it each frame; the first version refuses it.
   const hemispheres = ctx.fromEach('children').filter((c) => c.outputs.lightKind === 'hemisphere').map((c) => c.node);
   if (hemispheres.length) throw new Error(`a hemisphere light on an anchor is not written yet (${hemispheres.join(', ')}): leave it in the scene root`);
-  const center = params.center && info ? `\n${content}.position.set(${info}.widthMM / 2, ${info}.heightMM / 2, 0); // the marker's centre` : '';
+  // No marker info (a marker that is not loaded): no offset, as markerOffset() gives.
+  const center = params.center && info ? `\nif (${info}) ${content}.position.set(${info}.widthMM / 2, ${info}.heightMM / 2, 0); // the marker's centre` : '';
   return {
     imports: [THREE_IMPORT],
     setup: `// Follows the marker: hidden until it is found.
@@ -202,13 +203,15 @@ const arView: CodeEmitter = (ctx) => {
   if (!r) throw new Error('its scene has no renderer');
   const view = name();
   const fps = name('fps');
+  const fpsFrames = name('fps_frames');
+  const fpsTime = name('fps_time');
   const objects = list(ctx.inputs.objects);
   const stats = params.stats
     ? `\nconst ${fps} = document.createElement('div');
 ${fps}.style.cssText = 'position:absolute;top:6px;left:8px;font:12px monospace;color:#0f0;text-shadow:0 0 2px #000';
 ${view}.append(${fps});
-let ${fps}_frames = 0;
-let ${fps}_time = 0;`
+let ${fpsFrames} = 0;
+let ${fpsTime} = 0;`
     : '';
   return {
     setup: `// The camera video, and the renderer's canvas over it, in a box with the video's aspect.
@@ -223,12 +226,12 @@ stage.append(${view});${objects.length ? `\n${s}.add(${objects.join(', ')});` : 
     frame: `${r}.render(${s}, ${camera});${
       params.stats
         ? `
-${fps}_frames++;
-${fps}_time += delta;
-if (${fps}_time >= 500) {
-  ${fps}.textContent = \`\${Math.round((${fps}_frames * 1000) / ${fps}_time)} fps\`;
-  ${fps}_frames = 0;
-  ${fps}_time = 0;
+${fpsFrames}++;
+${fpsTime} += delta;
+if (${fpsTime} >= 500) {
+  ${fps}.textContent = \`\${Math.round((${fpsFrames} * 1000) / ${fpsTime})} fps\`;
+  ${fpsFrames} = 0;
+  ${fpsTime} = 0;
 }`
         : ''
     }`,
@@ -240,13 +243,16 @@ const selectMarker: CodeEmitter = (ctx) => {
   const markers = required(ctx, 'markers');
   const m = name();
   const key = String(params.marker).trim();
-  const pick = /^\d+$/.test(key) ? `${markers}.find((m) => m.name === ${literal(key)}) ?? ${markers}[${Number(key)}]` : `${markers}.find((m) => m.name === ${literal(key)})`;
+  const byName = `${markers}.find((marker) => marker.name === ${literal(key)})`;
+  const pick = /^\d+$/.test(key) ? `${byName} ?? ${markers}[${Number(key)}] ?? null` : `${byName} ?? null`;
   return {
     // Graph text: on one line in the comment (commentText), escaped in the template literal (templateText).
+    // A marker that is not loaded is reported once and gives no pose, as in the studio: the app still runs.
     setup: `// The marker "${commentText(key)}"${/^\d+$/.test(key) ? ' (by name, or else by index)' : ''}: its pose, found and size, kept current by the tracker.
 const ${m} = ${pick};
-if (!${m}) throw new Error(\`no marker ${templateText(key)} (markers: \${${markers}.map((m) => m.name).join(', ')})\`);`,
-    outputs: { pose: `${m}.pose`, found: `${m}.found`, markerInfo: `${m}.info` },
+if (!${m}) console.warn(\`no marker ${templateText(key)} (markers: \${${markers}.map((marker) => marker.name).join(', ')}): nothing follows it\`);`,
+    outputs: { pose: `(${m}?.pose ?? null)`, found: `(${m}?.found ?? false)`, markerInfo: `${m}?.info` },
+    locals: ['marker'],
   };
 };
 
@@ -267,22 +273,23 @@ const stats: CodeEmitter = (ctx) => {
   const { name, params, inputs } = ctx;
   if (!params.overlay) return { setup: '// Tracking stats, shown in the studio only (its overlay is off).' };
   const box = name();
+  const [frames, start, fps] = [name('frames'), name('start'), name('fps')];
   const s = inputs.stats as string | undefined;
   return {
     setup: `// Tracking stats, in a box over the AR view (added once the view exists).
 const ${box} = document.createElement('div');
 ${box}.style.cssText = 'position:absolute;left:8px;bottom:8px;padding:4px 6px;background:rgb(0 0 0 / .55);color:#7fffd4;font:11px/1.35 monospace;white-space:pre;border-radius:4px;pointer-events:none';
-let ${box}_frames = 0;
-let ${box}_start = performance.now();
-let ${box}_fps = 0;`,
-    frame: `${box}_frames++;
-if (time - ${box}_start >= 500) {
-  ${box}_fps = (${box}_frames * 1000) / (time - ${box}_start);
-  ${box}_frames = 0;
-  ${box}_start = time;
+let ${frames} = 0;
+let ${start} = performance.now();
+let ${fps} = 0;`,
+    frame: `${frames}++;
+if (time - ${start} >= 500) {
+  ${fps} = (${frames} * 1000) / (time - ${start});
+  ${frames} = 0;
+  ${start} = time;
   if (!${box}.isConnected) document.querySelector('.ar-view')?.append(${box});
   ${box}.textContent = [
-    \`render  \${${box}_fps.toFixed(0)} fps\`,${
+    \`render  \${${fps}.toFixed(0)} fps\`,${
       s
         ? `
     \`track   \${${s}.trackingFps.toFixed(1)} fps\`,

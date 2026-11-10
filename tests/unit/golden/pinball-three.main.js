@@ -99,8 +99,8 @@ let stats_fps = 0;
 
 // select_pinball (tracking.selectMarker)
 // The marker "pinball": its pose, found and size, kept current by the tracker.
-const select_pinball = controller_markers.find((m) => m.name === "pinball");
-if (!select_pinball) throw new Error(`no marker "pinball" (markers: ${controller_markers.map((m) => m.name).join(', ')})`);
+const select_pinball = controller_markers.find((marker) => marker.name === "pinball") ?? null;
+if (!select_pinball) console.warn(`no marker "pinball" (markers: ${controller_markers.map((marker) => marker.name).join(', ')}): nothing follows it`);
 
 // keylight (scene.light)
 // Directional: its target is its child, so the direction follows the light (and any anchor it is on).
@@ -126,7 +126,7 @@ anchor_pinball.matrixAutoUpdate = false;
 anchor_pinball.visible = false;
 const anchor_pinball_content = new THREE.Group();
 anchor_pinball.add(anchor_pinball_content);
-anchor_pinball_content.position.set(select_pinball.info.widthMM / 2, select_pinball.info.heightMM / 2, 0); // the marker's centre
+if (select_pinball?.info) anchor_pinball_content.position.set(select_pinball?.info.widthMM / 2, select_pinball?.info.heightMM / 2, 0); // the marker's centre
 anchor_pinball_content.add(prim_pinball, keylight);
 
 // view (output.arView)
@@ -205,8 +205,8 @@ function frame(time) {
   prim_pinball.rotation.z += delta * 0.0005; // spins about its own Z axis
 
   // anchor_pinball (scene.anchor)
-  anchor_pinball.visible = select_pinball.found && select_pinball.pose !== null;
-  if (select_pinball.pose) anchor_pinball.matrix.fromArray(select_pinball.pose);
+  anchor_pinball.visible = (select_pinball?.found ?? false) && (select_pinball?.pose ?? null) !== null;
+  if ((select_pinball?.pose ?? null)) anchor_pinball.matrix.fromArray((select_pinball?.pose ?? null));
 
   // view (output.arView)
   renderer.render(scene, arcamera);
