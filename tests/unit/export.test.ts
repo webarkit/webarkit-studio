@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { bundlePath, collectAssets, collectPluginFiles, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
+import { bundleNames, bundlePath, collectAssets, collectPluginFiles, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
 import type { StudioPlugin } from '../../src/plugin-api';
 import { slugify, type ExportContext } from '../../src/export/exporters';
 import { exportSourceCode } from '../../src/export/codegen/export';
@@ -250,7 +250,7 @@ describe('bundlePath', () => {
     expect(bundlePath(new URL('https://cdn.example.com/m/kuva.glb?token=x#y', base), base)).toEqual({ path: 'data/_ext/kuva.glb', rewritten: true });
   });
   it('gives two remote files of the same name two paths, and the same file one (#88)', () => {
-    const taken = new Map<string, string>();
+    const taken = bundleNames();
     const a = bundlePath(new URL('https://a.example.com/x/model.glb', base), base, taken).path;
     const b = bundlePath(new URL('https://b.example.com/y/model.glb', base), base, taken).path;
     const c = bundlePath(new URL('https://c.example.com/model.glb?v=2', base), base, taken).path;
@@ -259,6 +259,31 @@ describe('bundlePath', () => {
     // A prefix (a dataset) has no extension.
     expect(bundlePath(new URL('https://a.example.com/kuva', base), base, taken).path).toBe('data/_ext/kuva');
     expect(bundlePath(new URL('https://b.example.com/kuva', base), base, taken).path).toBe('data/_ext/kuva-2');
+  });
+  it('gives a same-origin path with two queries two files, and one query one file (#88, Qodo)', () => {
+    const taken = bundleNames();
+    const a = bundlePath(new URL('data/model.glb?v=a', base), base, taken);
+    const b = bundlePath(new URL('data/model.glb?v=b', base), base, taken);
+    expect(a).toEqual({ path: 'data/model.glb', rewritten: true });
+    expect(b).toEqual({ path: 'data/model-2.glb', rewritten: true });
+    expect(bundlePath(new URL('data/model.glb?v=a#x', base), base, taken).path).toBe(a.path);
+    // The plain path, met after them, is a third file: it was never requested with either query.
+    expect(bundlePath(new URL('data/model.glb', base), base, taken)).toEqual({ path: 'data/model-3.glb', rewritten: true });
+    // Met first, it keeps its path and the graph is not rewritten.
+    const fresh = bundleNames();
+    expect(bundlePath(new URL('data/model.glb', base), base, fresh)).toEqual({ path: 'data/model.glb', rewritten: false });
+    expect(bundlePath(new URL('data/model.glb', base), base, fresh)).toEqual({ path: 'data/model.glb', rewritten: false });
+  });
+  it("reserves every file a dataset writes, not only its prefix (#88, Qodo)", () => {
+    const taken = bundleNames();
+    const dataset = ['.fset', '.fset3', '.iset'];
+    expect(bundlePath(new URL('https://a.example.com/caf%C3%A9', base), base, taken, dataset).path).toBe('data/_ext/cafe');
+    // A remote file that is one of the dataset's files gets another name.
+    expect(bundlePath(new URL('https://b.example.com/cafe.iset', base), base, taken).path).toBe('data/_ext/cafe-2.iset');
+    // And the other way round: a dataset whose files a remote file already holds.
+    const other = bundleNames();
+    expect(bundlePath(new URL('https://b.example.com/kuva.fset3', base), base, other).path).toBe('data/_ext/kuva.fset3');
+    expect(bundlePath(new URL('https://a.example.com/kuva', base), base, other, dataset).path).toBe('data/_ext/kuva-2');
   });
 });
 
