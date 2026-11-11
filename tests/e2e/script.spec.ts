@@ -174,13 +174,23 @@ test('a header with a mistake is not applied: the node keeps its script, its por
   const node = scriptNode(page);
   await node.locator('.script-edit').click();
   const code = page.locator('#script-panel textarea');
+  // The check that runs as the user types lands after the refusal, as it did under load in CI (#106): the page's
+  // clock is faked (timers, animation frames: the preview pauses), and runs on once the refusal is written.
+  await page.clock.install();
   await code.fill('/*\nin t numbr\nout position vector3\n*/\nposition = [0, 0, 0];\n');
   await code.press('Control+Enter');
+  await expect(page.locator('#log')).toContainText('✗ script: the script was not applied');
+  await page.clock.runFor(1000);
   await expect(page.locator('#script-panel .script-problems')).toContainText('line 2: unknown socket "numbr"');
   await expect(page.locator('#script-panel .script-problems')).toContainText('not applied: fix the header first');
   await expect(page.locator('#log')).toContainText('✗ script: the script was not applied, its header has a mistake: line 2');
   await expect(page.locator('svg.connection path')).toHaveCount(wires);
   await expect(node.locator('.socket[data-side="output"][data-key="color"]')).toHaveCount(1);
+  // Until the text changes: another mistake, not applied yet, shows without it.
+  await code.fill('/*\nin t numbe\nout position vector3\n*/\nposition = [0, 0, 0];\n');
+  await page.clock.runFor(1000);
+  await expect(page.locator('#script-panel .script-problems')).toContainText('line 2: unknown socket "numbe"');
+  await expect(page.locator('#script-panel .script-problems')).not.toContainText('not applied');
 });
 
 test('export asks before it ships scripts that were never allowed', async ({ page }) => {

@@ -32,9 +32,12 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   let timer = 0;
   /** The node's runtime error while the preview runs (what it shows itself), or empty. */
   let running = '';
+  /** The text a node refused on apply (its header has a mistake): the panel says so until the text changes. */
+  let refused: { nodeId: string; text: string } | null = null;
 
   const render = (problem: string | null) => {
-    const text = problem ? `✗ ${problem}` : running ? `✗ running: ${running}` : '✓ no problems';
+    const notApplied = refused?.nodeId === nodeId && refused.text === code.value ? ' · not applied: fix the header first' : '';
+    const text = problem ? `✗ ${problem}${notApplied}` : running ? `✗ running: ${running}` : '✓ no problems';
     problems.textContent = text;
     problems.classList.toggle('error', text.startsWith('✗'));
   };
@@ -52,9 +55,15 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   const applyNow = async () => {
     if (!nodeId) return;
     check();
+    const id = nodeId;
     const text = code.value;
-    if (await apply(nodeId, text, file.value.trim() || 'script.js')) shown = text;
-    else problems.textContent += ' · not applied: fix the header first';
+    const applied = await apply(id, text, file.value.trim() || 'script.js');
+    // The editor's queue can answer late: about a node the panel no longer shows, it says nothing.
+    if (id !== nodeId) return;
+    // Every render says so while the text is the refused one: a check that lands later keeps it (#106).
+    refused = applied ? null : { nodeId: id, text };
+    if (applied) shown = text;
+    check();
   };
 
   code.addEventListener('input', () => {
@@ -85,7 +94,10 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
       check();
     },
     open(node) {
-      if (node.id !== nodeId) running = '';
+      if (node.id !== nodeId) {
+        running = '';
+        refused = null;
+      }
       nodeId = node.id;
       nodeType = node.type;
       title.textContent = node.id;
