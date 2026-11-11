@@ -32,9 +32,12 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
   let timer = 0;
   /** The node's runtime error while the preview runs (what it shows itself), or empty. */
   let running = '';
+  /** The text the node refused on apply (its header has a mistake): the panel says so until the text changes. */
+  let refused: string | null = null;
 
   const render = (problem: string | null) => {
-    const text = problem ? `✗ ${problem}` : running ? `✗ running: ${running}` : '✓ no problems';
+    const notApplied = refused !== null && code.value === refused ? ' · not applied: fix the header first' : '';
+    const text = problem ? `✗ ${problem}${notApplied}` : running ? `✗ running: ${running}` : '✓ no problems';
     problems.textContent = text;
     problems.classList.toggle('error', text.startsWith('✗'));
   };
@@ -53,8 +56,10 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
     if (!nodeId) return;
     check();
     const text = code.value;
-    if (await apply(nodeId, text, file.value.trim() || 'script.js')) shown = text;
-    else problems.textContent += ' · not applied: fix the header first';
+    // Every render says so while the text is the refused one: a check that lands later keeps it (#106).
+    refused = (await apply(nodeId, text, file.value.trim() || 'script.js')) ? null : text;
+    if (refused === null) shown = text;
+    check();
   };
 
   code.addEventListener('input', () => {
@@ -85,7 +90,10 @@ export function createScriptPanel(dialog: HTMLDialogElement, apply: (nodeId: str
       check();
     },
     open(node) {
-      if (node.id !== nodeId) running = '';
+      if (node.id !== nodeId) {
+        running = '';
+        refused = null;
+      }
       nodeId = node.id;
       nodeType = node.type;
       title.textContent = node.id;
