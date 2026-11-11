@@ -107,7 +107,9 @@ for (const engine of ['three', 'babylon']) {
           [['select_pinball', 'onLost'], ['link', 'hide']],
         ],
       });
-      // Slow: over the 4 s of a finding, the 2 s clip does not come round to where it started.
+      // Slow: over the 4 s of a finding, the 2 s clip moves about 1.2 s, less than a turn. It loops, and a finding
+      // starts where the last one held, so how far it moved is read modulo its length.
+      const CLIP = 2;
       Object.assign(doc.nodes.find((n: { id: string }) => n.id === 'play').params, { speed: 0.3 });
       await openGraph(page, doc);
       const { dir, files } = await exportApp(page);
@@ -142,9 +144,16 @@ for (const engine of ['three', 'babylon']) {
         await app.goto(server.url);
         await app.click('#start');
 
-        // Found: the clip plays, the sound starts on a running context, and the link appears.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(1);
+        // The first finding starts when the tracker is ready, anywhere in the camera's 4 s of marker, and can
+        // be cut short (#91): the checks start at the finding after the first lost, a whole one.
+        const kinds = () => marks.map((m) => m.mark).join('');
+        await expect.poll(kinds, { timeout: 60_000 }).toMatch(/‖▶/);
         expect(marks[0].mark).toBe('▶');
+        const found = kinds().indexOf('‖▶') + 1;
+        // A sound starts on each found, and a ▶ is logged only on a found.
+        const founds = (until: number) => marks.slice(0, until + 1).filter((m) => m.mark === '▶').length;
+
+        // Found: the clip plays, the sound starts on a running context, and the link appears.
         const link = app.locator('.ar-view a');
         await expect(link).toHaveText('Read more');
         await expect(link).toHaveAttribute('href', 'https://example.com/more');
@@ -162,21 +171,23 @@ for (const engine of ['three', 'babylon']) {
             return { starts, state: context?.state, time: context?.currentTime ?? 0 };
           });
         const before = await sound();
-        expect(before).toMatchObject({ starts: 1, state: 'running' });
+        expect(before).toMatchObject({ starts: founds(found), state: 'running' });
+        // Still that finding: the checks above read it, not the next one.
+        expect(marks).toHaveLength(found + 1);
         await expect.poll(async () => (await sound()).time, { timeout: 3000 }).toBeGreaterThan(before.time);
 
         // Lost: it holds at a later time, and the link goes.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(2);
-        expect(marks[1].mark).toBe('‖');
-        expect(marks[1].time).toBeGreaterThan(marks[0].time + 0.5);
+        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(found + 2);
+        expect(marks[found + 1].mark).toBe('‖');
+        expect((marks[found + 1].time - marks[found].time + CLIP) % CLIP).toBeGreaterThan(0.5);
         await expect(link).toHaveCount(0);
 
-        // Found again: it goes on from where it held, and a second sound starts.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(3);
-        expect(marks[2].mark).toBe('▶');
-        expect(Math.abs(marks[2].time - marks[1].time)).toBeLessThan(0.05);
+        // Found again: it goes on from where it held, and another sound starts.
+        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(found + 3);
+        expect(marks[found + 2].mark).toBe('▶');
+        expect(Math.abs(marks[found + 2].time - marks[found + 1].time)).toBeLessThan(0.05);
         await expect(link).toHaveCount(1);
-        await expect.poll(async () => (await sound()).starts).toBe(2);
+        await expect.poll(async () => (await sound()).starts).toBe(founds(found + 2));
 
         await expect(app.locator('#error')).toBeHidden();
         expect(errors).toEqual([]);
