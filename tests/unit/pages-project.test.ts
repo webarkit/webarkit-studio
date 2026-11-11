@@ -108,6 +108,11 @@ describe('the GitHub Pages project', () => {
       expect(readme()).toMatch(/folder that holds this README\.md/);
     });
 
+    it('says an update replaces .github/ too, since a newer studio may change the workflow (#88)', () => {
+      expect(readme()).toMatch(/replace `site\/` and `\.github\/`/);
+      expect(readme()).toMatch(/carry your changes over/);
+    });
+
     it('says the suggested workflows are not needed: one of them would make the push fail', () => {
       expect(readme()).toMatch(/suggest.*workflows.*not need/is);
     });

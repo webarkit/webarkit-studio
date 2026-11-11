@@ -148,18 +148,51 @@ export function selectPlayerFiles(
  * Maps an asset URL to its place in the bundle. Relative URLs inside the
  * studio keep their path, so the graph needs no rewrite; anything else is
  * copied under data/_ext/ and the param is rewritten.
+ *
+ * A query string or a fragment never reaches a file name (#88): the file is written under the plain path and the
+ * param is rewritten to it. A remote file's name is made safe (`safeName`), and `taken` (source → path, shared by one
+ * export) gives two sources of the same name two paths, `name-2.ext` and so on, and one source the same path.
  */
 /** Exported for tests. */
-export function bundlePath(url: URL, base: URL): { path: string; rewritten: boolean } {
+export function bundlePath(url: URL, base: URL, taken: Map<string, string> = new Map()): { path: string; rewritten: boolean } {
   const baseDir = base.href.slice(0, base.href.lastIndexOf('/') + 1);
-  if (url.href.startsWith(baseDir)) return { path: decodeURIComponent(url.href.slice(baseDir.length)), rewritten: false };
-  const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? 'asset');
-  return { path: `data/_ext/${name}`, rewritten: true };
+  const plain = new URL(url.href);
+  plain.search = '';
+  plain.hash = '';
+  const extra = plain.href !== url.href;
+  if (plain.href.startsWith(baseDir)) return { path: decodeURIComponent(plain.href.slice(baseDir.length)), rewritten: extra };
+
+  const source = url.href.replace(/#.*$/, ''); // the query may select another file; a fragment never does
+  const known = taken.get(source);
+  if (known) return { path: known, rewritten: true };
+  const segment = plain.pathname.split('/').filter(Boolean).pop();
+  const name = segment ? safeName(decodeURIComponent(segment)) : 'asset';
+  const dot = name.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  const used = new Set(taken.values());
+  let path = `data/_ext/${name}`;
+  for (let n = 2; used.has(path); n++) path = `data/_ext/${stem}-${n}${ext}`;
+  taken.set(source, path);
+  return { path, rewritten: true };
 }
 
-/** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
+/** A prefix's file: the extension goes on the path, before any query string; a fragment is dropped. */
+const withExtension = (url: URL, ext: string) => {
+  const u = new URL(url.href);
+  u.hash = '';
+  u.pathname += `.${ext}`;
+  return u.href;
+};
+
+/**
+ * A file name safe in a zip path, in a relative URL and in any unzip tool (#88): ASCII letters, digits, ".", "_" and
+ * "-". Accents are dropped from their letters ("é" → "e"); anything else ("#", "?", spaces, other scripts) becomes "_".
+ */
 const safeName = (name: string) => {
-  const safe = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  const safe = name
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^A-Za-z0-9._-]/g, '_');
   return /^\.*$/.test(safe) ? '_' : safe; // never "", "." or ".."
 };
 
@@ -189,6 +222,7 @@ function checkSelfContained(data: Uint8Array, where: string): void {
 /** Exported for tests. */
 export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
+  const taken = new Map<string, string>(); // remote source → its path under data/_ext/ (#88)
   const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
   for (const node of doc.nodes) {
     const def = effectiveDefinition(node)!; // a script's header never declares an asset param, but read it the one way
@@ -214,16 +248,16 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
       }
       const url = new URL(value, base);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
-      const { path, rewritten } = bundlePath(url, base);
+      const { path, rewritten } = bundlePath(url, base, taken);
 
       if (multi) {
         // A prefix: each of the kind's files, or the one file that can stand in for them.
-        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(`${url.href}.${ext}`)));
+        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext))));
         if (parts.every(Boolean)) {
           multi.extensions.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
         } else {
           const { alternative } = multi;
-          const packed = alternative ? await tryFetch(`${url.href}.${alternative}`) : null;
+          const packed = alternative ? await tryFetch(withExtension(url, alternative)) : null;
           if (!packed) {
             const where = `${url.href}.{${multi.extensions.join(',')}${alternative ? `|${alternative}` : ''}}`;
             throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}`);

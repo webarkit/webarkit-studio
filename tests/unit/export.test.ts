@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { bundlePath, collectAssets, collectPluginFiles, selectPlayerFiles, type PlayerManifest } from '../../src/export/app-bundle';
 import type { StudioPlugin } from '../../src/plugin-api';
 import { slugify, type ExportContext } from '../../src/export/exporters';
+import { exportSourceCode } from '../../src/export/codegen/export';
+import { unzipSync } from 'fflate';
 import { assetRef } from '../../src/core/assets';
 import type { StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
@@ -236,6 +238,28 @@ describe('bundlePath', () => {
     expect(bundlePath(new URL('https://cdn.example.com/m/kuva', base), base)).toEqual({ path: 'data/_ext/kuva', rewritten: true });
     expect(bundlePath(new URL('../other/camera_para.dat', base), base)).toEqual({ path: 'data/_ext/camera_para.dat', rewritten: true });
   });
+  it('gives a remote file a name that is safe in a URL and in ASCII (#88)', () => {
+    expect(bundlePath(new URL('https://cdn.example.com/m/a%23b.glb', base), base).path).toBe('data/_ext/a_b.glb');
+    expect(bundlePath(new URL('https://cdn.example.com/m/caf%C3%A9%20d%C3%A9j%C3%A0.glb', base), base).path).toBe('data/_ext/cafe_deja.glb');
+    expect(bundlePath(new URL('https://cdn.example.com/m/%E6%A8%A1%E5%9E%8B.glb', base), base).path).toBe('data/_ext/__.glb');
+    expect(bundlePath(new URL('https://cdn.example.com/m/..', base), base).path).toBe('data/_ext/asset');
+  });
+  it('drops a query string and a fragment from the file name, and rewrites the param (#88)', () => {
+    expect(bundlePath(new URL('data/model.glb?v=1', base), base)).toEqual({ path: 'data/model.glb', rewritten: true });
+    expect(bundlePath(new URL('data/model.glb#part', base), base)).toEqual({ path: 'data/model.glb', rewritten: true });
+    expect(bundlePath(new URL('https://cdn.example.com/m/kuva.glb?token=x#y', base), base)).toEqual({ path: 'data/_ext/kuva.glb', rewritten: true });
+  });
+  it('gives two remote files of the same name two paths, and the same file one (#88)', () => {
+    const taken = new Map<string, string>();
+    const a = bundlePath(new URL('https://a.example.com/x/model.glb', base), base, taken).path;
+    const b = bundlePath(new URL('https://b.example.com/y/model.glb', base), base, taken).path;
+    const c = bundlePath(new URL('https://c.example.com/model.glb?v=2', base), base, taken).path;
+    expect([a, b, c]).toEqual(['data/_ext/model.glb', 'data/_ext/model-2.glb', 'data/_ext/model-3.glb']);
+    expect(bundlePath(new URL('https://a.example.com/x/model.glb#again', base), base, taken).path).toBe(a);
+    // A prefix (a dataset) has no extension.
+    expect(bundlePath(new URL('https://a.example.com/kuva', base), base, taken).path).toBe('data/_ext/kuva');
+    expect(bundlePath(new URL('https://b.example.com/kuva', base), base, taken).path).toBe('data/_ext/kuva-2');
+  });
 });
 
 describe('slugify', () => {
@@ -289,6 +313,47 @@ describe('collectAssets', () => {
     const graph = () => doc([['scene.gltf', { url: assetRef('m', 'm.gltf') }]]);
     await expect(collectAssets(graph(), base, model(gltf('m.bin')))).rejects.toThrow(/n0.url: .*m.bin.*self-contained/);
     expect(Object.keys(await collectAssets(graph(), base, model(gltf('data:application/octet-stream;base64,AAAAAA=='))))).toEqual(['data/assets/m/m.gltf']);
+  });
+
+  it('keeps uploaded file names in ASCII (#88)', async () => {
+    const accents: ExportContext = { ...ctx, assets: { get: () => ({ id: 'a', name: 'Café déjà.dat', kind: 'file', files: { '': new Blob(['?']) } }), list: () => [] } };
+    const files = await collectAssets(doc([['jsartoolkitNFT.cameraParams', { url: assetRef('a', 'Café déjà.dat') }]]), base, accents);
+    expect(Object.keys(files)).toEqual(['data/assets/a/Cafe_deja.dat']);
+  });
+
+  it('bundles two remote files of the same name apart, and each param points to its own (#88)', async () => {
+    vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
+    const g = doc([
+      ['jsartoolkitNFT.cameraParams', { url: 'https://a.example.com/x/camera.dat' }],
+      ['jsartoolkitNFT.cameraParams', { url: 'https://b.example.com/y/camera.dat?v=1' }],
+    ]);
+    const files = await collectAssets(g, base, ctx);
+    expect(g.nodes.map((n) => n.params.url)).toEqual(['data/_ext/camera.dat', 'data/_ext/camera-2.dat']);
+    expect(text(files['data/_ext/camera.dat'])).toBe('body of https://a.example.com/x/camera.dat');
+    // Fetched with its query, which the server may need; written without it.
+    expect(text(files['data/_ext/camera-2.dat'])).toBe('body of https://b.example.com/y/camera.dat?v=1');
+  });
+
+  it('writes a same-origin asset with a query string under its plain path, and rewrites the param (#88)', async () => {
+    vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
+    const g = doc([['jsartoolkitNFT.cameraParams', { url: 'data/camera_para.dat?v=1#x' }]]);
+    const files = await collectAssets(g, base, ctx);
+    expect(Object.keys(files)).toEqual(['data/camera_para.dat']);
+    expect(g.nodes[0].params.url).toBe('data/camera_para.dat');
+  });
+
+  it('gives the source code export the same safe names, in public/ and in the code (#88)', async () => {
+    vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
+    const demo = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as GraphDocument;
+    const camera = demo.nodes.find((n) => n.type === 'jsartoolkitNFT.cameraParams')!;
+    camera.params.url = 'https://cdn.example.com/x/caf%C3%A9%23para.dat?v=1';
+    const result = await exportSourceCode(demo, ctx);
+    const entries = unzipSync(new Uint8Array(await result.blob.arrayBuffer()));
+    const names = Object.keys(entries);
+    expect(names.some((n) => n.endsWith('/public/data/_ext/cafe_para.dat'))).toBe(true);
+    const code = names.filter((n) => /\.(js|ts)$/.test(n) && !n.includes('/public/')).map((n) => text(entries[n])).join('\n');
+    expect(code).toContain('data/_ext/cafe_para.dat');
+    expect(code).not.toContain('?v=1');
   });
 
   it('still fetches URL assets', async () => {

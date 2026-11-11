@@ -113,6 +113,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- Asset files in an exported app or source code project are always served (#88): a name with `#` or
+  accents is written in ASCII (`café#1.glb` is `cafe_1.glb`), two remote files of the same name no
+  longer overwrite each other (`model-2.glb`), and a query string or fragment (`model.glb?v=1`) stays
+  out of the file name. Paths of uploaded files with such names change; graphs do not. The Pages
+  project's README says an update replaces `.github/` as well as `site/`.
 - An unfinished graph saved to a file opens again (#86): **Import…** takes a `.json` or a project whose
   required inputs are not all connected, as an autosave reopens. **Run** and the standalone app export
   still report what it lacks.
