@@ -94,7 +94,9 @@ A camera on a phone needs a secure page, and the HTTPS URL that Pages gives is o
 
 ## Update it
 
-Export the project again, replace \`site/\` with the new one, then commit and push.
+Export the project again and replace \`site/\` and \`.github/\` with the new ones: a newer studio may change the
+workflow too. If you changed \`.github/workflows/deploy-pages.yml\` yourself, carry your changes over. Then commit
+and push.
 `;
 
 /** The project's files as path → bytes, from the app's. Refuses a file that the deploy would leave out. */

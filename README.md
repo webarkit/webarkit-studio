@@ -151,7 +151,10 @@ datasets). Only the chunks the graph uses are included: a Three.js graph
 leaves out Babylon.js, a SIMD controller leaves out the standard build
 (manifest written by `vite.player.config.ts`). Asset URLs inside the studio
 keep their path; others are copied under `data/_ext/` and the graph is
-rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
+rewritten. Uploaded assets are copied under `data/assets/<id>/`. File names
+there are ASCII (`café#1.glb` is `cafe_1.glb`), two remote files of the same
+name get `name-2.glb` and so on, and a query string or fragment is left out
+of the name (#88). glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
