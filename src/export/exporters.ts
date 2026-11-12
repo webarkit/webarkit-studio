@@ -5,6 +5,7 @@
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
+import { checkSourceCode } from './codegen/check';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {
@@ -33,8 +34,24 @@ export interface Exporter {
   id: string;
   label: string;
   description: string;
+  /**
+   * What follows the graph's slug in the file's name (`.json`, `-pages.zip`), its type and its extension: the
+   * save dialog offers them before the export runs (#118). run() gives the same name.
+   */
+  suffix: string;
+  mime: string;
+  extension: string;
+  /**
+   * Throws if run() would refuse the graph, without building anything (#118). The studio calls it before the save
+   * dialog, which creates the chosen file: a refused graph must not leave an empty one. Synchronous, so the dialog
+   * still has the click's user gesture.
+   */
+  precheck?(doc: GraphDocument): void;
   run(doc: GraphDocument, ctx: ExportContext): Promise<ExportResult>;
 }
+
+/** The name an exporter gives its file, known before it runs. */
+export const defaultFilename = (exporter: Exporter, doc: Pick<GraphDocument, 'name'>) => `${slugify(doc.name)}${exporter.suffix}`;
 
 export function slugify(name: string | undefined): string {
   const slug = (name ?? '')
@@ -48,6 +65,9 @@ export function slugify(name: string | undefined): string {
 
 const graphJson: Exporter = {
   id: 'graph-json',
+  suffix: '.json',
+  mime: 'application/json',
+  extension: '.json',
   label: 'Graph (.json)',
   description: 'The node graph only. Re-import it in the studio or run it with any player.',
   async run(doc, ctx) {
@@ -61,6 +81,9 @@ const graphJson: Exporter = {
 
 const appBundle: Exporter = {
   id: 'app-bundle',
+  suffix: '.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'Standalone app (.zip)',
   description: 'Player + graph + assets, ready for any static web server (GitHub Pages, Netlify…).',
   async run(doc, ctx) {
@@ -71,6 +94,9 @@ const appBundle: Exporter = {
 
 const project: Exporter = {
   id: 'project',
+  suffix: '.webarkit.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'Project (.zip)',
   description: 'The graph and its uploaded assets, to open in another browser with Import…',
   async run(doc, ctx) {
@@ -82,6 +108,9 @@ const project: Exporter = {
 
 const pagesProject: Exporter = {
   id: 'pages-project',
+  suffix: '-pages.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'GitHub Pages project (.zip)',
   description: 'The standalone app and a workflow that deploys it: push it to a repository of your own, with no token. Its README.md has the steps.',
   async run(doc, ctx) {
@@ -92,9 +121,15 @@ const pagesProject: Exporter = {
 
 const sourceCode: Exporter = {
   id: 'source-code',
+  suffix: '-source.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'Source code (.zip)',
   description:
     'A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "pinball · Three.js" demo, and refuses others by name.',
+  precheck(doc) {
+    checkSourceCode(doc);
+  },
   async run(doc, ctx) {
     const { exportSourceCode } = await import('./codegen/export');
     return exportSourceCode(doc, ctx);

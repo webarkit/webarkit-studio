@@ -144,6 +144,24 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | GitHub Pages project (.zip) | the standalone app in `site/`, a GitHub Actions workflow that deploys it, and a README with the steps |
 | Source code (.zip) | a small Vite project with the graph as readable code (Three.js): `npm install`, `npm run dev`; see "Source code" below ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
 
+Each file is named after the graph: type its name in the **Graph name** field
+next to the studio's title (one undo step, kept by the autosave; a demo, a
+file or a project brings its own, and **New** is `Untitled`). `My Graph`
+exports as `my-graph.json`, `my-graph.webarkit.zip`, `my-graph.zip`,
+`my-graph-pages.zip` and `my-graph-source.zip`; with no name, `webar-app`.
+The folder inside a zip, the exported page's title and the Pages project's
+README use the graph's name too.
+
+In Chromium browsers (Chrome, Edge) an export first asks where to save it,
+with that name suggested: the file can be renamed and put in any folder, and
+a cancel saves nothing. The chosen name names the file only: the folder inside
+the zip and the page title keep the graph's name. Elsewhere (Firefox, Safari)
+the file downloads under its default name, as the browser saves downloads. A graph the source code export cannot write is refused before the dialog
+opens, so no file is created. If
+an export fails after you picked a file, the file is left empty there:
+Chromium creates it, or empties an existing one, when it is picked, and the log
+says so ([#118](https://github.com/webarkit/webarkit-studio/issues/118)).
+
 The standalone app is the prebuilt player (`npm run build:player`, run
 automatically by `dev` and `build`) plus `graph.json` and the files its nodes
 reference: params marked `asset` in the catalog (camera parameters, NFT

@@ -5,19 +5,19 @@
  */
 import { strToU8, zipSync } from 'fflate';
 import type { GraphDocument } from '../../core/graph';
-import { loadGraphDocument, upgradeNote } from '../../core/migrations';
+import { upgradeNote } from '../../core/migrations';
 import { collectAssets } from '../app-bundle';
 import { slugify, type ExportContext, type ExportResult } from '../exporters';
+import { checkSourceCode } from './check';
 import { codeEmittersFor, generateSource } from './index';
 
 export async function exportSourceCode(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
-  const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
+  // Refused before any download: a graph with a node the export cannot write never fetches its assets.
+  const loaded = checkSourceCode(input); // a copy: collectAssets rewrites its params
   const doc = loaded.doc;
   const upgraded = upgradeNote(loaded);
   if (upgraded) ctx.log(upgraded);
   const emitters = codeEmittersFor('three');
-  // Refused before any download: a graph with a node the export cannot write never fetches its assets.
-  generateSource(structuredClone(doc), 'three', emitters);
 
   const assets = await collectAssets(doc, new URL(ctx.baseUrl), ctx);
   const { files } = generateSource(doc, 'three', emitters);
