@@ -1,7 +1,7 @@
 // The graph's name in the toolbar, and Save as for exports (#118).
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { openStudio, startupDone } from './helpers';
+import { openStudio, pickDemo, startupDone } from './helpers';
 
 const autosavedName = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name as string | undefined);
 
@@ -10,6 +10,45 @@ async function exportJson(page: Page) {
   await page.click('#export-menu summary');
   await page.click('[data-exporter=graph-json]');
 }
+
+/**
+ * Opens the studio with no autosave and a save dialog standing in for the system's: `window.picker` records what
+ * it is asked and what is written to the file it gives; `picker.cancel` makes it cancel.
+ */
+async function openWithSaveDialog(page: Page) {
+  await page.addInitScript(() => {
+    type Picked = { name: string; createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }> };
+    const state = { calls: [] as unknown[], written: [] as string[], closed: 0, cancel: false };
+    Object.assign(window, { picker: state });
+    Object.assign(window, {
+      async showSaveFilePicker(options: unknown): Promise<Picked> {
+        state.calls.push(options);
+        if (state.cancel) throw new DOMException('The user aborted a request.', 'AbortError');
+        return {
+          name: 'chosen-name.json',
+          async createWritable() {
+            return {
+              async write(data: Blob) {
+                state.written.push(await data.text());
+              },
+              async close() {
+                state.closed++;
+              },
+            };
+          },
+        };
+      },
+    });
+  });
+  await page.goto('/index.html');
+  await startupDone(page);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await startupDone(page);
+}
+
+/** What the save dialog was asked, and what reached its file. */
+const picker = (page: Page) => page.evaluate(() => (window as unknown as { picker: { calls: unknown[]; written: string[]; closed: number } }).picker);
 
 test('the graph is renamed in the toolbar, in one undo step, keeps its name after a reload, and exports under it', async ({ page }) => {
   await openStudio(page);
@@ -55,39 +94,9 @@ test('the graph is renamed in the toolbar, in one undo step, keeps its name afte
 });
 
 test('an export asks where to save it where the browser can, saves nothing on a cancel, and downloads without the dialog', async ({ page }) => {
-  // A save dialog standing in for the system's: it records what it is asked and what is written to the file.
-  await page.addInitScript(() => {
-    type Picked = { name: string; createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }> };
-    const state = { calls: [] as unknown[], written: [] as string[], closed: 0, cancel: false };
-    Object.assign(window, { picker: state });
-    Object.assign(window, {
-      async showSaveFilePicker(options: unknown): Promise<Picked> {
-        state.calls.push(options);
-        if (state.cancel) throw new DOMException('The user aborted a request.', 'AbortError');
-        return {
-          name: 'chosen-name.json',
-          async createWritable() {
-            return {
-              async write(data: Blob) {
-                state.written.push(await data.text());
-              },
-              async close() {
-                state.closed++;
-              },
-            };
-          },
-        };
-      },
-    });
-  });
-  await page.goto('/index.html');
-  await startupDone(page);
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await startupDone(page);
+  await openWithSaveDialog(page);
   const downloads: string[] = [];
   page.on('download', (d) => downloads.push(d.suggestedFilename()));
-  const picker = () => page.evaluate(() => (window as unknown as { picker: { calls: unknown[]; written: string[]; closed: number } }).picker);
 
   await page.locator('#graph-name').fill('Save As Test');
   await page.locator('#graph-name').press('Enter');
@@ -96,7 +105,7 @@ test('an export asks where to save it where the browser can, saves nothing on a 
   // The dialog gets the default name and the export's type; the exported bytes reach the file it gives.
   await exportJson(page);
   await expect(page.locator('#log')).toContainText('✓ saved as chosen-name.json');
-  const saved = await picker();
+  const saved = await picker(page);
   expect(saved.calls).toEqual([
     { suggestedName: 'save-as-test.json', types: [{ description: 'Graph (.json)', accept: { 'application/json': ['.json'] } }], excludeAcceptAllOption: true },
   ]);
@@ -108,8 +117,8 @@ test('an export asks where to save it where the browser can, saves nothing on a 
   await page.evaluate(() => ((window as unknown as { picker: { cancel: boolean } }).picker.cancel = true));
   await exportJson(page);
   await expect(page.locator('#log')).toContainText('⇩ export cancelled: nothing was saved');
-  expect((await picker()).calls).toHaveLength(2);
-  expect((await picker()).written).toHaveLength(1);
+  expect((await picker(page)).calls).toHaveLength(2);
+  expect((await picker(page)).written).toHaveLength(1);
   expect(downloads).toEqual([]);
 
   // No dialog in this browser: the download, under the default name, as before.
@@ -117,5 +126,23 @@ test('an export asks where to save it where the browser can, saves nothing on a 
   const [download] = await Promise.all([page.waitForEvent('download'), exportJson(page)]);
   expect(download.suggestedFilename()).toBe('save-as-test.json');
   expect(JSON.parse(readFileSync(await download.path(), 'utf8')).name).toBe('Save As Test');
-  expect((await picker()).calls).toHaveLength(2);
+  expect((await picker(page)).calls).toHaveLength(2);
+});
+
+test('the source code export refuses a graph it cannot write before the save dialog opens: no file is created', async ({ page }) => {
+  await openWithSaveDialog(page);
+  await pickDemo(page, 'pinball-babylon');
+  const downloads: string[] = [];
+  page.on('download', (d) => downloads.push(d.suggestedFilename()));
+  await page.click('#export-menu summary');
+  await page.click('[data-exporter=source-code]');
+  await expect(page.locator('#log')).toContainText(/✗ export failed: [\s\S]*babylon\.renderer/);
+  expect((await picker(page)).calls).toEqual([]);
+  expect(downloads).toEqual([]);
+
+  // A graph it writes still asks where to save it.
+  await pickDemo(page, 'pinball-three');
+  await page.click('#export-menu summary');
+  await page.click('[data-exporter=source-code]');
+  await expect.poll(async () => (await picker(page)).calls.length).toBe(1);
 });

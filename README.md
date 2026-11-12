@@ -156,7 +156,8 @@ In Chromium browsers (Chrome, Edge) an export first asks where to save it,
 with that name suggested: the file can be renamed and put in any folder, and
 a cancel saves nothing. The chosen name names the file only: the folder inside
 the zip and the page title keep the graph's name. Elsewhere (Firefox, Safari)
-the file downloads under its default name, as the browser saves downloads. If
+the file downloads under its default name, as the browser saves downloads. A graph the source code export cannot write is refused before the dialog
+opens, so no file is created. If
 an export fails after you picked a file, the file is left empty there:
 Chromium creates it, or empties an existing one, when it is picked, and the log
 says so ([#118](https://github.com/webarkit/webarkit-studio/issues/118)).

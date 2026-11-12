@@ -5,6 +5,7 @@
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
+import { checkSourceCode } from './codegen/check';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {
@@ -40,6 +41,12 @@ export interface Exporter {
   suffix: string;
   mime: string;
   extension: string;
+  /**
+   * Throws if run() would refuse the graph, without building anything (#118). The studio calls it before the save
+   * dialog, which creates the chosen file: a refused graph must not leave an empty one. Synchronous, so the dialog
+   * still has the click's user gesture.
+   */
+  precheck?(doc: GraphDocument): void;
   run(doc: GraphDocument, ctx: ExportContext): Promise<ExportResult>;
 }
 
@@ -120,6 +127,9 @@ const sourceCode: Exporter = {
   label: 'Source code (.zip)',
   description:
     'A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "pinball · Three.js" demo, and refuses others by name.',
+  precheck(doc) {
+    checkSourceCode(doc);
+  },
   async run(doc, ctx) {
     const { exportSourceCode } = await import('./codegen/export');
     return exportSourceCode(doc, ctx);

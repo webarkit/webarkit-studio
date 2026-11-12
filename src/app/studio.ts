@@ -282,6 +282,8 @@ for (const exporter of EXPORTERS) {
     log(`⇩ export: ${exporter.label}`);
     // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
     try {
+      // What the exporter would refuse is refused here, before the dialog creates the chosen file.
+      exporter.precheck?.(doc);
       const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
       const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore }), accept);
       if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
