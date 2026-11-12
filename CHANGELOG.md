@@ -116,6 +116,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- A graph with an empty or blank name exports an app titled `WebAR app` (#120), with a `WebAR app` README
+  heading, where its page had an empty title. The app, the GitHub Pages project and the source code now give
+  the same title: the name on one line, without `<>&"`, its runs of spaces as one.
 - Asset files in an exported app or source code project are always served (#88): a name with `#` or
   accents is written in ASCII (`café#1.glb` is `cafe_1.glb`), two remote files of the same name no
   longer overwrite each other (`model-2.glb`), and a query string or fragment (`model.glb?v=1`) stays

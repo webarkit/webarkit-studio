@@ -6,6 +6,9 @@ import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
 import { checkSourceCode } from './codegen/check';
+import { slugify } from './names';
+
+export { graphTitle, slugify } from './names';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {
@@ -52,16 +55,6 @@ export interface Exporter {
 
 /** The name an exporter gives its file, known before it runs. */
 export const defaultFilename = (exporter: Exporter, doc: Pick<GraphDocument, 'name'>) => `${slugify(doc.name)}${exporter.suffix}`;
-
-export function slugify(name: string | undefined): string {
-  const slug = (name ?? '')
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'webar-app';
-}
 
 const graphJson: Exporter = {
   id: 'graph-json',
