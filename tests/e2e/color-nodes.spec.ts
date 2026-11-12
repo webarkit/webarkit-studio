@@ -62,9 +62,10 @@ for (const engine of ['three', 'babylon']) {
     test('HSV Color driven by Time turns the knot round the colour wheel (#67)', async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
-      test.setTimeout(90_000);
-      // Hue = seconds × 30: a full turn every 12 s. A sample (a screenshot read back) can take about a
-      // second, and each primary is in view for about 2 s (±30° around it), so no primary is skipped.
+      // The canvas, the knot on screen, then each primary in turn: room for every wait to fail on its own message.
+      test.setTimeout(180_000);
+      // Hue = seconds × 30: a full turn every 12 s. Each primary is in view for about 2 s (±30° around it), and a
+      // sample (a screenshot read back) can take seconds under load: each one is waited for, over turns if need be.
       await openGraph(
         page,
         graph(
@@ -79,12 +80,27 @@ for (const engine of ['three', 'babylon']) {
       );
       await run(page);
       await expect(page.locator('.ar-view canvas')).toHaveCount(1, NEXT);
-      await page.waitForTimeout(1500); // the photo's marker found, the knot on screen
-
-      // Over a turn, the knot is red, green and blue in turn.
       const samples: Hues[] = [];
-      const end = Date.now() + 13_000;
-      while (Date.now() < end) samples.push(await hues(page));
+      const sample = async () => {
+        const s = await hues(page);
+        samples.push(s);
+        return s;
+      };
+      // One sample after another, as fast as they come: a primary is in view for about 2 s.
+      const POLL = { timeout: 30_000, intervals: [0] };
+      // The knot on screen, in one of the primaries: the photo's marker is found later under load (#116).
+      await expect
+        .poll(async () => {
+          const { red, green, blue } = await sample();
+          return Math.max(red, green, blue);
+        }, POLL)
+        .toBeGreaterThan(0.01);
+      // From there on: an empty view before it would make "at its least" below true for every hue.
+      samples.splice(0, samples.length - 1);
+
+      // The knot is red, green and blue in turn, each within one and a half turns.
+      for (const hue of ['red', 'green', 'blue'] as const)
+        await expect.poll(async () => (await sample())[hue], { ...POLL, timeout: 20_000 }).toBeGreaterThan(0.01);
       for (const hue of ['red', 'green', 'blue'] as const) {
         const shares = samples.map((s) => s[hue]);
         expect(Math.max(...shares), `${hue} at its most`).toBeGreaterThan(0.01);
