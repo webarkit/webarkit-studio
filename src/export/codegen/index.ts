@@ -11,7 +11,7 @@ import { effectiveDefinition } from '../../core/script';
 import { INSTALLED_PLUGINS } from '../../plugins/host';
 import { THREE_EMITTERS } from './three';
 import { commentText, literal } from './text';
-import { graphTitle } from '../exporters';
+import { graphTitle } from '../names';
 import type { CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from './types';
 
 export type { CodeEmitContext, CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from './types';

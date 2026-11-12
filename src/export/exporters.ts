@@ -6,6 +6,9 @@ import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
 import { checkSourceCode } from './codegen/check';
+import { slugify } from './names';
+
+export { graphTitle, slugify } from './names';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {
@@ -52,24 +55,6 @@ export interface Exporter {
 
 /** The name an exporter gives its file, known before it runs. */
 export const defaultFilename = (exporter: Exporter, doc: Pick<GraphDocument, 'name'>) => `${slugify(doc.name)}${exporter.suffix}`;
-
-export function slugify(name: string | undefined): string {
-  const slug = (name ?? '')
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'webar-app';
-}
-
-/**
- * The exported page's title and its README's heading (#120): the graph's name on one line, without `<>&"`, its
- * runs of spaces as one, trimmed; `WebAR app` when nothing is left (no name, an empty or a blank one).
- */
-export function graphTitle(name: string | undefined): string {
-  return (name ?? '').replace(/[<>&"]/g, '').replace(/\s+/g, ' ').trim() || 'WebAR app';
-}
 
 const graphJson: Exporter = {
   id: 'graph-json',

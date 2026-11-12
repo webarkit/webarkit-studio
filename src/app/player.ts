@@ -14,6 +14,8 @@ import type { AssetLookup } from '../assets/asset';
 import { loadPlugins, pluginIdsOf } from '../plugins/host';
 import { isScriptType } from '../core/script';
 import studioConfig from '../../webarkit-studio.config';
+// names.ts, not exporters.ts: that one pulls in the code generator, which an exported app has no use for.
+import { graphTitle } from '../export/names';
 
 /** Graphs handed over by the studio may use its uploaded assets (same origin, same IndexedDB). */
 async function studioAssets(): Promise<AssetLookup | undefined> {
@@ -67,7 +69,8 @@ startButton.addEventListener('click', async () => {
   try {
     const { graph, linked } = await loadGraph();
     const name = (graph as { name?: unknown }).name;
-    if (typeof name === 'string' && name) document.title = name;
+    // The export's own title rule (#120): a blank or marked-up name must not undo the page's title.
+    if (typeof name === 'string') document.title = graphTitle(name);
     // Only the plugins the graph needs; validation names any this build does not have.
     await loadPlugins(studioConfig, pluginIdsOf(graph));
     if (linked !== null) refuseLinkedCode(graph, linked);
