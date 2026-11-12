@@ -872,16 +872,16 @@ The source of truth for the roadmap is
 - [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
 - [x] MCP server (#8): catalog, graph editing and validation, tracking on images in Node, app export
 
-**Phase 3 — Logic and publishing (v0.3.0, [#3](https://github.com/webarkit/webarkit-studio/issues/3), which has the full list)**
-- [ ] glTF animations on both renderers ([#58](https://github.com/webarkit/webarkit-studio/issues/58))
-- [ ] Logic nodes and the event model ([#59](https://github.com/webarkit/webarkit-studio/issues/59))
-- [ ] Action nodes triggered by events ([#60](https://github.com/webarkit/webarkit-studio/issues/60))
-- [ ] Math nodes: numbers, vectors, matrices, functions, renderer-independent ([#24](https://github.com/webarkit/webarkit-studio/issues/24))
-- [ ] Script nodes: `script.lite` ([#35](https://github.com/webarkit/webarkit-studio/issues/35)), `three.script` ([#36](https://github.com/webarkit/webarkit-studio/issues/36)), `three.renderScript` ([#37](https://github.com/webarkit/webarkit-studio/issues/37))
-- [ ] Graph format migrations: older `version`s upgrade on load ([#61](https://github.com/webarkit/webarkit-studio/issues/61))
-- [ ] Deploy: an export with a GitHub Actions workflow, which you push to your own repository for GitHub Pages; the studio holds no credential ([#62](https://github.com/webarkit/webarkit-studio/issues/62))
+**Phase 3 — Logic and publishing (released in [v0.3.0](https://github.com/webarkit/webarkit-studio/releases/tag/v0.3.0); [#3](https://github.com/webarkit/webarkit-studio/issues/3) has the full list)**
+- [x] glTF animations on both renderers ([#58](https://github.com/webarkit/webarkit-studio/issues/58))
+- [x] Logic nodes and the event model ([#59](https://github.com/webarkit/webarkit-studio/issues/59))
+- [x] Action nodes triggered by events ([#60](https://github.com/webarkit/webarkit-studio/issues/60))
+- [x] Math nodes: numbers, vectors, matrices, functions, renderer-independent ([#24](https://github.com/webarkit/webarkit-studio/issues/24))
+- [x] Script nodes: `script.lite` ([#35](https://github.com/webarkit/webarkit-studio/issues/35)), `three.script` ([#36](https://github.com/webarkit/webarkit-studio/issues/36)), `three.renderScript` ([#37](https://github.com/webarkit/webarkit-studio/issues/37))
+- [x] Graph format migrations: older `version`s upgrade on load ([#61](https://github.com/webarkit/webarkit-studio/issues/61))
+- [x] Deploy: an export with a GitHub Actions workflow, which you push to your own repository for GitHub Pages; the studio holds no credential ([#62](https://github.com/webarkit/webarkit-studio/issues/62))
 - [x] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
-- [ ] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
+- [x] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
 **Phase 4 — Scene and editor (v0.4.0)**
 - [ ] Node selection and macros in the editor

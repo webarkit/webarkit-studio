@@ -1,6 +1,6 @@
 {
   "name": "webarkit-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "WebARKit Studio: node-based WebAR authoring tool (Rete.js + JsartoolkitNFT)",
   "license": "LGPL-3.0-or-later",

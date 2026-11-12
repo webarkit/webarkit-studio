@@ -6,6 +6,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Added
 
 - The graph's name can be edited in the toolbar (#118), as one undo step, and every export is named after
@@ -25,7 +27,6 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   v0.1.0, now opens, runs and exports, and saves as v5, where it was refused and an autosave was
   replaced by the demo. The file you opened is not touched, and the log says
   `↑ upgraded from v4 to v5`. v2 and v3 stay refused, and a newer document says it needs a newer studio.
-
 - glTF animations on both renderers (#58): Autoplay on the glTF Model node (`autoplay`, live, off by
   default) plays the model's first clip in a loop. Its log and status list the clips and show the time
   of the one playing. Exported apps play it too.
@@ -86,12 +87,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   code panel and the log. Three.js only: with Babylon.js it fails at start and says so. A new demo, "pinball · a
   three.js script builds the scene". A node runs code when its definition says `runsCode: true` (plugin API types
   package 1.3.0): the trust prompt, the player's `?graph=` refusal and the MCP server's refusal read that flag.
-
 - **three.js Render Script** node (#37, `three.renderScript`): a three.js script with its own renderer, scene and
   camera over the camera video, in place of Scene, Renderer, AR Camera, Anchor and AR View. Each frame it puts the
   tracker's projection on the camera; `helpers.placeOnMarker()` places content as a Marker Anchor does. A new demo,
   "pinball · one three.js script renders it all".
-
 - **Export → Source code (.zip)** (#64): the graph as a small Vite project with one readable `src/main.js` (Three.js),
   each node a commented part of it, the assets in `public/`, and exact versions of three.js and jsartoolkitNFT. It
   needs nothing of the studio: `npm install`, `npm run dev`. The first version writes the nodes of "pinball ·
@@ -100,6 +99,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Changed
 
+- Graphs saved by v0.2.0 are already format v5 and open unchanged; graphs of v0.1.0 (format v4) upgrade when
+  they are opened (#61).
 - The colour nodes have a palette group of their own, **color**, after **math** (#104): a new node category,
   `color`, with its own colour in the palette, the node header and Properties. The MCP server's `catalog_list`
   filters by it. Plugin API types package 1.5.0 (`NodeCategory` gains `color`).
