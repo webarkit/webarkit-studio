@@ -19,7 +19,7 @@ import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition } from '../core/script';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
-import { slugify, type ExportContext, type ExportResult } from './exporters';
+import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
 import { INSTALLED_PLUGINS } from '../plugins/host';
 import type { ExportFile, StudioPlugin } from '../plugin-api';
 import { HEADERS, README_SECTION, SERVICE_WORKER, SERVICE_WORKER_FILE, withIsolation } from './cross-origin-isolation';
@@ -345,7 +345,7 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
   Object.assign(files, await collectPluginFiles(doc, base));
 
   // ------------------------------------------------------- page and graph
-  const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');
+  const title = graphTitle(doc.name);
   const isolated = needsIsolation(doc);
   const page = entryHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)

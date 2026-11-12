@@ -11,7 +11,7 @@
 import { strToU8, zipSync } from 'fflate';
 import type { GraphDocument } from '../core/graph';
 import { buildAppFiles } from './app-bundle';
-import { slugify, type ExportContext, type ExportResult } from './exporters';
+import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
 
 /**
  * Each action at a major version that runs on Node 24 (checked in each tag's action.yml). The
@@ -110,7 +110,7 @@ export function assemblePagesProject(app: Record<string, Uint8Array>, doc: Graph
     files[`site/${path}`] = data;
   }
   files['.github/workflows/deploy-pages.yml'] = strToU8(WORKFLOW);
-  files['README.md'] = strToU8(readme((doc.name ?? '').replace(/[<>&"]/g, '').replace(/ +/g, ' ').trim() || 'WebAR app'));
+  files['README.md'] = strToU8(readme(graphTitle(doc.name)));
   files['.gitattributes'] = strToU8('* -text\n');
   return files;
 }

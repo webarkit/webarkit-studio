@@ -63,6 +63,14 @@ export function slugify(name: string | undefined): string {
   return slug || 'webar-app';
 }
 
+/**
+ * The exported page's title and its README's heading (#120): the graph's name on one line, without `<>&"`, its
+ * runs of spaces as one, trimmed; `WebAR app` when nothing is left (no name, an empty or a blank one).
+ */
+export function graphTitle(name: string | undefined): string {
+  return (name ?? '').replace(/[<>&"]/g, '').replace(/\s+/g, ' ').trim() || 'WebAR app';
+}
+
 const graphJson: Exporter = {
   id: 'graph-json',
   suffix: '.json',
