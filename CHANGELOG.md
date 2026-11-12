@@ -6,6 +6,144 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+### Added
+
+- The graph's name can be edited in the toolbar (#118), as one undo step, and every export is named after
+  it. In Chromium browsers an export asks where to save it and under which name; elsewhere it downloads
+  as before.
+- MCP server: `trackability_check` (#44) rates an NFT dataset and returns the report of
+  `npm run trackability -- <dataset> --json`. Plugins can provide such a check with a `DatasetCheck`
+  (plugin API, optional), listed in `webarkit-studio.node.config.ts`.
+- Plugins can declare asset kinds (#30): `assetKinds` in `StudioPlugin` (optional), a URL prefix with
+  several files, which uploads, project files, the runtime and the app export handle. The
+  jsartoolkitNFT plugin declares `nftDataset` this way, with the same id and behaviour for its
+  datasets.
+- The plugin API's types as a package (#29), `@webarkit/studio-plugin-api` in
+  `packages/studio-plugin-api/`, so a plugin outside this repository can typecheck: `npm pack` it and
+  install the tarball. Not published yet.
+- Older graphs upgrade when they are opened (#61): a graph or autosave of format v4, the format of
+  v0.1.0, now opens, runs and exports, and saves as v5, where it was refused and an autosave was
+  replaced by the demo. The file you opened is not touched, and the log says
+  `↑ upgraded from v4 to v5`. v2 and v3 stay refused, and a newer document says it needs a newer studio.
+- glTF animations on both renderers (#58): Autoplay on the glTF Model node (`autoplay`, live, off by
+  default) plays the model's first clip in a loop. Its log and status list the clips and show the time
+  of the one playing. Exported apps play it too.
+- Logic nodes (#59), in their own palette category: And, Or, Not, Toggle, Timer, Compare, Edge, Branch and
+  Switch, to work with booleans and route events: Compare → Edge fires an event when a number crosses a
+  threshold. `docs/plugins.md` documents the event model. A plugin can no longer use the id `logic` or
+  `action`.
+- Action nodes (#60), in their own palette category: Play Animation, Set Visible, Play Sound and Open URL
+  make a graph act on an event, in the preview and in exported apps. A new demo, "pinball · animated
+  model", plays a clip on `onFound` and pauses it on `onLost`. Sounds can be uploaded as assets.
+- **Export → GitHub Pages project (.zip)** (#62): the standalone app with a GitHub Actions workflow and the
+  steps to publish it. You push it to a repository of your own: the studio holds no credential and makes
+  no request to GitHub. The standalone app now has a `.nojekyll`, which keeps paths starting with `_` on a
+  Pages site built from a branch.
+- **Threaded** and **Auto** builds on the jsartoolkitNFT controller (#63); SIMD stays the default. An
+  exported app that uses them gets a service worker that makes the page cross-origin isolated where the
+  host cannot send the headers (GitHub Pages; the page reloads once on the first visit), and `_headers`
+  for Netlify and Cloudflare Pages. In the studio, whose page is not isolated, Threaded stops at once
+  with a message and Auto runs SIMD. Plugins ask for this with `crossOriginIsolation` (plugin API,
+  optional).
+- Page events (#82): **Dispatch Event** tells the page that holds the graph, and **Page Event** listens
+  to it, with a named `CustomEvent` in the same page or `postMessage` across an iframe, to and from one
+  origin only. Names need a colon, and only plain values cross. `page` is a reserved namespace for
+  plugins. See "Talking to the page" in the README.
+- UI controls (#83): **Button**, **Switch**, **Slider**, **Colour Picker** and **Choice** drive a graph from
+  a control, drawn in a panel on the AR view or bound by id to an element of the page that holds the app.
+  Only those kinds of element are taken: a text field or a textarea is refused by name. `ui` is a reserved
+  namespace for plugins. See "UI controls" in the README.
+- A position for drawn controls (#93): *Position* on the five UI control nodes puts their panel at the top
+  right (as before), top left, bottom left, bottom right or bottom centre, live. Each position has its own
+  panel, kept clear of the AR view's badge, FPS label, Debug Stats' overlay and Open URL's link.
+- Core sockets `vector2` (`[x, y]`) and `quaternion` (`[x, y, z, w]`) for plugin ports (#65), shown by the
+  Inspector; the plugin API's types package goes to 1.2.0. Math, colour and logic nodes are now computed
+  only when an input or a live param changes.
+- Math nodes (#66): Subtract, Divide, Negate, Absolute, Minimum, Maximum, Clamp, Lerp, Remap, Cosine, Tangent,
+  Atan2, Power, Square Root, Logarithm, Exponential, Round, Floor, Ceiling, Modulo, Degrees to Radians and
+  Radians to Degrees, each with inputs that override its params. Angles are in degrees, like Sine's. Time
+  has a new output, **Delta**: the seconds since the last frame, at its Speed.
+- Colour nodes (#67): Hex Color, HSV Color (hue in degrees: drive it with a time for a rainbow), Mix Colors,
+  Brightness and Invert Color, on `[r, g, b, a]` values in sRGB. An Expression whose whole formula is
+  `rgba(r, g, b, a)` or `vec3(x, y, z)` now gives a colour or a vector, on its new **Color** and **Vector**
+  outputs; a numeric formula works as before.
+- Vector and matrix nodes (#68): Vector2 and Split Vector2; Length, Normalize, Dot Product, Cross Product and
+  Distance; Matrix4, Decompose Matrix4, Matrix from Pose, Multiply Matrices, Invert Matrix and Transform Point,
+  on plain column-major matrices. The glTF Model takes **Position** and **Rotation** inputs, so math nodes
+  move and turn a model. A new demo, "pinball · math on a model", bobs and turns a cube that way.
+- **Script** node (#35, `script.lite`): JavaScript whose header comment declares its inputs, outputs and
+  dropdowns (`in`, `out`, `enum`, `run on-change`), on value sockets only. The node shows the script's name,
+  ports and params; **Edit** opens a code panel (Ctrl+Enter applies), **Import** reads a `.js` file or an example.
+  Changing the ports rebuilds the node and drops the wires that no longer fit, in one undo step. Errors show on
+  the node with their line and never stop the graph. A script runs in the page: the studio asks before running or
+  exporting scripts from someone else (an opened graph or project, a restored autosave), the player refuses a graph with
+  scripts named by a `?graph=` link, and the MCP server never runs one. A new demo, "pinball · one script". `script`
+  is a reserved namespace for plugins. See "Scripts" in the README.
+- **three.js Script** node (#36, `three.script`): a three.js script builds part of the scene, wired into a Marker
+  Anchor like a Primitive. Its code defines `onInit({ THREE, group, inputs })`, `onFrame(…)` and `onDispose()`; its
+  header declares value inputs and dropdowns. A live code change rebuilds its group; errors show on the node, in the
+  code panel and the log. Three.js only: with Babylon.js it fails at start and says so. A new demo, "pinball · a
+  three.js script builds the scene". A node runs code when its definition says `runsCode: true` (plugin API types
+  package 1.3.0): the trust prompt, the player's `?graph=` refusal and the MCP server's refusal read that flag.
+- **three.js Render Script** node (#37, `three.renderScript`): a three.js script with its own renderer, scene and
+  camera over the camera video, in place of Scene, Renderer, AR Camera, Anchor and AR View. Each frame it puts the
+  tracker's projection on the camera; `helpers.placeOnMarker()` places content as a Marker Anchor does. A new demo,
+  "pinball · one three.js script renders it all".
+- **Export → Source code (.zip)** (#64): the graph as a small Vite project with one readable `src/main.js` (Three.js),
+  each node a commented part of it, the assets in `public/`, and exact versions of three.js and jsartoolkitNFT. It
+  needs nothing of the studio: `npm install`, `npm run dev`. The first version writes the nodes of "pinball ·
+  Three.js" and glTF models, and refuses a graph with any other node, by name. Plugins write their nodes' code with
+  `codeEmitters`, keyed by target (plugin API types package 1.4.0).
+
+### Changed
+
+- Graphs saved by v0.2.0 are already format v5 and open unchanged; graphs of v0.1.0 (format v4) upgrade when
+  they are opened (#61).
+- The colour nodes have a palette group of their own, **color**, after **math** (#104): a new node category,
+  `color`, with its own colour in the palette, the node header and Properties. The MCP server's `catalog_list`
+  filters by it. Plugin API types package 1.5.0 (`NodeCategory` gains `color`).
+- An exported app ships three.js only when its graph has a Three.js node; since #36 a Babylon.js export carried it too.
+- A plugin's param can use only the built-in asset kinds and those the plugin declares (#30).
+  `nftDataset` is no longer built in: a plugin that reads those files declares the same kind.
+- An exported app's `README.txt` no longer names jsartoolkitNFT (#30): it says trackers probe for
+  optional files, without the `.zft` example, and `data/` holds the graph's data files.
+
+### Removed
+
+- The disabled "jsartoolkitNFT source code" entry of the Export menu (#30). The source code export
+  will be a core exporter (#64).
+
+### Fixed
+
+- A graph with an empty or blank name exports an app titled `WebAR app` (#120), with a `WebAR app` README
+  heading, where its page had an empty title. The app, the GitHub Pages project and the source code now give
+  the same title: the name on one line, without `<>&"`, its runs of spaces as one.
+- Asset files in an exported app or source code project are always served (#88): a name with `#` or
+  accents is written in ASCII (`café#1.glb` is `cafe_1.glb`), two remote files of the same name no
+  longer overwrite each other (`model-2.glb`), and a query string or fragment (`model.glb?v=1`) stays
+  out of the file name. Paths of uploaded files with such names change; graphs do not. The Pages
+  project's README says an update replaces `.github/` as well as `site/`.
+- An unfinished graph saved to a file opens again (#86): **Import…** takes a `.json` or a project whose
+  required inputs are not all connected, as an autosave reopens. **Run** and the standalone app export
+  still report what it lacks.
+- A graph is checked for what it names (#110): a node of type `constructor`, `toString` or `__proto__`
+  is reported as an unknown type instead of an error, and a select param must hold one of its options
+  (a `scene.light` of kind `laser` was a different light on Three.js and Babylon.js), in the studio,
+  on import and in the MCP server's `graph_validate`. A saved file holding such a value is now refused
+  on open, with the node and the param named. A light of an unknown kind that reaches a renderer anyway
+  is a directional light on both.
+- A demo or file opened while another graph is still loading is no longer replaced by it (#77), such
+  as a demo chosen while a slow startup demo is arriving: the graph opened last is the one shown.
+- An autosave the studio cannot open is no longer lost when the demo opens (#61): it is kept in
+  localStorage as `webarkit-studio:autosave-set-aside`, and the log says so.
+- An unfinished graph reopens after a reload (#78), with every node and wire, instead of the demo.
+  **Run** and the standalone app export still report the required input that is not connected. A load
+  now autosaves once, when the graph is whole, so a reload during one cannot reopen a piece of it.
+- Project files keep each uploaded file's MIME type (#49). An SVG used by `source.image` failed
+  to load after **Import…**; project files saved earlier now get the type from the file's extension.
+
 ## [0.2.0] - 2026-11-03
 
 ### Changed

@@ -1,11 +1,12 @@
 /**
- * Benchmark runner: npm run bench [-- runtime|tracker]
+ * Benchmark runner: npm run bench [-- runtime|math|tracker]
  * Prints a table per suite; ops/s and mean latency per operation.
  */
 import { runtimeBench } from './runtime.bench';
 
 const suites: Record<string, () => Promise<import('tinybench').Bench>> = {
   runtime: runtimeBench,
+  math: async () => (await import('./math.bench')).mathBench(),
   tracker: async () => (await import('./tracker.bench')).trackerBench(),
 };
 

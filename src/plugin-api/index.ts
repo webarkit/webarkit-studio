@@ -2,8 +2,10 @@
  * WebARKit Studio plugin API (#12): the types a plugin is written against.
  *
  * Types only, no runtime code: plugins import it with `import type` (as
- * `@webarkit/studio-plugin-api`, see tsconfig.json `paths`), so nothing of the
- * studio ends up in a plugin's bundle. docs/plugins.md explains how to write one.
+ * `@webarkit/studio-plugin-api`), so nothing of the studio ends up in a plugin's
+ * bundle. In this repository that name is a tsconfig.json `paths` alias for this
+ * file; outside it, the package in packages/studio-plugin-api, generated from
+ * this file. docs/plugins.md explains how to write one.
  *
  * The shared socket types (CoreSocketType) and the values they carry are the
  * contract between plugins: changing one is a breaking change of this API and
@@ -11,12 +13,14 @@
  * is not. The `renderer`, `scene` and `sceneObject` values are studio internals,
  * not part of the contract: plugins may only pass them through.
  */
+import type { AssetKindDefinition } from '../core/assets';
 import type { GraphNode, ParamValue } from '../core/graph';
 import type { PluginSocketType } from '../core/sockets';
 import type { NodeDefinition } from '../nodes/catalog';
 import type { NodeFactory, PortValues } from '../runtime/types';
 import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 
+export type { AssetKindDefinition } from '../core/assets';
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
 export type { CoreSocketType, PluginSocketType, SocketType } from '../core/sockets';
 export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
@@ -43,8 +47,10 @@ export type {
 export type { PoseFilterConfig } from '../runtime/filters/pose-filter';
 export type { TraceFrame, TraceHeader, TraceRecord, TraceSettings, TraceSource } from '../runtime/trackers/trace';
 import type { TraceFrame, TraceHeader, TraceSource } from '../runtime/trackers/trace';
+export type { CodeEmitContext, CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from '../export/codegen/types';
+import type { CodeEmitters } from '../export/codegen/types';
 
-/** Origin of the virtual URLs of uploaded NFT datasets (RuntimeContext.virtualFiles keys), for a worker that serves them. */
+/** Origin of the virtual URLs of uploaded assets with several files (RuntimeContext.virtualFiles keys), for a worker that serves them. */
 export type VirtualAssetOrigin = typeof VIRTUAL_ASSET_ORIGIN;
 
 /** A socket type of the plugin's own, for data only its nodes exchange. */
@@ -83,7 +89,21 @@ export interface StudioPlugin {
   /** One factory per node type. */
   factories: Record<string, NodeFactory>;
   sockets?: SocketDefinition[];
+  /** Asset kinds of its own, for its params' `asset`: uploads and exports handle them like the built-in ones. */
+  assetKinds?: AssetKindDefinition[];
   exportFiles?: ExportFile[];
+  /**
+   * Whether an exported app of a graph using this plugin must be cross-origin isolated (COOP /
+   * COEP), for SharedArrayBuffer or WASM threads. `nodes`: the graph's nodes of this plugin. When
+   * one plugin says yes, the export adds a service worker that sets the headers where the host
+   * cannot, and a `_headers` file for hosts that can. The studio's own page is never isolated.
+   */
+  crossOriginIsolation?: (nodes: GraphNode[]) => boolean;
+  /**
+   * Source code export (#64): an emitter per node type of the plugin, keyed by target (`three` today), so a
+   * later target is added without changing this field. A node with no emitter for the target is refused.
+   */
+  codeEmitters?: CodeEmitters;
 }
 
 /** RGBA pixels, row by row (an ImageData without the DOM). */
@@ -138,4 +158,21 @@ export interface HeadlessTracker {
     source: TraceSource;
     setClock: (now: number) => void;
   }): Promise<HeadlessRun>;
+}
+
+/** What a dataset check found. A plugin adds its own measures, all JSON-safe. */
+export interface DatasetCheckReport {
+  /** The dataset, named from the path that was given: not resolved, though a plugin may drop a file's extension. */
+  dataset: string;
+  verdict: 'good' | 'fair' | 'poor';
+}
+
+/**
+ * Rates how well a plugin's dataset will track, from its files (the MCP
+ * server's trackability_check, #44). Node-only: a plugin lists it in
+ * webarkit-studio.node.config.ts, never in its manifest.
+ */
+export interface DatasetCheck {
+  /** `dataset`: a path, in whatever form the plugin documents; a relative one resolves against `root`. Throws if it cannot be read. */
+  check(dataset: string, root: string): DatasetCheckReport;
 }

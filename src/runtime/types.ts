@@ -33,8 +33,8 @@ export interface MarkerInfoValue {
   heightMM: number;
 }
 /**
- * event: a new object every time the event fires, so consumers detect it by
- * reference. `count` = times fired since start.
+ * event: a new object every time the event fires, but a new object is not always a firing: see
+ * docs/plugins.md, "Events". `count` = times fired since start; `time` = Date.now() when it fired.
  */
 export interface EventValue {
   count: number;
@@ -102,7 +102,7 @@ export interface RuntimeContext {
   /** True in the studio's preview, false in the player (exported apps): debug tools that act on their own (downloads) stay off there. */
   studio: boolean;
   /**
-   * Files of uploaded NFT datasets: virtual URL (under VIRTUAL_ASSET_ORIGIN) →
+   * Files of uploaded assets with several files: virtual URL (under VIRTUAL_ASSET_ORIGIN) →
    * blob: URL (src/runtime/assets.ts), filled as nodes resolve their asset
    * params. A tracker worker serves them to its library's fetch().
    */

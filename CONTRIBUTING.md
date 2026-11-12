@@ -25,7 +25,7 @@ npm run typecheck
 npm test             # unit + integration (integration uses the Node build of jsartoolkit-nft)
 npm run build        # studio + standalone player
 npm run test:e2e     # Playwright, Chromium with a fake camera
-npm run bench        # optional: runtime and tracker benchmarks
+npm run bench        # optional: runtime, math and tracker benchmarks
 ```
 
 `npm run test:all` runs typecheck, unit/integration and e2e tests in sequence. CI runs the same gates on every push to `master` / `dev` and on every pull request.
@@ -41,6 +41,7 @@ A change is not verified until these pass locally. For new nodes, add at least:
 The JSON graph is the source of truth of a project. A change that renames or removes a node type, a port or a param, or changes what a value means, is a format change:
 
 - bump `GRAPH_VERSION` in `src/core/graph.ts` and describe the change in its comment;
+- add its migration to `src/core/migrations.ts`, with a test that an older document opens;
 - update the demo graphs in `public/graphs/`;
 - add a line to `CHANGELOG.md`.
 
@@ -48,7 +49,7 @@ Adding an optional param with a default, or a new node type, is not a format cha
 
 ## Naming
 
-Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
+Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
 
 ## Commit messages
 

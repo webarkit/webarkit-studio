@@ -1,0 +1,29 @@
+{
+  "name": "@webarkit/studio-plugin-api",
+  "version": "1.5.0",
+  "private": true,
+  "description": "The types a WebARKit Studio plugin is written against",
+  "license": "LGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webarkit/webarkit-studio.git",
+    "directory": "packages/studio-plugin-api"
+  },
+  "homepage": "https://github.com/webarkit/webarkit-studio/blob/master/docs/plugins.md",
+  "bugs": {
+    "url": "https://github.com/webarkit/webarkit-studio/issues"
+  },
+  "type": "module",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  },
+  "files": [
+    "index.d.ts"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/build-plugin-api.mjs"
+  }
+}

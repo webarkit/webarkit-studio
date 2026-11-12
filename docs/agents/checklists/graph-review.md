@@ -27,6 +27,8 @@ A format change is any of:
 A format change requires all of:
 
 - `GRAPH_VERSION` bumped in `src/core/graph.ts`, with the change described in its comment;
+- its migration in `src/core/migrations.ts`, with literal types and params (it reads neither the
+  catalog nor the loaded plugins), and a test that an older document opens;
 - every graph in `public/graphs/` updated to the new version and still valid;
 - a line under `## [Unreleased]` in `CHANGELOG.md`.
 
@@ -52,13 +54,14 @@ key by key; a renamed key looks like one removal plus one addition.
 - A graph that uses a plugin's nodes lists the plugin in `plugins` (format v5), with the
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
-  the plugin API: `PLUGIN_API_VERSION` is bumped.
+  the plugin API: `PLUGIN_API_VERSION` is bumped, and the major version of `packages/studio-plugin-api/`.
+  The values of `renderer`, `scene` and `sceneObject` are the exception: they are studio internals.
 
 ## 3. Naming
 
 - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
   nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
-- Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`.
+- Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 
@@ -76,6 +79,8 @@ key by key; a renamed key looks like one removal plus one addition.
   param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
   no valid value (AGENTS.md, "Inputs override params"). An optional input without a
   same-named param documents what the node does when it is unwired.
+- Code that reads a node's ports or params reads them through `effectiveDefinition()` (`src/core/script.ts`),
+  not the catalog alone: a script node's come from its header (#35).
 
 ## 6. Units and spaces
 
@@ -86,8 +91,8 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 7. Tests and docs
 
 - New or changed node logic that does not need a browser has a unit test (`tests/unit/`).
-- A new demo graph in `public/graphs/` is added to the `it.each` list in `tests/unit/graph.test.ts`,
-  which validates each demo graph against the real catalog and `GRAPH_VERSION`.
+- A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
+  and validates it against the real catalog and `GRAPH_VERSION` (#110).
 - The README node table lists new nodes; ⚡ marks live params.
 
 ## Commands

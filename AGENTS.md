@@ -16,34 +16,48 @@ See the [README](./README.md) for the architecture, the node list and the known 
 
 | Tool | How it gets these instructions |
 |---|---|
-| Codex, Cursor, Antigravity | Read `AGENTS.md` natively |
-| GitHub Copilot | VS Code and the cloud agent read `AGENTS.md`. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) inlines the critical rules for chat and code review on github.com. [`.github/instructions/`](.github/instructions/) adds path-specific rules (cloud agent, code review, VS Code) |
-| Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md` |
-| Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/) |
+| Cursor | Reads `AGENTS.md`, and a nested one when working with files in its folder |
+| Codex | Reads `AGENTS.md` from the project root down to the working directory, at startup: a session started at the root does not get the nested ones |
+| Antigravity | Reads `AGENTS.md` in the workspace folder and above, not in subfolders |
+| GitHub Copilot | The cloud agent, code review on github.com, VS Code chat and the CLI read `AGENTS.md`. On github.com the nearest one takes precedence; in VS Code nested ones are experimental and off by default. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) inlines the critical rules for chat on github.com and code review in VS Code, which do not read `AGENTS.md`. [`.github/instructions/`](.github/instructions/) adds path-specific rules (cloud agent, code review, VS Code) |
+| Gemini CLI | [`.gemini/settings.json`](.gemini/settings.json) sets `context.fileName` to `AGENTS.md`. It loads context files in a folder when a tool touches it; its documentation describes this for `GEMINI.md` only |
+| Claude Code | [`CLAUDE.md`](CLAUDE.md) imports this file and adds Claude-specific notes. A nested `CLAUDE.md`, with the `AGENTS.md` it imports, loads when Claude reads, writes or edits a file in its folder. Reviewers live in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/), hooks in [`.claude/hooks/`](.claude/hooks/) |
 
-Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file. `npm run check:agents` checks that the pointer files link here and that the commands and paths named here exist.
+Pointer files never duplicate a rule, except where a tool cannot follow links (Copilot on github.com). Inlined rules are a short subset of this file and the nested ones. `npm run check:agents` checks that the pointer files link here, that the commands and paths named here and in the nested files exist, and that this file lists every nested folder.
+
+### Folders with their own file
+
+- `plugins/jsartoolkit-nft/`: how `NftSession` maps the graph onto the facade, and the worker files.
+- `src/mcp/`: the MCP server and its tools.
+- `tests/e2e/`: ports, the lock's escape, the fake camera.
+
+Each has an `AGENTS.md` and a one-line `CLAUDE.md` that imports it. Paths in a nested file are written from the repository root, so the check can find them. **Before changing a file in one of these folders, read its `AGENTS.md`:** not every tool loads it on its own (see the table). A nested file only refines this file for its folder and never contradicts it, because Cursor, Codex and Copilot favour the nearer file; if they ever disagree, this file wins.
+
+In Claude Code, run `revise-claude-md` (from the `claude-md-management` plugin) at the end of a session. It proposes additions to `CLAUDE.md`; put what it finds in this file instead, unless it is specific to Claude Code.
 
 ## Commands
 
 - Install: `npm install`, then `npm run assets` (camera parameters, NFT datasets, test photo; not committed).
+- Dev server: `npm run dev` (builds the standalone player first, then Vite).
 - Typecheck: `npm run typecheck`
 - Unit + integration tests: `npm test`. Integration tests use the Node build of `@webarkit/jsartoolkit-nft` and read the assets with paths relative to the repository root, so run them from the root.
+- Unit tests run in Node, with no DOM: a factory that needs one gets a minimal fake `document` and a mocked `WebGLRenderer` (as `tests/unit/render-script-node.test.ts` does).
 - Build: `npm run build` (tsc, then the standalone player into `public/__player`, then the studio).
-- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock (`PW_NO_LOCK=1` skips it too). Each checkout serves its build on its own port, derived from its path; `PW_PORT` picks the port, `PW_REUSE_SERVER=1` tests a server already running on it.
-- Benchmarks: `npm run bench` (tinybench through tsx; Vitest 5 has no `bench`).
+- E2e: `npm run test:e2e` (Playwright, Chromium with a fake camera generated from the test photo). Set `PW_CHROMIUM_PATH` to use a preinstalled Chromium. Runs from different worktrees queue on a lock shared by every checkout, because concurrent runs starve the machine and time out: use `npm run test:e2e -- <playwright args>`, not `npx playwright test`, which skips the lock.
+- Benchmarks: `npm run bench` (tinybench through tsx).
+- Plugin API package: `npm pack -w @webarkit/studio-plugin-api` generates the types in `packages/studio-plugin-api/` and packs them; `npm run build:plugin-api` only generates them. Not published (#29). A version bump of the package also updates its entry in `package-lock.json` (`npm install --package-lock-only`).
 - Agent files: `npm run check:agents`.
-- MCP server: `npm run mcp:studio` (stdio; see "MCP server" below).
+- MCP server: `npm run mcp:studio` (stdio; see `src/mcp/AGENTS.md`).
 - Trackability: `npm run trackability -- <dataset>` rates an NFT dataset from its `.fset3` and `.fset` (exit 0 good or fair, 1 poor, 2 error; `--json`). `npm run example:marker` and `npm run example:project -- <dataset>` run the creative pipeline example. See [`docs/agents/creative-tools.md`](docs/agents/creative-tools.md), which also sets up the Blender, ComfyUI and Krita MCP servers (never in the shared `.mcp.json`).
 - Tracking traces: `npm run trace:record -- --out a.jsonl` records a deterministic trace in Node (`--filter`, `--settings`, `--replay <trace>`, `--golden`); `npm run trace:diff -- a.jsonl b.jsonl` compares two traces and exits non-zero above its thresholds. See "Tracking traces" below.
 
-CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.
+CI (`.github/workflows/ci.yml`, Node 22) runs the agent files check, typecheck, tests, build and e2e. Do not claim a change is verified without running them.
 
-## Test assets and the fake camera
+## Test assets
 
 - `npm run assets` (`scripts/fetch-assets.mjs`) downloads from the jsartoolkitNFT repository:
   - the camera parameters and the pinball and kuva NFT datasets into `public/data/`;
   - a photo of the printed pinball marker into `tests/fixtures/pinball-demo.jpg`, and into `public/data/` for the no-camera demo (`pinball-image`, `source.image`).
-- The e2e global setup (`tests/e2e/global-setup.ts`) turns that photo into a Y4M video for Chromium's fake camera (`tests/e2e/fake-camera.ts`), written to `tests/e2e/.cache/`. The marker is visible for 4 s, then hidden for 2 s, in a loop, so the tests see both found and lost.
 - None of these files are committed. If a test cannot find them, run `npm run assets`.
 
 ## Tracking traces
@@ -56,45 +70,39 @@ CI (`.github/workflows/ci.yml`) runs the agent files check, typecheck, tests, bu
 
 In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger/`) reproduces, records, diffs and reports.
 
-## MCP server
-
-`src/mcp/` is an MCP server (#8) over stdio, declared in `.mcp.json` as `webarkit-studio`
-(`node --import tsx src/mcp/main.ts`, from the repository root). It loads the plugins of
-`webarkit-studio.config.ts`, so its tools see the studio's catalog and registry, never a node list of their own.
-
-- `catalog_list`: node types, ports, params, defaults, `live` flags, the graph version and the loaded plugins.
-- `graph_validate`: `validateGraph()`, as a list of problems.
-- `graph_create`, `graph_edit`: ops (add / remove nodes, connect / disconnect, set params), checked against the catalog, all or nothing.
-- `tracking_run`: the graph's tracker on JPEG frames in Node; returns trace records (`TraceFrame`, the facade's `FrameResult`) and a per-marker summary. Needs `npm run assets` for the demo data.
-- `export_bundle`: the standalone app `.zip`, from the studio build (`baseDir` defaults to `dist/`: run `npm run build`). `public/` is not enough: plugin files such as the tracker's workers are only served by Vite or written into the build (#47).
-
-Tool names use `_` (issue #8 wrote them with a dot: some clients and model APIs refuse dots). Graphs are passed as
-JSON or as a path; nothing is written except `export_bundle`'s zip (an existing file is overwritten). A tool is one module in `src/mcp/tools/` (a
-`StudioTool`) and one entry in `src/mcp/tools/index.ts`. `src/mcp/` never imports `src/editor` or `plugins/`:
-a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webarkit-studio.node.config.ts`
-(kept out of the browser config, it imports Node builds).
-
 ## Architecture rules
 
 - **The JSON graph is the source of truth.** The editor and the runtime both depend on `src/core`, and never on each other.
 - **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both.
+- **Read a node's ports through `effectiveDefinition()`** (`src/core/script.ts`), never `NODE_CATALOG[type].inputs` alone: a script node's ports and params come from its script's header, per node (#35). Validation, the runtime, the editor and the MCP server all do. A script runs in the page: the studio asks before running scripts from someone else, the player refuses them from a `?graph=` link, and the MCP server never runs them. A node runs code when its catalog definition says `runsCode: true` (`script.lite`, `three.script`, `three.renderScript`): those three refusals read that flag through `isScriptType()`, never a node's name.
 - **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
   - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.
-  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily (and `webarkit-studio.node.config.ts`, the plugins' Node-only parts for the MCP server). A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT code lives outside its plugin (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both).
-  - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`).
-- **Renamed or removed node types, ports or params are a format change**: bump `GRAPH_VERSION`, update `public/graphs/` and add a `CHANGELOG.md` line.
+  - `src/` never imports a plugin: only `webarkit-studio.config.ts` does, lazily (and `webarkit-studio.node.config.ts`, the plugins' Node-only parts for the MCP server). A plugin's build-time part (a Vite plugin, Node side, such as `plugins/jsartoolkit-nft/vite.ts`) is imported by `vite.config.ts`. No jsartoolkitNFT node type or package import lives in `src/`, and neither does anything specific to its datasets, which it declares as an asset kind (`tests/unit/jsartoolkit-nft-plugin.test.ts` checks both). The exception is `src/core/migrations.ts`, whose steps are frozen history and name what a graph held at the time.
+  - The core sockets (`CORE_SOCKET_TYPES` in `src/core/sockets.ts`) and their values are the plugin API's contract: changing one is a breaking change, which bumps `PLUGIN_API_VERSION` (`src/core/plugins.ts`) and the major version of the plugin API package (`packages/studio-plugin-api/`). The values of the `renderer`, `scene` and `sceneObject` sockets are the exception: they are studio internals, which plugins may only pass through.
+- **A node type, port or param renamed or removed, a changed socket type or param kind, or a change in what a value means is a format change**: bump `GRAPH_VERSION`, add its migration to `src/core/migrations.ts` with a test that an older document opens, update `public/graphs/` and add a `CHANGELOG.md` line. A migration writes literal types and params, and never reads the catalog or the loaded plugins, because it must give the same result forever. A document from outside enters through `loadGraphDocument()`, not `validateGraph()`; an autosave or a file on Import, which may be work in progress, through `loadUnfinishedGraphDocument()` (#86); Run and the app export stay strict.
 - **Naming:**
   - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`).
+  - Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
   - `webarkit.*` is reserved for webarkit/webarkit trackers.
+  - A new reserved namespace updates every list of them: `RESERVED_NAMESPACES` (`src/core/plugins.ts`), the naming rules here, the graph-review checklist, `CONTRIBUTING.md` and the README (#81, #90, #92).
   - Do not name nodes after packages they do not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 - **Units and space:**
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
   - The camera looks down −Z.
-- **Tracking is the jsartoolkitNFT tracker facade** (#5), in the facade's own worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14). `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph's values onto it and its target ids onto dataset indices; it depends only on the facade's public API, so the browser (over the worker) and the Node tests (`createNFTTracker`) share it. Do not reimplement in this repository what the facade does (found / lost, filters, lens, projection, the worker and its protocol). The worker files are served unchanged from `jsartoolkit-nft/<version>/` next to the page (`plugins/jsartoolkit-nft/worker-files.ts`, `vite.ts`); the only code of ours in the worker is `virtual-fetch.ts`, which serves uploaded datasets.
+- **Tracking is the jsartoolkitNFT tracker facade** (#5), in the facade's own worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`, #14). Do not reimplement in this repository what the facade does (found / lost, filters, lens, projection, the worker and its protocol).
 - **Live params** (`live: true`) must be applied in `onParamChange` without a restart. Anything else restarts the graph.
 - **Inputs override params:** a param the graph can drive gets an optional input with the same name and a matching socket type (`number` for a number param, `vector3` for a vector3 param, `color` for a color param). While a valid value arrives on it, the input wins; otherwise the param applies. The editor shows the param disabled while that input is wired. An optional input without a same-named param falls back to the node's documented behaviour when unwired (for example `math.expression`'s `t` is its own clock).
-- **Math and colour nodes** (`math.*`, `color.*`) compute on plain numbers and arrays (marker space; colours `[r, g, b, a]` 0–1 in sRGB), never on renderer types; only the renderer adapters convert.
+- **Both renderer adapters keep the same semantics.** `SceneHandle` (`src/runtime/renderers/adapter.ts`) means the same on Three.js and Babylon.js, on plain values with no engine types, down to the clip names and the pose a stopped clip holds. Where the engines differ, the adapter hides it, and a behaviour goes in the table of tests that runs on both (`tests/e2e/animations.spec.ts` for animations).
+- **Math and colour nodes** (`math.*`, `color.*`) compute on plain numbers and arrays (marker space; colours `[r, g, b, a]` 0–1 in sRGB), never on renderer types; only the renderer adapters convert. Each of them, and each `logic.*` node, decides and documents what a non-finite input (NaN, ±Infinity) gives, with a test (#81, #96, #97, #98; animations, #80).
+- **Names that come from a graph** (a param value, a key, an operator, a select option) are looked up with `Object.hasOwn`, never `obj[name]`, which also finds `__proto__`, `constructor` and `toString` (#81: `Object.hasOwn(COMPARISONS, op)` after `op: '__proto__'` threw at init; `isScriptType()`, #101; `math.expression`). Keys that come from a graph are written with `Object.defineProperty`, never `obj[key] = …`, which sets the prototype for `"__proto__"` (#90). An unknown value gives the node's safe default, never a throw (#81, #99). `validateGraph()` refusing a select value outside its options agrees with this: it guards the document, while the safe default guards a node that still meets one (#110).
+- **An array output is always a new array**, never one changed in place: `computed()` and the nodes reading it compare inputs by reference, so a change in place is never seen (#96, #98, #99; a script's outputs too, #100). Make a new array only when a value changes.
+- **Nothing a script does may throw out of its node**: its compile, its hooks, an early return, and a render it drives (#100, #102). An error shows on the node and in the log, and the graph runs on. Generated code follows the same rule: a marker that is not loaded is logged, not thrown (#103).
+- **An async `init` checks that the node was not disposed during its awaits** before it mounts or creates anything: a Stop during startup otherwise leaves a canvas, a renderer or a listener behind (#102). `dispose` releases everything `init` made (#90, #101).
+- **Source code export** (#64, `src/export/codegen/`): a node is written only if an emitter exists for its type and target (`three`); otherwise it is refused by name, never dropped.
+  - Graph text (ids, names, params) reaches the generated code only through `literal()`, or `commentText()` in comments (`src/export/codegen/text.ts`, #103): `JSON.stringify` leaves U+2028 / U+2029 as they are, and inside a `//` comment they end it, so what follows runs as code.
+  - Variable names come from the context's `name()`; names an emitter's code declares itself (block locals, callback parameters) go in its `locals`, so no node is given them (#103).
+  - Exact versions of the core's dependencies come from `__CODEGEN_VERSIONS__`, which `vite.config.ts` and `vitest.config.ts` define (`scripts/package-versions.mjs`): three does not export its `package.json`.
 
 ## Adding a node
 
@@ -103,9 +111,10 @@ a plugin's tracker runs in Node through the `HeadlessTracker` it lists in `webar
 3. Register it under the same type in `NODE_REGISTRY` (`src/runtime/registry.ts`).
 4. Add a unit test in `tests/unit/` for any logic that does not need a browser; add an e2e check if the node changes what the preview shows or logs.
 5. Add the node to the README node table (⚡ for live params).
-6. A new node is not a format change. Renaming or removing an existing one is (see above).
+6. Add a line under `## [Unreleased]` in `CHANGELOG.md`.
+7. A new node is not a format change. Renaming or removing an existing one is (see above).
 
-A plugin's node goes into the plugin instead of steps 1 to 3: its catalog (for jsartoolkitNFT, `plugins/jsartoolkit-nft/catalog.ts`) and the `factories` of its manifest (`plugins/jsartoolkit-nft/index.ts`). Steps 4 to 6 are the same.
+A plugin's node goes into the plugin instead of steps 1 to 3: its catalog (for jsartoolkitNFT, `plugins/jsartoolkit-nft/catalog.ts`) and the `factories` of its manifest (`plugins/jsartoolkit-nft/index.ts`). Steps 4 to 7 are the same.
 
 In Claude Code, the `new-node` skill (`.claude/skills/new-node/`) walks through these steps.
 
@@ -114,7 +123,7 @@ In Claude Code, the `new-node` skill (`.claude/skills/new-node/`) walks through 
 Before committing, review the diff against the matching checklist:
 
 - [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets. For changes to `src/core/`, `src/nodes/`, `src/plugin-api/`, `src/plugins/`, `src/runtime/registry.ts`, `src/runtime/nodes/`, a plugin's catalog and manifest, and `public/graphs/`.
-- [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, readiness for the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `plugins/`, the tracker nodes and `src/runtime/filters/`.
+- [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, use of the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `plugins/`, the tracker nodes, `src/runtime/filters/` and `tests/integration/`.
 
 In Claude Code, the `graph-reviewer` and `tracking-reviewer` agents run them. In other tools, ask for a review of `git diff dev...HEAD` against the checklist.
 
@@ -130,6 +139,7 @@ Work is tracked with GitHub issues and milestones. The roadmap is #1; each phase
   4. Implement, run the commands above and the matching review checklist.
   5. Open the PR against `dev`, with `Closes #<n>` in the body. The default branch is `master`, so **merging into `dev` does not close the issue**: the keyword only takes effect when the release reaches `master`.
   6. After the PR is merged into `dev`, tick the issue's task list and comment on the issue with the PR link and what is left, if anything.
+- **An issue that contradicts this file:** stop and report the conflict, with the file and line of each side, propose a reading, and wait for the maintainer's ruling. The issue may mean to change the rule (#81).
 - **An issue is done** when a PR that references it is merged into `dev`, every task in its body is ticked (or struck out with a reason), its acceptance criteria are met and all its sub-issues are done.
 - **Releases close milestones, nothing else.** Before a release, audit the milestone with [`docs/agents/checklists/milestone-audit.md`](docs/agents/checklists/milestone-audit.md). Release only when every issue is done or explicitly moved to another milestone. Close the milestone only after the release (`dev` merged into `master`, tag and GitHub release) exists. Never close a milestone, publish a release or move issues between milestones without the maintainer's confirmation.
 
@@ -141,4 +151,6 @@ In Claude Code, the `work-on-issue` skill follows these steps, the `milestone-au
 - Conventional Commits; branch from `dev` and open PRs against `dev`, never `master`.
 - License: LGPL-3.0-or-later.
 - Small, reviewable diffs that match the surrounding style.
+- Write U+2028 and U+2029 in source and tests as the escapes `\u2028` / `\u2029`, never as the characters, which end a line in JavaScript; check a file with `grep -n $'\xe2\x80\xa8\|\xe2\x80\xa9'`.
+- A change a user can see adds a line under `## [Unreleased]` in `CHANGELOG.md`; documentation, test and tooling changes add none (`CONTRIBUTING.md`, "Changelog").
 - Don't state facts about sibling repositories (jsartoolkitNFT, ARnft, webarkit/webarkit) from memory: check the repository, because they move fast. In Claude Code, the `check-upstream` skill does this for the jsartoolkitNFT facade.

@@ -1,8 +1,11 @@
 /**
- * Node definitions and socket types of the jsartoolkitNFT plugin: metadata
- * only, like the studio's catalog (src/nodes/catalog.ts).
+ * Node definitions, socket types and asset kinds of the jsartoolkitNFT plugin:
+ * metadata only, like the studio's catalog (src/nodes/catalog.ts).
  */
-import type { NodeDefinition, SocketDefinition } from '@webarkit/studio-plugin-api';
+import type { AssetKindDefinition, NodeDefinition, SocketDefinition } from '@webarkit/studio-plugin-api';
+
+/** An ARToolKit NFT dataset: its three files, or a compressed .zft behind a URL. The id is in project files and browsers' stores. */
+export const ASSET_KINDS: AssetKindDefinition[] = [{ id: 'nftDataset', label: 'NFT dataset', extensions: ['iset', 'fset', 'fset3'], alternative: 'zft' }];
 
 /** ARToolKit data only these nodes exchange, so it cannot be wired into another tracker's nodes. */
 export const SOCKETS: SocketDefinition[] = [
@@ -92,7 +95,7 @@ export const NODES: NodeDefinition[] = [
       trace: { type: 'trackingTrace', label: 'Trace' },
     },
     params: {
-      build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default' } },
+      build: { kind: 'select', label: 'Build', default: 'simd', options: { SIMD: 'simd', Standard: 'default', Threaded: 'td', Auto: 'auto' } },
     },
   },
   {

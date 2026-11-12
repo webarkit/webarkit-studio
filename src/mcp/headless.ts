@@ -3,11 +3,12 @@
  * that feed a tracker node's inputs (camera params, datasets, settings,
  * filter). They are value nodes: their factories (the registry's, so plugins
  * included) are called and initialised as the runtime does, then disposed.
+ * A script node (#35) is never run here: its code would run in the server's process.
  */
 import { pathToFileURL } from 'node:url';
 import { parseAssetRef } from '../core/assets';
 import { resolveParams, topologicalOrder, type GraphDocument, type GraphNode } from '../core/graph';
-import { NODE_CATALOG } from '../nodes/catalog';
+import { effectiveDefinition, isScriptType } from '../core/script';
 import { NODE_REGISTRY } from '../runtime/registry';
 import type { PortValues, RuntimeContext, RuntimeNode } from '../runtime/types';
 
@@ -34,7 +35,8 @@ export async function evaluateInputs(doc: GraphDocument, nodeId: string, skip: r
   const instances: RuntimeNode[] = [];
   const gather = (node: GraphNode, ports: (port: string) => boolean): PortValues => {
     const inputs: PortValues = {};
-    for (const [key, spec] of Object.entries(NODE_CATALOG[node.type].inputs)) {
+    // Effective ports: a script node's come from its header (src/core/script.ts).
+    for (const [key, spec] of Object.entries(effectiveDefinition(node)!.inputs)) {
       if (!ports(key)) continue;
       const values = into(node.id)
         .filter((e) => e.to.port === key)
@@ -44,9 +46,12 @@ export async function evaluateInputs(doc: GraphDocument, nodeId: string, skip: r
     }
     return inputs;
   };
+  // Never a script (#35): its code would run in this Node process, with no trust prompt. Checked before any node runs.
+  const script = doc.nodes.find((n) => needed.has(n.id) && isScriptType(n.type));
+  if (script) throw new Error(`node ${script.id} (${script.type}) is a script: the MCP server never runs scripts`);
   try {
     for (const node of topologicalOrder({ ...doc, nodes: doc.nodes.filter((n) => needed.has(n.id)) })) {
-      const def = NODE_CATALOG[node.type];
+      const def = effectiveDefinition(node)!;
       const params = resolveParams(def, node.params);
       for (const [key, spec] of Object.entries(def.params)) {
         if (spec.kind === 'string' && spec.asset && parseAssetRef(String(params[key]))) {
@@ -62,6 +67,7 @@ export async function evaluateInputs(doc: GraphDocument, nodeId: string, skip: r
         studio: false,
         virtualFiles: {},
       };
+      if (!Object.hasOwn(NODE_REGISTRY, node.type)) throw new Error(`node ${node.id}: no runtime implementation for "${node.type}"`);
       const instance = NODE_REGISTRY[node.type](params, ctx);
       instances.push(instance);
       outputs.set(node.id, { ...((await instance.init?.(gather(node, () => true))) ?? {}) });

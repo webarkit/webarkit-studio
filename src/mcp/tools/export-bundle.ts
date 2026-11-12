@@ -8,9 +8,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as z from 'zod';
+import { loadGraphDocument, upgradeNote } from '../../core/migrations';
 import { exportAppBundle } from '../../export/app-bundle';
 import { usesUploadedAssets } from '../../export/exporters';
-import { validateGraph } from '../../core/graph';
 import { graphInput, readGraphInput } from '../graph-input';
 import { withStaticServer } from '../static-server';
 import { defineTool } from '../tool';
@@ -29,9 +29,11 @@ export const exportBundle = defineTool({
     baseDir: z.string().default('dist').describe("The studio build (npm run build), served as the studio's page: the player, plugin files and the graph's relative URLs."),
   }),
   async run(input, env) {
-    const doc = validateGraph(readGraphInput(input, env));
+    const loaded = loadGraphDocument(readGraphInput(input, env));
+    const { doc } = loaded;
     if (usesUploadedAssets(doc)) throw new Error('the graph uses uploaded assets (asset://), which only the studio has: export it from the studio');
-    const log: string[] = [];
+    const upgraded = upgradeNote(loaded);
+    const log: string[] = upgraded ? [upgraded] : [];
     const result = await withStaticServer(resolve(env.root, input.baseDir), (baseUrl) => exportAppBundle(doc, { baseUrl, log: (m) => log.push(m) })).catch((err: Error) => {
       // A file the build writes is missing: say which build baseDir must hold.
       if (/HTTP 404|not built/.test(err.message)) err.message += ` (baseDir ${input.baseDir} must hold the studio build: run "npm run build")`;

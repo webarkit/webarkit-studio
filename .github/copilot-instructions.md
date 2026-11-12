@@ -7,11 +7,11 @@ This file inlines the critical rules because some Copilot surfaces (chat and cod
 ## Critical rules
 
 - **The JSON graph is the source of truth.** `src/editor/` and `src/runtime/` both depend on `src/core/` and never on each other.
-- **Catalog / registry split.** `src/nodes/catalog.ts` holds metadata only; implementations live in `src/runtime/nodes/` and are mapped in `src/runtime/registry.ts`. Every node type exists in both.
-- **Format changes.** Renaming or removing a node type, port or param, or changing what a value means, requires a `GRAPH_VERSION` bump in `src/core/graph.ts`, updated `public/graphs/` and a `CHANGELOG.md` line. A new node or a new optional param with a default is not a format change.
+- **Catalog / registry split.** `src/nodes/catalog.ts` holds metadata only; implementations live in `src/runtime/nodes/` and are mapped in `src/runtime/registry.ts`. Every node type exists in both. A plugin's nodes live in its own catalog and manifest instead.
+- **Format changes.** Renaming or removing a node type, port or param, changing a socket type or a param kind, or changing what a value means, requires a `GRAPH_VERSION` bump in `src/core/graph.ts`, its migration in `src/core/migrations.ts` with a test that an older document opens, updated `public/graphs/` and a `CHANGELOG.md` line. A new node or a new optional param with a default is not a format change.
 - **Naming.** Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); `webarkit.*` is reserved for webarkit/webarkit trackers; never name a node after a package it does not wrap.
 - **Units and spaces.** Marker space in millimetres, marker on the XY plane with +Z up; column-major matrices; the camera looks down −Z.
-- **Tracking.** The jsartoolkitNFT tracker facade does the tracking, in its own worker (`createNFTTrackerWorker`); `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto it and depends only on the facade's public API. No custom worker: only `virtual-fetch.ts` runs in the facade's worker.
+- **Tracking.** The jsartoolkitNFT tracker facade does the tracking, in its own worker (`createNFTTrackerWorker`); `NftSession` (`plugins/jsartoolkit-nft/nft-session.ts`) only maps the graph onto it and depends only on the facade's public API. No custom worker: only `virtual-fetch.ts` runs in the facade's worker. The rest is in `plugins/jsartoolkit-nft/AGENTS.md`.
 - **Live params** (`live: true`) are applied in `onParamChange` without a restart.
 - **Conventions.** English only; Conventional Commits; branch from `dev` and target `dev`, never `master`; LGPL-3.0-or-later.
 

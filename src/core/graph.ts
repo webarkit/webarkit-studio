@@ -6,6 +6,7 @@
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { compareVersions, isVersion, LOADED_PLUGINS } from './plugins';
+import { effectiveDefinition, isScriptType } from './script';
 import { socketsCompatible } from './sockets';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
@@ -16,7 +17,8 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
  * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
- * Older documents are rejected (prototype stage, no migration).
+ * v4 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
+ * formats, stay rejected. A bump ships its migration, and a test that an older document opens.
  */
 export const GRAPH_VERSION = 5;
 
@@ -81,7 +83,8 @@ export function emptyGraph(name = 'Untitled'): GraphDocument {
 export function resolveParams(def: NodeDefinition, params: Record<string, ParamValue>): Record<string, ParamValue> {
   const out: Record<string, ParamValue> = {};
   for (const [key, spec] of Object.entries(def.params)) {
-    const value = key in params ? params[key] : spec.default;
+    // Own keys only: a key such as "constructor" must never read what every object has.
+    const value = Object.hasOwn(params, key) ? params[key] : spec.default;
     out[key] = Array.isArray(value) ? [...value] : value; // nodes may change their copy
   }
   return out;
@@ -94,16 +97,19 @@ export class GraphValidationError extends Error {
 }
 
 /**
- * Structural validation: the plugins the graph needs are loaded, known node
+ * Validation of a document of the current format; loadGraphDocument()
+ * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles.
+ * non-multiple inputs, no cycles, required inputs connected.
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
+ * `unfinished`: a graph still being built may leave required inputs unconnected. Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
   catalog: Record<string, NodeDefinition> = NODE_CATALOG,
   loaded: Record<string, string> = LOADED_PLUGINS,
+  { unfinished = false }: { unfinished?: boolean } = {},
 ): GraphDocument {
   const problems: string[] = [];
   const g = doc as GraphDocument;
@@ -141,7 +147,8 @@ export function validateGraph(
     nodes.set(n.id, n);
     const ns = namespaceOf(n.type);
     if (missing.has(ns)) continue;
-    if (!catalog[n.type]) problems.push(`node ${n.id}: unknown type "${n.type}"`);
+    // Object.hasOwn: "constructor", "toString" or "__proto__" is an unknown type, not what the object inherits (#110).
+    if (!Object.hasOwn(catalog, n.type)) problems.push(`node ${n.id}: unknown type "${n.type}"`);
     else if (Object.hasOwn(loaded, ns) && !listed.has(ns)) {
       problems.push(`node ${n.id}: type "${n.type}" is from plugin ${ns}, which the graph's plugins do not list`);
     }
@@ -156,8 +163,9 @@ export function validateGraph(
       continue;
     }
     if (missing.has(namespaceOf(src.type)) || missing.has(namespaceOf(dst.type))) continue; // reported as the missing plugin
-    const out = catalog[src.type]?.outputs[e.from.port];
-    const inp = catalog[dst.type]?.inputs[e.to.port];
+    // Effective ports: a script node's come from its header (src/core/script.ts).
+    const out = effectiveDefinition(src, catalog)?.outputs[e.from.port];
+    const inp = effectiveDefinition(dst, catalog)?.inputs[e.to.port];
     if (!out) problems.push(`edge ${e.id}: ${src.type} has no output "${e.from.port}"`);
     if (!inp) problems.push(`edge ${e.id}: ${dst.type} has no input "${e.to.port}"`);
     if (out && inp && !socketsCompatible(out.type, inp.type)) {
@@ -171,17 +179,29 @@ export function validateGraph(
   }
 
   for (const n of g.nodes) {
-    const def = catalog[n.type];
+    const def = effectiveDefinition(n, catalog);
     if (!def) continue;
+    // A script's text is run (#35): never anything but text, whose String() would be read differently by each part.
+    if (isScriptType(n.type, catalog) && n.params && Object.hasOwn(n.params, 'script') && typeof n.params.script !== 'string') {
+      problems.push(`node ${n.id} (${def.label}): param "script" must be text`);
+    }
     for (const [key, spec] of Object.entries(def.params)) {
-      if (!(spec.kind in ARRAY_PARAM_LENGTH) || !n.params || !(key in n.params)) continue;
+      // A select holds one of its options' values; anything else was never valid, only unchecked (#110).
+      if (spec.kind === 'select' && n.params && Object.hasOwn(n.params, key)) {
+        const values = Object.values(spec.options);
+        if (!values.includes(n.params[key] as string)) {
+          problems.push(`node ${n.id} (${def.label}): param "${key}" must be one of ${values.map((v) => JSON.stringify(v)).join(', ')}`);
+        }
+        continue;
+      }
+      if (!(spec.kind in ARRAY_PARAM_LENGTH) || !n.params || !Object.hasOwn(n.params, key)) continue;
       const length = ARRAY_PARAM_LENGTH[spec.kind as keyof typeof ARRAY_PARAM_LENGTH];
       const value = n.params[key];
       if (!Array.isArray(value) || value.length !== length || !value.every(Number.isFinite)) {
         problems.push(`node ${n.id} (${def.label}): param "${key}" must be ${length} numbers`);
       }
     }
-    for (const [port, spec] of Object.entries(def.inputs)) {
+    for (const [port, spec] of unfinished ? [] : Object.entries(def.inputs)) {
       if (!spec.optional && !inputUse.has(`${n.id}:${port}`)) {
         problems.push(`node ${n.id} (${def.label}): required input "${spec.label}" is not connected`);
       }

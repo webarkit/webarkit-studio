@@ -1,11 +1,14 @@
 /**
  * Export formats. Each one turns the current graph into a downloadable file.
- * New formats (e.g. readable jsartoolkitNFT source code) are added here and
- * appear in the studio's Export menu.
+ * New formats are added here and appear in the studio's Export menu.
  */
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
+import { checkSourceCode } from './codegen/check';
+import { slugify } from './names';
+
+export { graphTitle, slugify } from './names';
 
 /** The project's uploaded assets, as exporters read them. */
 export interface ProjectAssets {
@@ -34,26 +37,32 @@ export interface Exporter {
   id: string;
   label: string;
   description: string;
-  /** false = shown in the menu as planned, not selectable. */
-  available: boolean;
+  /**
+   * What follows the graph's slug in the file's name (`.json`, `-pages.zip`), its type and its extension: the
+   * save dialog offers them before the export runs (#118). run() gives the same name.
+   */
+  suffix: string;
+  mime: string;
+  extension: string;
+  /**
+   * Throws if run() would refuse the graph, without building anything (#118). The studio calls it before the save
+   * dialog, which creates the chosen file: a refused graph must not leave an empty one. Synchronous, so the dialog
+   * still has the click's user gesture.
+   */
+  precheck?(doc: GraphDocument): void;
   run(doc: GraphDocument, ctx: ExportContext): Promise<ExportResult>;
 }
 
-export function slugify(name: string | undefined): string {
-  const slug = (name ?? '')
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'webar-app';
-}
+/** The name an exporter gives its file, known before it runs. */
+export const defaultFilename = (exporter: Exporter, doc: Pick<GraphDocument, 'name'>) => `${slugify(doc.name)}${exporter.suffix}`;
 
 const graphJson: Exporter = {
   id: 'graph-json',
+  suffix: '.json',
+  mime: 'application/json',
+  extension: '.json',
   label: 'Graph (.json)',
   description: 'The node graph only. Re-import it in the studio or run it with any player.',
-  available: true,
   async run(doc, ctx) {
     if (usesUploadedAssets(doc)) ctx.log('⚠ the graph uses uploaded assets, which a .json does not carry: export a Project (.zip) to keep them');
     return {
@@ -65,9 +74,11 @@ const graphJson: Exporter = {
 
 const appBundle: Exporter = {
   id: 'app-bundle',
+  suffix: '.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'Standalone app (.zip)',
   description: 'Player + graph + assets, ready for any static web server (GitHub Pages, Netlify…).',
-  available: true,
   async run(doc, ctx) {
     const { exportAppBundle } = await import('./app-bundle');
     return exportAppBundle(doc, ctx);
@@ -76,9 +87,11 @@ const appBundle: Exporter = {
 
 const project: Exporter = {
   id: 'project',
+  suffix: '.webarkit.zip',
+  mime: 'application/zip',
+  extension: '.zip',
   label: 'Project (.zip)',
   description: 'The graph and its uploaded assets, to open in another browser with Import…',
-  available: true,
   async run(doc, ctx) {
     const { packProject } = await import('./project');
     const zip = await packProject(doc, ctx.assets?.list() ?? []);
@@ -86,14 +99,34 @@ const project: Exporter = {
   },
 };
 
-const jsartoolkitSource: Exporter = {
-  id: 'jsartoolkitnft-source',
-  label: 'jsartoolkitNFT source code (.zip)',
-  description: 'Planned: readable, editable code (worker + Three.js) generated from the graph.',
-  available: false,
-  run() {
-    return Promise.reject(new Error('Not implemented yet'));
+const pagesProject: Exporter = {
+  id: 'pages-project',
+  suffix: '-pages.zip',
+  mime: 'application/zip',
+  extension: '.zip',
+  label: 'GitHub Pages project (.zip)',
+  description: 'The standalone app and a workflow that deploys it: push it to a repository of your own, with no token. Its README.md has the steps.',
+  async run(doc, ctx) {
+    const { exportPagesProject } = await import('./pages-project');
+    return exportPagesProject(doc, ctx);
   },
 };
 
-export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, jsartoolkitSource];
+const sourceCode: Exporter = {
+  id: 'source-code',
+  suffix: '-source.zip',
+  mime: 'application/zip',
+  extension: '.zip',
+  label: 'Source code (.zip)',
+  description:
+    'A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "pinball · Three.js" demo, and refuses others by name.',
+  precheck(doc) {
+    checkSourceCode(doc);
+  },
+  async run(doc, ctx) {
+    const { exportSourceCode } = await import('./codegen/export');
+    return exportSourceCode(doc, ctx);
+  },
+};
+
+export const EXPORTERS: Exporter[] = [graphJson, project, appBundle, pagesProject, sourceCode];

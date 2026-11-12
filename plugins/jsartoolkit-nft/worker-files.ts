@@ -21,20 +21,33 @@ export const WORKER_DIR = `jsartoolkit-nft/${pkg.version}/`;
 /** The facade's worker modules, under WORKER_DIR. */
 export const FACADE_DIR = 'facade/';
 
-/** The builds the controller offers (its `build` param). */
-export type WorkerBuild = 'simd' | 'default';
+/** The builds whose files the controller's `build` param can need (`auto` needs all of them). */
+export type WorkerBuild = 'simd' | 'default' | 'td';
 
 /** The worker file the facade starts for each build (its WORKER_FILES). */
 export const WORKER_FILES: Record<WorkerBuild, string> = {
   default: 'NFTTracker.worker.js',
   simd: 'NFTTracker_simd.worker.js',
+  td: 'NFTTracker_td.worker.js',
 };
+
+/**
+ * Files of the package that a build's worker starts itself, served unchanged at WORKER_DIR's root:
+ * the threaded build's pthreads. Its worker hands `new URL('NFTTracker_td.pthread.js', workerBase)`
+ * to its WASM module (`mainScriptUrlOrBlob`), so the file sits next to the files the facade starts.
+ */
+export const PACKAGE_EXTRA_FILES: Record<WorkerBuild, string[]> = { default: [], simd: [], td: ['NFTTracker_td.pthread.js'] };
 
 /** virtual-fetch.ts, types stripped. */
 export const VIRTUAL_FETCH_FILE = 'virtual-fetch.js';
 
 /** The files one build needs, relative to WORKER_DIR. */
-export const workerFiles = (build: WorkerBuild): string[] => [WORKER_FILES[build], FACADE_DIR + WORKER_FILES[build], VIRTUAL_FETCH_FILE];
+export const workerFiles = (build: WorkerBuild): string[] => [
+  WORKER_FILES[build],
+  FACADE_DIR + WORKER_FILES[build],
+  ...PACKAGE_EXTRA_FILES[build],
+  VIRTUAL_FETCH_FILE,
+];
 
 /** The shim the facade starts for `build`: static imports run in order, so the fetch is installed first. */
 export const workerShim = (build: WorkerBuild): string =>

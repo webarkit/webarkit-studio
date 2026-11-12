@@ -1,5 +1,5 @@
 // tracking_run (#8): the graph's tracker on still images, with the Node build. Needs `npm run assets`.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import jpeg from 'jpeg-js';
@@ -73,6 +73,18 @@ describe('tracking_run', () => {
   it('rejects a controller id that is not a tracker node', async () => {
     const result = await call(client, 'tracking_run', { graphPath: 'public/graphs/multi-three.json', frames: FRAMES, controller: 'nope' });
     expect(result).toEqual({ ok: false, error: 'no tracker node "nope" (tracker nodes: controller)' });
+  });
+
+  it('tracks an older graph, upgraded, exactly as the current one, and logs the upgrade', async () => {
+    const { plugins: _plugins, ...graph } = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8'));
+    const run = async (doc: unknown) => (await call(client, 'tracking_run', { graph: doc, frames: FRAMES })) as { ok: true; value: any };
+    const untimed = ({ log: _log, ...value }: any) => ({ ...value, frames: value.frames.map(({ processMs: _ms, ...f }: any) => f) });
+    const [current, upgraded] = [await run({ ...graph, plugins: _plugins }), await run({ ...graph, version: 4 })];
+    expect(current.value.markers[0].foundFrames).toBeGreaterThan(0);
+    expect(untimed(upgraded.value)).toEqual(untimed(current.value));
+    expect(upgraded.value.log[0]).toBe('↑ upgraded from v4 to v5');
+    const refused = await call(client, 'tracking_run', { graph: { ...graph, version: 3 }, frames: FRAMES, summaryOnly: true });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 5') });
   });
 
   it('writes repo-relative dataset paths and a replayable source for a photo that fills the frame', async () => {

@@ -7,8 +7,9 @@
 import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as z from 'zod';
-import { resolveParams, validateGraph } from '../../core/graph';
-import { NODE_CATALOG } from '../../nodes/catalog';
+import { resolveParams } from '../../core/graph';
+import { loadGraphDocument, upgradeNote } from '../../core/migrations';
+import { effectiveDefinition, isScriptType } from '../../core/script';
 import type { TraceFrame, TraceSource } from '../../runtime/trackers/trace';
 import { blank, letterboxFrame, loadJpeg, type RgbaFrame } from '../frames';
 import { graphInput, readGraphInput } from '../graph-input';
@@ -66,7 +67,13 @@ export const trackingRun = defineTool({
     summaryOnly: z.boolean().default(false).describe('Leave out the per-frame records.'),
   }),
   run: (input, env) => oneAtATime(async () => {
-    const doc = validateGraph(readGraphInput(input, env));
+    const loaded = loadGraphDocument(readGraphInput(input, env));
+    const { doc } = loaded;
+    // A script would run arbitrary code in this Node process, with no trust prompt (#35): refused before anything runs.
+    const scripts = doc.nodes.filter((n) => isScriptType(n.type));
+    if (scripts.length) {
+      throw new Error(`tracking_run never runs scripts: ${scripts.map((n) => `${n.id} (${n.type})`).join(', ')}. Remove them, or run the graph in the studio`);
+    }
     const trackers = doc.nodes.filter((n) => Object.hasOwn(HEADLESS_TRACKERS, n.type));
     const kinds = Object.keys(HEADLESS_TRACKERS).join(', ');
     let node = trackers[0];
@@ -125,9 +132,10 @@ export const trackingRun = defineTool({
         ? { kind: 'sequence', photo: repoPath(distinct[0]), sequence: input.frames.map(({ image, count }) => [image === 'blank' ? 'blank' : 'photo', count]), startMs, frameMs }
         : { kind: 'images', frames: input.frames.map(({ image, count }) => [image === 'blank' ? 'blank' : repoPath(image), count]), startMs, frameMs };
 
-    const log: string[] = [];
+    const upgraded = upgradeNote(loaded);
+    const log: string[] = upgraded ? [upgraded] : [];
     const inputs = await evaluateInputs(doc, node.id, tracker.videoInputs, dirUrl(resolve(env.root, input.baseDir)), (m) => log.push(m));
-    const params = resolveParams(NODE_CATALOG[node.type], node.params);
+    const params = resolveParams(effectiveDefinition(node)!, node.params); // a tracker node: its catalog definition
     const run = await withPinnedClock((setClock) => tracker.run({ inputs, params, video, frames, source, setClock }));
     // Local files as repo-relative paths, as the Node recorder writes them: comparable across machines.
     const local = (url: string) => (url.startsWith('file:') ? repoPath(fileURLToPath(url)) : url);

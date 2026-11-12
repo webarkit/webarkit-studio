@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mergeParamEdit, ParamEditAction, sameParamValue } from '../../src/editor/history';
+import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue } from '../../src/editor/history';
 import type { ParamValue } from '../../src/core/graph';
 
 /** A param store standing in for the editor: records every value applied to it. */
 function store() {
-  const values = new Map<string, ParamValue>();
+  const values = new Map<string, ParamValue | undefined>();
   const applied: string[] = [];
-  const apply = (nodeId: string, key: string, value: ParamValue) => {
+  const apply = (nodeId: string, key: string, value: ParamValue | undefined) => {
     values.set(`${nodeId}.${key}`, value);
     applied.push(`${nodeId}.${key}=${String(value)}`);
   };
@@ -14,6 +14,15 @@ function store() {
 }
 
 describe('param edit history', () => {
+  it('a removed value (undefined) comes back on undo, and goes again on redo (#35)', async () => {
+    const s = store();
+    const action = new ParamEditAction('s', 'height', 50, undefined, 0, s.apply);
+    await action.undo();
+    expect(s.values.get('s.height')).toBe(50);
+    await action.redo();
+    expect(s.values.get('s.height')).toBeUndefined();
+  });
+
   it('undo applies the previous value, redo the new one', async () => {
     const s = store();
     const action = new ParamEditAction('box', 'size', 80, 120, 0, s.apply);
@@ -56,5 +65,38 @@ describe('sameParamValue', () => {
     expect(sameParamValue([0, 0, 1], [0, 0, 2])).toBe(false);
     expect(sameParamValue([0, 0], [0, 0, 0])).toBe(false);
     expect(sameParamValue([1], 1)).toBe(false);
+  });
+});
+
+describe('graph name edit history (#118)', () => {
+  /** A name store standing in for the editor. */
+  function names(initial: string) {
+    const s = { name: initial, applied: [] as string[] };
+    const apply = (name: string) => {
+      s.name = name;
+      s.applied.push(name);
+    };
+    return { s, apply };
+  }
+
+  it('undo applies the previous name, redo the new one', async () => {
+    const { s, apply } = names('Untitled');
+    const action = new NameEditAction('Untitled', 'My graph', apply);
+    await action.undo();
+    expect(s.name).toBe('Untitled');
+    await action.redo();
+    expect(s.name).toBe('My graph');
+    expect(s.applied).toEqual(['Untitled', 'My graph']);
+  });
+
+  it('folds the edits of one session into one step, back to the first name', async () => {
+    const { s, apply } = names('Untitled');
+    const first = new NameEditAction('Untitled', 'M', apply);
+    expect(mergeNameEdit(first, new NameEditAction('M', 'My', apply))).toBe(true);
+    expect(mergeNameEdit(first, new NameEditAction('My', 'My graph', apply))).toBe(true);
+    expect(first.after).toBe('My graph');
+    await first.undo();
+    expect(s.name).toBe('Untitled');
+    expect(mergeNameEdit(undefined, first)).toBe(false);
   });
 });

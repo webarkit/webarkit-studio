@@ -1,0 +1,19 @@
+// Emits the declarations of the plugin API, which scripts/build-plugin-api.mjs bundles.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": [],
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "rootDir": "../..",
+    "outDir": ".build"
+  },
+  "files": ["../../src/plugin-api/index.ts"]
+}

@@ -1,6 +1,7 @@
 import { ClassicPreset, type GetSchemes } from 'rete';
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
+import { effectiveDefinition } from '../core/script';
 import { socketsCompatible, type SocketType } from '../core/sockets';
 
 /** One Rete socket instance per socket type; compatibility = same type. */
@@ -20,13 +21,15 @@ const socketFor = (type: SocketType) => {
   return sockets.get(type)!;
 };
 
-/** Editor-side node: a view of a catalog definition plus its params. */
+/**
+ * Editor-side node: a view of its definition plus its params. The definition is the effective one
+ * (src/core/script.ts): a script node's ports and params come from its header, and follow its script.
+ */
 export class StudioNode extends ClassicPreset.Node<
   Record<string, TypedSocket>,
   Record<string, TypedSocket>,
   Record<string, never>
 > {
-  readonly def: NodeDefinition;
   params: Record<string, ParamValue>;
   /** Runtime feedback shown in the node (Inspector values, init errors). Not saved. */
   status: { text: string; error?: boolean } | null = null;
@@ -43,13 +46,29 @@ export class StudioNode extends ClassicPreset.Node<
     const def = NODE_CATALOG[type];
     if (!def) throw new Error(`Unknown node type "${type}"`);
     super(def.label);
-    this.def = def;
     this.params = { ...params };
-    for (const [key, spec] of Object.entries(def.inputs)) {
-      this.addInput(key, new ClassicPreset.Input(socketFor(spec.type), spec.label, Boolean(spec.multiple)));
+    this.syncPorts();
+  }
+
+  /** The node's definition: the catalog's, with a script node's header ports and params. Parsed once per script text. */
+  get def(): NodeDefinition {
+    return effectiveDefinition({ type: this.type, params: this.params })!;
+  }
+
+  /** Makes the Rete ports match the definition: a port that is gone or changed type is removed, a new one added. */
+  syncPorts(): void {
+    const { inputs, outputs } = this.def;
+    for (const [key, port] of Object.entries(this.inputs)) {
+      if ((port?.socket as TypedSocket | undefined)?.type !== inputs[key]?.type) this.removeInput(key);
     }
-    for (const [key, spec] of Object.entries(def.outputs)) {
-      this.addOutput(key, new ClassicPreset.Output(socketFor(spec.type), spec.label));
+    for (const [key, port] of Object.entries(this.outputs)) {
+      if ((port?.socket as TypedSocket | undefined)?.type !== outputs[key]?.type) this.removeOutput(key);
+    }
+    for (const [key, spec] of Object.entries(inputs)) {
+      if (!this.inputs[key]) this.addInput(key, new ClassicPreset.Input(socketFor(spec.type), spec.label, Boolean(spec.multiple)));
+    }
+    for (const [key, spec] of Object.entries(outputs)) {
+      if (!this.outputs[key]) this.addOutput(key, new ClassicPreset.Output(socketFor(spec.type), spec.label));
     }
   }
 }

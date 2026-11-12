@@ -9,9 +9,41 @@ import { oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
 import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
-import { add, addVector3, multiply, number, scaleVector3, sin, splitVector3, time, vector3 } from './nodes/math';
-import { rgba, split } from './nodes/color';
+import {
+  add,
+  addVector3,
+  cross,
+  decomposeMatrix4,
+  distance,
+  dot,
+  invert as invertMatrix,
+  matrix4,
+  matrixFromPose,
+  matrixMultiply,
+  multiply,
+  normalize,
+  number,
+  NUMBER_FUNCTIONS,
+  numberFunction,
+  scaleVector3,
+  sin,
+  splitVector2,
+  splitVector3,
+  time,
+  transformPoint,
+  vector2,
+  vector3,
+  vectorLength,
+} from './nodes/math';
+import { brightness, hex, hsv, invert, mix, rgba, split } from './nodes/color';
 import { expression } from './nodes/expression';
+import { and, branch, compare, edge, not, or, switchNode, timer, toggle } from './nodes/logic';
+import { dispatchEvent, openUrl, playAnimation, playSound, setVisible } from './nodes/actions';
+import { pageEvent } from './nodes/page';
+import { scriptLite } from './nodes/script';
+import { threeScript } from './nodes/three-script';
+import { threeRenderScript } from './nodes/three-render-script';
+import { button, colorPicker, select, slider, toggle as uiToggle } from './nodes/ui';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
 
@@ -35,13 +67,56 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'math.splitVector3': splitVector3,
   'math.addVector3': addVector3,
   'math.scaleVector3': scaleVector3,
+  'math.vector2': vector2,
+  'math.splitVector2': splitVector2,
+  'math.length': vectorLength,
+  'math.normalize': normalize,
+  'math.dot': dot,
+  'math.cross': cross,
+  'math.distance': distance,
+  'math.matrix4': matrix4,
+  'math.decomposeMatrix4': decomposeMatrix4,
+  'math.matrixFromPose': matrixFromPose,
+  'math.matrixMultiply': matrixMultiply,
+  'math.invert': invertMatrix,
+  'math.transformPoint': transformPoint,
   'math.add': add,
   'math.multiply': multiply,
   'math.sin': sin,
   'math.time': time,
+  // Arithmetic and functions (#66), from one table.
+  ...Object.fromEntries(Object.entries(NUMBER_FUNCTIONS).map(([type, fn]) => [type, numberFunction(fn)])),
   'color.rgba': rgba,
   'color.split': split,
+  'color.hex': hex,
+  'color.hsv': hsv,
+  'color.mix': mix,
+  'color.brightness': brightness,
+  'color.invert': invert,
   'math.expression': expression,
+  'logic.and': and,
+  'logic.or': or,
+  'logic.not': not,
+  'logic.toggle': toggle,
+  'logic.timer': timer,
+  'logic.compare': compare,
+  'logic.edge': edge,
+  'logic.branch': branch,
+  'logic.switch': switchNode,
+  'action.playAnimation': playAnimation,
+  'action.setVisible': setVisible,
+  'action.playSound': playSound,
+  'action.openUrl': openUrl,
+  'action.dispatchEvent': dispatchEvent,
+  'page.event': pageEvent,
+  'script.lite': scriptLite,
+  'three.script': threeScript,
+  'three.renderScript': threeRenderScript,
+  'ui.button': button,
+  'ui.toggle': uiToggle,
+  'ui.slider': slider,
+  'ui.colorPicker': colorPicker,
+  'ui.select': select,
   'debug.inspector': inspector,
   'debug.stats': statsNode,
   'debug.trace': traceNode,

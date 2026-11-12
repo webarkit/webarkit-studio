@@ -6,18 +6,23 @@
  *   <app>/index.html     player page, pointed at graph.json
  *   <app>/graph.json     the graph (re-importable in the studio)
  *   <app>/assets/…       player, engine and tracker chunks (only those the graph uses)
- *   <app>/data/…         camera parameters, NFT datasets, …
+ *   <app>/data/…         the data files its nodes read
  *   <app>/data/assets/<id>/…  files uploaded into the project (asset:// params)
  *   <app>/README.txt     how to serve it
+ *   <app>/.nojekyll      for a GitHub Pages site built from a branch
+ *   <app>/coi-sw.js, <app>/_headers  cross-origin isolation, when a plugin asks for it (cross-origin-isolation.ts)
  */
 import { zipSync, strToU8 } from 'fflate';
-import { validateGraph, type GraphDocument, type GraphNode } from '../core/graph';
+import type { GraphDocument, GraphNode } from '../core/graph';
+import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { NFT_DATASET_EXTENSIONS, parseAssetRef } from '../core/assets';
+import { effectiveDefinition } from '../core/script';
+import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
-import { slugify, type ExportContext, type ExportResult } from './exporters';
+import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
 import { INSTALLED_PLUGINS } from '../plugins/host';
 import type { ExportFile, StudioPlugin } from '../plugin-api';
+import { HEADERS, README_SECTION, SERVICE_WORKER, SERVICE_WORKER_FILE, withIsolation } from './cross-origin-isolation';
 
 export interface PlayerManifest {
   entry: string;
@@ -33,6 +38,8 @@ export interface PlayerManifest {
 const OPTIONAL_MODULES: Array<{ module: string; needed: (doc: GraphDocument) => boolean }> = [
   { module: 'src/runtime/renderers/three-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'three.renderer') },
   { module: 'src/runtime/renderers/babylon-adapter.ts', needed: (d) => d.nodes.some((n) => n.type === 'babylon.renderer') },
+  // three.js itself: the player imports it on demand for three.script and three.renderScript (#36, #37), not only the adapter.
+  { module: 'node_modules/three/build/three.module.js', needed: (d) => d.nodes.some((n) => NODE_CATALOG[n.type]?.provider === 'Three.js') },
   // glTF loaders, imported by the adapters' loadModel() only (vite.player.config.ts keeps these module paths).
   { module: 'three/examples/jsm/loaders/GLTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
   { module: '@babylonjs/loaders/glTF/2.0/glTFLoader.js', needed: (d) => d.nodes.some((n) => n.type === 'scene.gltf') },
@@ -52,6 +59,15 @@ function pluginExportFiles(doc: GraphDocument, plugins: Iterable<StudioPlugin>):
     for (const file of plugin.exportFiles ?? []) out.push({ file, needed: nodes.length > 0 && (file.needed?.(nodes) ?? true) });
   }
   return out;
+}
+
+/** Whether a plugin the graph uses asks for cross-origin isolation (StudioPlugin.crossOriginIsolation). Exported for tests. */
+export function needsIsolation(doc: GraphDocument, plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values()): boolean {
+  for (const plugin of plugins) {
+    const nodes = doc.nodes.filter((n) => n.type.startsWith(`${plugin.id}.`));
+    if (nodes.length > 0 && plugin.crossOriginIsolation?.(nodes)) return true;
+  }
+  return false;
 }
 
 class ExportError extends Error {}
@@ -129,21 +145,79 @@ export function selectPlayerFiles(
 }
 
 /**
+ * The names one export has given out (#88): each source URL (fragment dropped) → its path, and every file written
+ * under those paths. Shared by every asset of one export.
+ */
+export interface BundleNames {
+  sources: Map<string, string>;
+  files: Set<string>;
+}
+export const bundleNames = (): BundleNames => ({ sources: new Map(), files: new Set() });
+
+/**
  * Maps an asset URL to its place in the bundle. Relative URLs inside the
  * studio keep their path, so the graph needs no rewrite; anything else is
  * copied under data/_ext/ and the param is rewritten.
+ *
+ * #88:
+ * - A query string or a fragment never reaches a file name: the file is written under the plain path, and the param
+ *   is rewritten to it.
+ * - A remote file's name is made safe (`safeName`).
+ * - `names` gives one source one path, and two sources that would write the same file two paths (`name-2.ext`…).
+ *   This holds inside the studio too: `data/m.glb?v=a` and `?v=b` are two files.
+ * - `files` are the suffixes written under the path: `['']` for one file, a dataset's `.fset`, `.fset3`, `.iset`…
+ *   Every one of them is reserved and checked, not only the prefix.
  */
 /** Exported for tests. */
-export function bundlePath(url: URL, base: URL): { path: string; rewritten: boolean } {
+export function bundlePath(url: URL, base: URL, names: BundleNames = bundleNames(), files: readonly string[] = ['']): { path: string; rewritten: boolean } {
   const baseDir = base.href.slice(0, base.href.lastIndexOf('/') + 1);
-  if (url.href.startsWith(baseDir)) return { path: decodeURIComponent(url.href.slice(baseDir.length)), rewritten: false };
-  const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? 'asset');
-  return { path: `data/_ext/${name}`, rewritten: true };
+  const plain = new URL(url.href);
+  plain.search = '';
+  plain.hash = '';
+  const source = url.href.replace(/#.*$/, ''); // the query may select another file; a fragment never does
+  const inside = plain.href.startsWith(baseDir);
+  // The param is left as it is only for a studio path, with no query or fragment, that keeps its own name.
+  const own = inside && plain.href === url.href ? decodeURIComponent(plain.href.slice(baseDir.length)) : null;
+  const known = names.sources.get(source);
+  if (known) return { path: known, rewritten: known !== own };
+
+  let dir: string;
+  let name: string;
+  if (inside) {
+    const path = decodeURIComponent(plain.href.slice(baseDir.length));
+    const slash = path.lastIndexOf('/');
+    [dir, name] = [path.slice(0, slash + 1), path.slice(slash + 1)];
+  } else {
+    const segment = plain.pathname.split('/').filter(Boolean).pop();
+    [dir, name] = ['data/_ext/', segment ? safeName(decodeURIComponent(segment)) : 'asset'];
+  }
+  const dot = name.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  const free = (path: string) => files.every((f) => !names.files.has(path + f));
+  let path = dir + name;
+  for (let n = 2; !free(path); n++) path = `${dir}${stem}-${n}${ext}`;
+  names.sources.set(source, path);
+  for (const f of files) names.files.add(path + f);
+  return { path, rewritten: path !== own };
 }
 
-/** A file name safe in a zip path and in a relative URL ("#", "?", spaces… become "_"). */
+/** A prefix's file: the extension goes on the path, before any query string; a fragment is dropped. */
+const withExtension = (url: URL, ext: string) => {
+  const u = new URL(url.href);
+  u.hash = '';
+  u.pathname += `.${ext}`;
+  return u.href;
+};
+
+/**
+ * A file name safe in a zip path, in a relative URL and in any unzip tool (#88): ASCII letters, digits, ".", "_" and
+ * "-". Accents are dropped from their letters ("é" → "e"); anything else ("#", "?", spaces, other scripts) becomes "_".
+ */
 const safeName = (name: string) => {
-  const safe = name.replace(/[^\p{L}\p{N}._-]/gu, '_');
+  const safe = name
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^A-Za-z0-9._-]/g, '_');
   return /^\.*$/.test(safe) ? '_' : safe; // never "", "." or ".."
 };
 
@@ -173,48 +247,56 @@ function checkSelfContained(data: Uint8Array, where: string): void {
 /** Exported for tests. */
 export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
+  const names = bundleNames(); // the paths and files this export has given out (#88)
   const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
   for (const node of doc.nodes) {
-    const def = NODE_CATALOG[node.type];
+    const def = effectiveDefinition(node)!; // a script's header never declares an asset param, but read it the one way
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       const value = String(node.params[key] ?? spec.default);
+      const multi = pluginAssetKind(spec.asset);
       const ref = parseAssetRef(value);
       if (ref) {
         const asset = ctx.assets?.get(ref.id);
         if (!asset) throw new ExportError(`${node.id}.${key}: asset "${ref.name || ref.id}" is not in this project`);
         if (asset.kind !== spec.asset) throw new ExportError(`${node.id}.${key}: asset "${asset.name}" is a ${asset.kind}, not a ${spec.asset}`);
         const path = `data/assets/${asset.id}/${safeName(asset.name)}`;
-        if (spec.asset === 'nftDataset') {
-          for (const ext of NFT_DATASET_EXTENSIONS) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
+        if (multi) {
+          for (const ext of multi.extensions) files[`${path}.${ext}`] = await bytes(asset.files[ext]);
         } else {
           files[path] = await bytes(asset.files['']);
           if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
         node.params[key] = path;
-        ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''} (uploaded)`);
+        ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''} (uploaded)`);
         continue;
       }
       const url = new URL(value, base);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ExportError(`${node.id}.${key}: unsupported URL ${value}`);
-      const { path, rewritten } = bundlePath(url, base);
+      // Every file this asset may write is reserved: a dataset's files, and the packed file that can stand in for them.
+      const written = multi ? [...multi.extensions, ...(multi.alternative ? [multi.alternative] : [])].map((e) => `.${e}`) : [''];
+      const { path, rewritten } = bundlePath(url, base, names, written);
 
-      if (spec.asset === 'nftDataset') {
-        // NFT dataset prefix: the three descriptor files, or a compressed .zft.
-        const parts = await Promise.all(NFT_DATASET_EXTENSIONS.map((ext) => tryFetch(`${url.href}.${ext}`)));
+      if (multi) {
+        // A prefix: each of the kind's files, or the one file that can stand in for them.
+        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext))));
         if (parts.every(Boolean)) {
-          NFT_DATASET_EXTENSIONS.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
+          multi.extensions.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
         } else {
-          const zft = await tryFetch(`${url.href}.zft`);
-          if (!zft) throw new ExportError(`${node.id}.${key}: NFT dataset not found at ${url.href}.{iset,fset,fset3|zft}`);
-          files[`${path}.zft`] = zft;
+          const { alternative } = multi;
+          const packed = alternative ? await tryFetch(withExtension(url, alternative)) : null;
+          if (!packed) {
+            const where = `${url.href}.{${multi.extensions.join(',')}${alternative ? `|${alternative}` : ''}}`;
+            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}`);
+          }
+          files[`${path}.${alternative}`] = packed;
         }
       } else {
         files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
         if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
       if (rewritten) node.params[key] = path;
-      ctx.log(`asset: ${node.id}.${key} → ${path}${spec.asset === 'nftDataset' ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
+      ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
     }
   }
   return files;
@@ -233,8 +315,12 @@ export async function collectPluginFiles(
   return files;
 }
 
-export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
-  const doc = validateGraph(structuredClone(input));
+/** The app's files as bundle path → bytes, for the exports that package it. */
+export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): Promise<{ files: Record<string, Uint8Array>; doc: GraphDocument }> {
+  const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
+  const doc = loaded.doc;
+  const upgraded = upgradeNote(loaded);
+  if (upgraded) ctx.log(upgraded);
   const base = new URL(ctx.baseUrl);
   const files: Record<string, Uint8Array> = {};
 
@@ -259,15 +345,26 @@ export async function exportAppBundle(input: GraphDocument, ctx: ExportContext):
   Object.assign(files, await collectPluginFiles(doc, base));
 
   // ------------------------------------------------------- page and graph
-  const title = (doc.name ?? 'WebAR app').replace(/[<>&"]/g, '');
-  files['index.html'] = strToU8(
-    entryHtml
-      .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
-      .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`),
-  );
+  const title = graphTitle(doc.name);
+  const isolated = needsIsolation(doc);
+  const page = entryHtml
+    .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+    .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`);
+  files['index.html'] = strToU8(isolated ? withIsolation(page) : page);
+  if (isolated) {
+    files[SERVICE_WORKER_FILE] = strToU8(SERVICE_WORKER);
+    files['_headers'] = strToU8(HEADERS);
+    ctx.log(`cross-origin isolation: ${SERVICE_WORKER_FILE} and _headers (see README.txt)`);
+  }
   files['graph.json'] = strToU8(JSON.stringify(doc, null, 2));
-  files['README.txt'] = strToU8(readme(doc, title));
+  files['README.txt'] = strToU8(readme(doc, title) + (isolated ? README_SECTION : ''));
+  // A Pages site built from a branch runs Jekyll, which drops paths starting with "_", such as data/_ext/.
+  files['.nojekyll'] = new Uint8Array(0);
+  return { files, doc };
+}
 
+export async function exportAppBundle(input: GraphDocument, ctx: ExportContext): Promise<ExportResult> {
+  const { files, doc } = await buildAppFiles(input, ctx);
   const slug = slugify(doc.name);
   const zipped = zipSync(Object.fromEntries(Object.entries(files).map(([p, data]) => [`${slug}/${p}`, data])), { level: 6 });
   const mb = (zipped.byteLength / 1024 / 1024).toFixed(1);
@@ -293,15 +390,15 @@ Serve this folder with any static web server and open index.html, e.g.:
 Requirements:
 - Camera access needs a secure context: http://localhost works; on a phone use HTTPS
   (or "adb reverse tcp:8080 tcp:8080" on Android).
-- The server must answer 404 for missing files. Trackers probe for optional files (the
-  jsartoolkitNFT tracker: <dataset>.zft) and treat any HTTP 200 (e.g. an SPA fallback
-  page) as that file.
+- The server must answer 404 for missing files. Trackers probe for optional files and
+  treat any HTTP 200 (e.g. an SPA fallback page) as that file.
 
 Contents
 --------
 index.html   player page (reads graph.json)
 graph.json   the node graph; import it in WebARKit Studio to edit it
 assets/      player, 3D engine and tracker code
-data/        camera parameters and NFT datasets
+data/        the data files the graph's nodes read
+.nojekyll    keeps paths starting with "_" if you publish this folder on GitHub Pages from a branch
 `;
 }

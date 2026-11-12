@@ -70,6 +70,51 @@ describe('expression: variables, constants and functions', () => {
   });
 });
 
+describe('expression: rgba() and vec3() as the result (#67)', () => {
+  const compile = (source: string) => compileExpression(source, VARS);
+  const components = (source: string, vars: Partial<Record<(typeof VARS)[number], number>> = {}) =>
+    compile(source).components({ a: 0, b: 0, c: 0, d: 0, t: 0, ...vars });
+
+  it('a number formula gives one number, as before', () => {
+    expect(compile('a + 1').result).toBe('number');
+    expect(components('a + 1', { a: 2 })).toEqual([3]);
+  });
+
+  it('rgba(r, g, b, a) as the whole formula gives four numbers', () => {
+    expect(compile('rgba(1, 0.5, 0, 1)').result).toBe('rgba');
+    expect(components('rgba(a, b, 0.25 * 2, sin(90))', { a: 1, b: 0.5 })).toEqual([1, 0.5, 0.5, 1]);
+  });
+
+  it('vec3(x, y, z) as the whole formula gives three numbers', () => {
+    expect(compile('  vec3(a, b, c)  ').result).toBe('vec3');
+    expect(components('vec3(a, 40 * 2, -c)', { a: 1, c: 3 })).toEqual([1, 80, -3]);
+  });
+
+  it('their arguments are counted like a function call', () => {
+    expect(checkExpression('rgba(1, 0, 0)', VARS)).toEqual({ message: 'rgba takes 4 arguments, not 3', position: 0 });
+    expect(checkExpression('vec3(1, 2)', VARS)).toEqual({ message: 'vec3 takes 3 arguments, not 2', position: 0 });
+  });
+
+  it('inside a formula they are an error, where they are', () => {
+    const inside = (name: string, position: number) => ({ message: `${name}(…) can only be the whole formula`, position });
+    expect(checkExpression('1 + rgba(1, 0, 0, 1)', VARS)).toEqual(inside('rgba', 4));
+    expect(checkExpression('a ? vec3(1, 2, 3) : vec3(0, 0, 0)', VARS)).toEqual(inside('vec3', 4));
+    expect(checkExpression('(rgba(1, 0, 0, 1))', VARS)).toEqual(inside('rgba', 1));
+    expect(checkExpression('sin(vec3(1, 2, 3))', VARS)).toEqual(inside('vec3', 4));
+    expect(checkExpression('rgba(vec3(1, 2, 3), 0, 0, 1)', VARS)).toEqual(inside('vec3', 5));
+  });
+
+  it('without parentheses, they read as a function missing its call', () => {
+    expect(checkExpression('rgba', VARS)).toEqual({ message: 'rgba is a function: rgba(…)', position: 0 });
+    expect(checkExpression('vec3 + 1', VARS)).toEqual({ message: 'vec3 is a function: vec3(…)', position: 0 });
+  });
+
+  it('something after them is an error at that place', () => {
+    expect(checkExpression('rgba(1, 0, 0, 1) * 2', VARS)).toEqual({ message: 'rgba(…) can only be the whole formula', position: 17 });
+    expect(checkExpression('vec3(1, 2, 3) 4', VARS)).toEqual({ message: 'vec3(…) can only be the whole formula', position: 14 });
+  });
+});
+
 describe('expression: errors', () => {
   const error = (source: string) => checkExpression(source, VARS);
 

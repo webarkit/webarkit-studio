@@ -42,6 +42,14 @@ describe('validatePlugin', () => {
     expect(problemsOf(plugin())).toEqual([]);
   });
 
+  it('accepts ports on the vector2 and quaternion core sockets (#65)', () => {
+    const [node] = plugin().nodes;
+    const p = plugin({
+      nodes: [{ ...node, inputs: { ...node.inputs, uv: { type: 'vector2', label: 'UV' } }, outputs: { ...node.outputs, rotation: { type: 'quaternion', label: 'Rotation' } } }],
+    });
+    expect(problemsOf(p)).toEqual([]);
+  });
+
   it('names the plugin in the error message', () => {
     expect(() => validatePlugin(plugin({ version: 'one' }), { installed: [] })).toThrow(/plugin "acme"/);
   });
@@ -59,6 +67,12 @@ describe('validatePlugin', () => {
 
   it('reserves every namespace of the core nodes', () => {
     for (const ns of new Set(CORE_NODES.map((d) => d.type.split('.')[0]))) expect(RESERVED_NAMESPACES).toContain(ns);
+  });
+
+  it('refuses a plugin named logic, action, page or ui', () => {
+    for (const ns of ['logic', 'action', 'page', 'ui']) {
+      expect(problemsOf(plugin({ id: ns, nodes: [], factories: {}, sockets: [] }))).toContainEqual(expect.stringMatching(/reserved/));
+    }
   });
 
   it('reports malformed node types and socket ids instead of crashing', () => {

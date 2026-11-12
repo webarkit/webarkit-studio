@@ -13,6 +13,8 @@
  *  - the camera sits at the origin looking down -Z (OpenGL convention); its
  *    projection comes from the AR Camera node.
  */
+import { transformMatrix } from '../../core/math';
+
 export interface SceneObject {
   /** Scene that created the object: objects cannot cross scenes. */
   readonly scene: SceneHandle;
@@ -31,6 +33,15 @@ export interface LightSpec {
   intensity: number;
 }
 
+const LIGHT_KINDS: Record<LightSpec['kind'], true> = { directional: true, hemisphere: true, ambient: true };
+
+/**
+ * A light's kind as both adapters read it (#110): one they know, or `directional` (scene.light's default) for
+ * anything else, which reaches an adapter only on a path that skips validation. Both engines then build the same light.
+ */
+export const lightKind = (kind: unknown): LightSpec['kind'] =>
+  typeof kind === 'string' && Object.hasOwn(LIGHT_KINDS, kind) ? (kind as LightSpec['kind']) : 'directional';
+
 /** A glTF 2.0 model, as scene.gltf fetched it. */
 export interface ModelSpec {
   /** The .glb or .gltf file. */
@@ -41,25 +52,45 @@ export interface ModelSpec {
   binary: boolean;
 }
 
-/** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and uniform scale. */
-export interface Transform {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  scale: number;
+export interface AnimationOptions {
+  /** Default true. */
+  loop?: boolean;
+  /** Above 0. Default 1. */
+  speed?: number;
 }
 
-/** Column-major T · Rx · Ry · Rz · S. */
-export function transformMatrix({ position: [x, y, z], rotation, scale: s }: Transform): number[] {
-  const [a, b, c] = rotation.map((deg) => (deg * Math.PI) / 180);
-  const [cx, sx, cy, sy, cz, sz] = [Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b), Math.cos(c), Math.sin(c)];
-  // prettier-ignore
-  return [
-    s * cy * cz,                  s * (cx * sz + sx * sy * cz), s * (sx * sz - cx * sy * cz), 0,
-    -s * cy * sz,                 s * (cx * cz - sx * sy * sz), s * (sx * cz + cx * sy * sz), 0,
-    s * sy,                       -s * sx * cy,                 s * cx * cy,                  0,
-    x,                            y,                            z,                            1,
-  ];
+/** Throws on a speed the engines treat differently: at 0 or below, one plays backwards and the other ends at once. */
+export function checkAnimationSpeed(speed: number): void {
+  if (!(speed > 0)) throw new Error(`animation speed must be above 0, not ${speed}`);
 }
+
+/** A model's current clip. `time` is in seconds, read from the engine. */
+export interface AnimationState {
+  clip: string;
+  time: number;
+  playing: boolean;
+}
+
+/**
+ * The clip names of a glTF, in glTF order: an unnamed clip is `animation<i>`. Read from the file,
+ * because each engine's loader names unnamed clips its own way; an adapter finds a clip by its index
+ * here. With two clips of the same name, the first is the one played.
+ */
+export function gltfClipNames({ data, binary }: Pick<ModelSpec, 'data' | 'binary'>): string[] {
+  let text: string;
+  if (binary) {
+    // A GLB: a 12-byte header, then the JSON chunk's length and type, then the JSON.
+    const length = new DataView(data).getUint32(12, true);
+    text = new TextDecoder().decode(new Uint8Array(data, 20, length));
+  } else {
+    text = new TextDecoder().decode(data);
+  }
+  const { animations = [] } = JSON.parse(text) as { animations?: Array<{ name?: string }> };
+  return animations.map((a, i) => a.name || `animation${i}`);
+}
+
+// Moved to src/core/math.ts with the math nodes (#68); still exported here for the adapters and their users.
+export { transformMatrix, type Transform } from '../../core/math';
 
 /**
  * glTF is Y-up; marker space is Z-up: a quarter turn about X stands models up
@@ -92,7 +123,15 @@ export interface SceneHandle {
    */
   loadModel(spec: ModelSpec): Promise<SceneObject>;
   createGroup(): SceneObject;
+  /**
+   * Detaches an object from its parent and frees what it holds: the geometries, materials and textures under it
+   * (#36: a script's group, rebuilt on a live code change). The object is not used again. Called only on a script
+   * node's own groups, never on an object the adapter made with its own state, such as a loaded model's animation
+   * mixer, which this would not stop.
+   */
+  release(object: SceneObject): void;
   createLight(spec: LightSpec): SceneObject;
+  /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;
   /** Adds a top-level object (anchor, light…) to the rendered scene. */
   addRoot(object: SceneObject): void;
@@ -103,6 +142,28 @@ export interface SceneHandle {
   /** [r, g, b, a] in sRGB 0–1; on a mesh, alpha below 1 makes it transparent (a light ignores alpha). */
   setColor(object: SceneObject, color: readonly number[]): void;
   setIntensity(light: SceneObject, intensity: number): void;
+
+  /**
+   * glTF animations, with the same semantics on every adapter. One clip plays at a time per model.
+   * Time advances inside render(), on the engine's clock, whether or not the model is visible:
+   * pausing a model on a hidden anchor is the graph's choice.
+   */
+  /** The clip names of a model, in glTF order (gltfClipNames); [] for any other object. */
+  animations(object: SceneObject): string[];
+  /**
+   * Starts a clip. Playing another stops the one playing, and nodes only that one moved go back to their
+   * bind pose. A paused clip resumes where it held, and one that is playing keeps its time and takes the
+   * new options. A clip that is not looping holds its last frame when it ends, not playing; playing it
+   * again restarts it. A clip with no length shows its pose, at time 0, not playing. Throws if the model
+   * has no such clip, or on a speed that is not above 0.
+   */
+  playAnimation(object: SceneObject, clip: string, options?: AnimationOptions): void;
+  /** Holds the current time. Nothing happens if no clip is playing. */
+  pauseAnimation(object: SceneObject): void;
+  /** Stops, and goes back to the clip's first frame. */
+  stopAnimation(object: SceneObject): void;
+  /** Null until a clip has been played on it. */
+  animationState(object: SceneObject): AnimationState | null;
 
   /** Draws the scene with the given projection (column-major 4x4). */
   render(projection: ArrayLike<number> | null): void;

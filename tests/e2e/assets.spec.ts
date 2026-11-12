@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { cubeGlb, cubeGltf } from '../helpers/cube-glb';
-import { exportApp, nodeStatus, run, serveDir } from './helpers';
+import { exportApp, nodeStatus, run, serveDir, startupDone, withoutSaveDialog } from './helpers';
 
-/** Opens the studio with no autosave and no uploaded assets. */
+/** Opens the studio with no autosave, no uploaded assets and no save dialog (exports download). */
 async function freshStudio(page: Page) {
+  await withoutSaveDialog(page);
   await page.goto('/index.html');
+  await startupDone(page);
   await page.evaluate(async () => {
     localStorage.clear();
     await new Promise((resolve) => {
@@ -14,6 +16,7 @@ async function freshStudio(page: Page) {
     });
   });
   await page.reload();
+  await startupDone(page);
   await expect(page.locator('.studio-node').first()).toBeVisible();
 }
 

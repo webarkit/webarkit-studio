@@ -5,6 +5,7 @@
  *
  * Plugins are installed once per page, before a graph is opened or run.
  */
+import { registerAssetKinds } from '../core/assets';
 import { LOADED_PLUGINS, validatePlugin } from '../core/plugins';
 import { registerSocketTypes } from '../core/sockets';
 import { NODE_CATALOG } from '../nodes/catalog';
@@ -19,10 +20,11 @@ export interface StudioConfig {
 /** Plugins installed in this page, by id (the exporter reads their exportFiles). */
 export const INSTALLED_PLUGINS = new Map<string, StudioPlugin>();
 
-/** Validates the plugin (throws PluginValidationError), then adds its nodes, sockets and factories. */
+/** Validates the plugin (throws PluginValidationError), then adds its nodes, sockets, asset kinds and factories. */
 export function installPlugin(plugin: StudioPlugin): void {
   validatePlugin(plugin);
   registerSocketTypes(plugin.sockets ?? []);
+  registerAssetKinds(plugin.assetKinds ?? []);
   for (const def of plugin.nodes) {
     NODE_CATALOG[def.type] = def;
     NODE_REGISTRY[def.type] = plugin.factories[def.type];

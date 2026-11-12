@@ -7,7 +7,7 @@
  */
 import type { NodeCategory, NodeDefinition } from '../nodes/catalog';
 
-export const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'output', 'math', 'debug'];
+export const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'output', 'math', 'color', 'logic', 'action', 'debug'];
 
 /** Lower-case words, split on punctuation and camelCase ("ARControllerNFT" → ar, controller, nft). */
 const words = (text: string) =>

@@ -1,12 +1,12 @@
 /**
- * The project's uploaded assets: images, NFT datasets, glTF models…
+ * The project's uploaded assets: images, glTF models, a plugin's datasets…
  *
  * Params reference them as `asset://<id>/<name>` (src/core/assets.ts). The
  * store keeps them in memory and in a backend: IndexedDB in the browser, so
  * they survive a reload next to the autosaved graph, and a memory backend in
  * tests. The studio, the player (studio handoff) and the exporter read it.
  */
-import { NFT_DATASET_EXTENSIONS } from '../core/assets';
+import { pluginAssetKind, type AssetKindDefinition } from '../core/assets';
 import { assetKindOf, extensionOf, type StoredAsset } from './asset';
 import type { AssetKind } from '../nodes/catalog';
 
@@ -53,28 +53,32 @@ export class AssetStore {
   }
 
   /**
-   * Adds uploaded files. The files of an NFT dataset (same base name) become
-   * one asset and must all be there; every other file is an asset of its own.
+   * Adds uploaded files. The files of a kind with several (same base name)
+   * become one asset and must all be there; every other file is an asset of its own.
    * Each asset gets a new id, so re-uploading a name never replaces an asset in use.
    */
   async add(files: File[]): Promise<StoredAsset[]> {
     const singles: StoredAsset[] = [];
-    const datasets = new Map<string, Record<string, Blob>>();
+    const groups = new Map<string, { kind: AssetKindDefinition; name: string; files: Record<string, Blob> }>();
     for (const f of files) {
       const kind = assetKindOf(f.name);
-      if (kind === 'nftDataset') {
-        const base = f.name.slice(0, f.name.lastIndexOf('.'));
-        datasets.set(base, { ...datasets.get(base), [extensionOf(f.name)]: f });
+      const multi = pluginAssetKind(kind);
+      if (multi) {
+        const name = f.name.slice(0, f.name.lastIndexOf('.'));
+        const key = JSON.stringify([kind, name]);
+        const group = groups.get(key) ?? { kind: multi, name, files: {} };
+        group.files[extensionOf(f.name)] = f;
+        groups.set(key, group);
       } else {
         singles.push({ id: newId(), name: f.name, kind, files: { '': f } });
       }
     }
-    for (const [name, parts] of datasets) {
-      const missing = NFT_DATASET_EXTENSIONS.filter((ext) => !parts[ext]);
-      if (missing.length) throw new Error(`NFT dataset "${name}" is incomplete: add ${missing.map((ext) => `${name}.${ext}`).join(', ')}`);
+    for (const { kind, name, files: parts } of groups.values()) {
+      const missing = kind.extensions.filter((ext) => !parts[ext]);
+      if (missing.length) throw new Error(`${kind.label} "${name}" is incomplete: add ${missing.map((ext) => `${name}.${ext}`).join(', ')}`);
     }
     const added: StoredAsset[] = [
-      ...[...datasets].map(([name, files]): StoredAsset => ({ id: newId(), name, kind: 'nftDataset', files })),
+      ...[...groups.values()].map(({ kind, name, files }): StoredAsset => ({ id: newId(), name, kind: kind.id, files })),
       ...singles,
     ];
     await this.apply({ put: added });

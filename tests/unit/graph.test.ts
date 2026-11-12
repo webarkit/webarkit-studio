@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph } from '../../src/core/graph';
+import { readdirSync, readFileSync } from 'node:fs';
+import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type ParamValue } from '../../src/core/graph';
+import { LOADED_PLUGINS } from '../../src/core/plugins';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
-import { socketsCompatible } from '../../src/core/sockets';
+import { effectiveDefinition } from '../../src/core/script';
+import { CORE_SOCKET_TYPES, isSocketType, socketsCompatible } from '../../src/core/sockets';
 import { graph, TEST_CATALOG } from '../helpers/fake-catalog';
 
 const problems = (doc: unknown) => {
@@ -72,13 +74,78 @@ describe('validateGraph', () => {
     expect(problems(doc)).toEqual(['node t (test.transform): param "offset" must be 3 numbers']);
   });
 
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])('reports a type "%s" as unknown, not a throw', (type) => {
+    const doc = graph([['x', type]], []);
+    expect(problems(doc)).toEqual([`node x: unknown type "${type}"`]);
+    expect(effectiveDefinition({ type }, TEST_CATALOG)).toBeUndefined();
+  });
+
+  it("checks a select param against its options' values", () => {
+    const catalog = {
+      ...TEST_CATALOG,
+      'test.select': {
+        ...TEST_CATALOG['test.source'],
+        type: 'test.select',
+        label: 'test.select',
+        params: { kind: { kind: 'select' as const, label: 'Kind', default: 'a', options: { A: 'a', B: 'b' } } },
+      },
+    };
+    const doc = graph([['s', 'test.select']], []);
+    expect(() => validateGraph(doc, catalog)).not.toThrow(); // the default
+    doc.nodes[0].params = { kind: 'b' };
+    expect(() => validateGraph(doc, catalog)).not.toThrow();
+    for (const bad of ['laser', 'A', '__proto__', 'toString', 1]) {
+      doc.nodes[0].params = { kind: bad };
+      let found: string[] = [];
+      try {
+        validateGraph(doc, catalog);
+      } catch (err) {
+        found = (err as GraphValidationError).problems;
+      }
+      expect(found).toEqual(['node s (test.select): param "kind" must be one of "a", "b"']);
+    }
+  });
+
+  it("checks a plugin's select too: jsartoolkitNFT.controller's build", () => {
+    const spec = NODE_CATALOG['jsartoolkitNFT.controller'].params.build;
+    const values = spec.kind === 'select' ? Object.values(spec.options) : [];
+    expect(values.length).toBeGreaterThan(1);
+    const doc = graph([['c', 'jsartoolkitNFT.controller']], []);
+    doc.plugins = [{ id: 'jsartoolkitNFT', version: LOADED_PLUGINS.jsartoolkitNFT }];
+    const found = (build: ParamValue) => {
+      doc.nodes[0].params = { build };
+      try {
+        validateGraph(doc, NODE_CATALOG, undefined, { unfinished: true });
+        return [];
+      } catch (err) {
+        return (err as GraphValidationError).problems;
+      }
+    };
+    for (const build of values) expect(found(build)).toEqual([]);
+    expect(found('turbo')).toEqual([
+      `node c (${NODE_CATALOG['jsartoolkitNFT.controller'].label}): param "build" must be one of ${values.map((v) => JSON.stringify(v)).join(', ')}`,
+    ]);
+  });
+
+  it('refuses a scene.light of kind "laser" against the real catalog, naming the node and the param', () => {
+    const doc = graph([['l', 'scene.light']], []);
+    doc.nodes[0].params = { kind: 'laser' };
+    let found: string[] = [];
+    try {
+      validateGraph(doc, NODE_CATALOG, undefined, { unfinished: true });
+    } catch (err) {
+      found = (err as GraphValidationError).problems;
+    }
+    expect(found.some((p) => p.startsWith('node l (Light): param "kind" must be one of'))).toBe(true);
+  });
+
   it('detects cycles', () => {
     const doc = graph([['a', 'test.pass'], ['b', 'test.pass']], [['a', 'value', 'b', 'value'], ['b', 'value', 'a', 'value']]);
     expect(problems(doc)).toContain('graph contains a cycle');
   });
 
-  it.each(['pinball-three', 'pinball-babylon', 'multi-three', 'pinball-image', 'pinball-math', 'pinball-expression'])('demo graph %s is valid against the real catalog', (name) => {
-    const doc = JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8'));
+  it.each(readdirSync('public/graphs').filter((f) => f.endsWith('.json')))('demo graph %s is valid against the real catalog', (file) => {
+    const doc = JSON.parse(readFileSync(`public/graphs/${file}`, 'utf8'));
     expect(doc.version).toBe(GRAPH_VERSION);
     expect(() => validateGraph(doc)).not.toThrow();
   });
@@ -184,6 +251,18 @@ describe('socketsCompatible', () => {
     expect(socketsCompatible('pose', 'any')).toBe(true);
     expect(socketsCompatible('pose', 'markerInfo')).toBe(false);
     expect(socketsCompatible('any', 'pose')).toBe(false);
+  });
+
+  it('has vector2 and quaternion, which connect to themselves and to "any" only (#65)', () => {
+    expect(CORE_SOCKET_TYPES.vector2).toMatchObject({ label: expect.stringMatching(/x, y/) });
+    expect(CORE_SOCKET_TYPES.quaternion).toMatchObject({ label: expect.stringMatching(/x, y, z, w/) });
+    for (const t of ['vector2', 'quaternion'] as const) {
+      expect(isSocketType(t)).toBe(true);
+      expect(socketsCompatible(t, t)).toBe(true);
+      expect(socketsCompatible(t, 'any')).toBe(true);
+    }
+    expect(socketsCompatible('vector2', 'vector3')).toBe(false);
+    expect(socketsCompatible('quaternion', 'color')).toBe(false);
   });
 });
 

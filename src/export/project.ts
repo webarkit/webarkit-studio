@@ -3,12 +3,12 @@
  * moves between browsers (the autosave only lives in this one).
  *
  *   graph.json                 the graph, as "Graph (.json)" exports it
- *   assets.json                [{ id, name, kind, files: { key: path } }]
+ *   assets.json                [{ id, name, kind, files: { key: path }, types?: { key: MIME type } }]
  *   assets/<id>/<file name>    the files
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import type { StoredAsset } from '../assets/asset';
-import { NFT_DATASET_EXTENSIONS } from '../core/assets';
+import { extensionOf, type StoredAsset } from '../assets/asset';
+import { isAssetKind, pluginAssetKind } from '../core/assets';
 import type { AssetKind } from '../nodes/catalog';
 
 interface ManifestEntry {
@@ -16,9 +16,33 @@ interface ManifestEntry {
   name: string;
   kind: AssetKind;
   files: Record<string, string>;
+  /** Absent in project files written before types were saved, and for a file without a type. */
+  types?: Record<string, string>;
 }
 
-const fileName = (asset: StoredAsset, key: string) => (key ? `${asset.name}.${key}` : asset.name);
+const fileName = (asset: Pick<StoredAsset, 'name'>, key: string) => (key ? `${asset.name}.${key}` : asset.name);
+
+/** The usual images and videos. Any other file stays without a type, as it was before types were saved. */
+const TYPE_BY_EXTENSION = new Map([
+  ['avif', 'image/avif'],
+  ['bmp', 'image/bmp'],
+  ['gif', 'image/gif'],
+  ['jpeg', 'image/jpeg'],
+  ['jpg', 'image/jpeg'],
+  ['png', 'image/png'],
+  ['svg', 'image/svg+xml'],
+  ['webp', 'image/webp'],
+  ['mov', 'video/quicktime'],
+  ['mp4', 'video/mp4'],
+  ['ogv', 'video/ogg'],
+  ['webm', 'video/webm'],
+]);
+
+/** The saved type, or one inferred from the file name: an SVG blob without its type does not decode as an image. */
+function typeOf(entry: ManifestEntry, key: string): string {
+  const saved = entry.types?.[key];
+  return typeof saved === 'string' && saved ? saved : (TYPE_BY_EXTENSION.get(extensionOf(fileName(entry, key))) ?? '');
+}
 
 export async function packProject(graph: unknown, assets: StoredAsset[]): Promise<Uint8Array> {
   const files: Record<string, Uint8Array> = { 'graph.json': strToU8(JSON.stringify(graph, null, 2)) };
@@ -29,6 +53,7 @@ export async function packProject(graph: unknown, assets: StoredAsset[]): Promis
       const path = `assets/${asset.id}/${fileName(asset, key)}`;
       files[path] = new Uint8Array(await blob.arrayBuffer());
       entry.files[key] = path;
+      if (blob.type) (entry.types ??= {})[key] = blob.type;
     }
     manifest.push(entry);
   }
@@ -58,14 +83,12 @@ export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown
     for (const [key, path] of Object.entries(entry.files)) {
       const data = files[path];
       if (!data) throw new Error(`project file: ${path} is missing`);
-      blobs[key] = new Blob([data as BlobPart]);
+      blobs[key] = new Blob([data as BlobPart], { type: typeOf(entry, key) });
     }
     return { id: entry.id, name: entry.name, kind: entry.kind, files: blobs };
   });
   return { graph: JSON.parse(strFromU8(files['graph.json'])), assets };
 }
-
-const KINDS: AssetKind[] = ['file', 'nftDataset', 'model'];
 
 /** Throws on a manifest entry the studio could not use, before anything is imported. */
 function checkEntry(entry: Partial<ManifestEntry>, index: number): void {
@@ -74,9 +97,9 @@ function checkEntry(entry: Partial<ManifestEntry>, index: number): void {
   };
   if (typeof entry?.id !== 'string' || !entry.id) fail('has no valid id');
   if (typeof entry.name !== 'string' || !entry.name) fail('has no valid name');
-  if (!KINDS.includes(entry.kind as AssetKind)) fail(`has an unknown kind "${String(entry.kind)}"`);
+  if (!isAssetKind(entry.kind)) fail(`has an unknown kind "${String(entry.kind)}"`);
   const keys = Object.keys(entry.files ?? {});
-  const expected: readonly string[] = entry.kind === 'nftDataset' ? NFT_DATASET_EXTENSIONS : [''];
+  const expected = pluginAssetKind(entry.kind)?.extensions ?? [''];
   const missing = expected.filter((k) => !keys.includes(k));
   if (missing.length) fail(`is missing its ${missing.map((k) => (k ? `.${k}` : 'file')).join(', ')}`);
 }

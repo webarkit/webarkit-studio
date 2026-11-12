@@ -2,32 +2,22 @@
 //  - every pointer file links to AGENTS.md (and Gemini's context file is AGENTS.md);
 //  - every `npm run <script>` they name exists in package.json;
 //  - every repository path they name (in backticks, links or Copilot `applyTo` globs) exists;
+//  - every nested folder with agent files has both: an AGENTS.md, and a CLAUDE.md that only imports
+//    it. The commands and paths its AGENTS.md names exist, and the root AGENTS.md lists the folder;
 //  - .mcp.json declares the studio's own MCP server (node, its entry file exists) and the
 //    Playwright and Chrome DevTools MCP servers, each package pinned to an exact version, Chrome
 //    DevTools started with --isolated and without usage statistics, and every --config file exists.
 // Run from the repository root: npm run check:agents
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
+import { GENERATED_FOLDERS, nestedAgentFolders, pointerFiles } from './agent-files.mjs';
 
 const CANONICAL = 'AGENTS.md';
 
-/** Files that must point to AGENTS.md. */
-function pointerFiles() {
-  const list = (dir, filter) => (existsSync(dir) ? readdirSync(dir).filter(filter).map((f) => join(dir, f)) : []);
-  return [
-    'CLAUDE.md',
-    '.github/copilot-instructions.md',
-    ...list('.github/instructions', (f) => f.endsWith('.instructions.md')),
-    ...list('.claude/agents', (f) => f.endsWith('.md')),
-    ...list('.claude/skills', () => true).map((d) => join(d, 'SKILL.md')),
-    ...list('docs/agents/checklists', (f) => f.endsWith('.md')),
-  ].map((p) => p.replaceAll('\\', '/'));
-}
-
 /** Path prefixes checked for existence; anything else in backticks is ignored. */
-const PATH_PREFIXES = ['src/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
-/** Generated or downloaded paths (npm run assets, e2e setup, build): named in the docs, never committed. */
-const GENERATED = ['public/data', 'public/__player', 'tests/fixtures', 'tests/e2e/.cache'];
+const PATH_PREFIXES = ['src/', 'plugins/', 'packages/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
+/** Named in the docs, never committed: the generated folders, and a personal file that only this check has to allow for. */
+const NOT_COMMITTED = [...GENERATED_FOLDERS, '.claude/settings.local.json'];
 
 const problems = [];
 const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};
@@ -42,7 +32,7 @@ function checkPath(file, raw, base = '.') {
   const path = staticPart(raw);
   if (!path) return;
   const resolved = normalize(join(base, path)).replaceAll('\\', '/');
-  if (GENERATED.some((g) => resolved === g || resolved.startsWith(`${g}/`))) return;
+  if (NOT_COMMITTED.some((g) => resolved === g || resolved.startsWith(`${g}/`))) return;
   if (!existsSync(resolved)) problems.push(`${file}: names "${raw}", which does not exist`);
 }
 
@@ -74,11 +64,28 @@ function checkFile(file) {
   return text;
 }
 
-checkFile(CANONICAL);
+const rootText = checkFile(CANONICAL) ?? '';
 
 for (const file of pointerFiles()) {
   const text = checkFile(file);
   if (text !== undefined && !text.includes(CANONICAL)) problems.push(`${file}: does not point to ${CANONICAL}`);
+}
+
+const nested = nestedAgentFolders();
+/** The folders in the root's "Folders with their own file" section, as `a/b`. */
+const FOLDERS_HEADING = '### Folders with their own file';
+const listed = new Set(
+  [...(rootText.split(FOLDERS_HEADING)[1]?.split(/^#/m)[0] ?? '').matchAll(/^- `([^`]+)\/`/gm)].map(([, folder]) => folder),
+);
+for (const folder of nested) {
+  const agents = checkFile(`${folder}/${CANONICAL}`);
+  if (agents !== undefined && !agents.trim()) problems.push(`${folder}/${CANONICAL}: is empty`);
+  const claude = checkFile(`${folder}/CLAUDE.md`);
+  if (claude !== undefined && claude.trim() !== `@${CANONICAL}`) problems.push(`${folder}/CLAUDE.md: must hold only the import, @${CANONICAL}`);
+  if (!listed.has(folder)) problems.push(`${CANONICAL}: "${FOLDERS_HEADING}" does not list \`${folder}/\`, which has its own agent files`);
+}
+for (const folder of listed) {
+  if (!nested.includes(folder)) problems.push(`${CANONICAL}: "${FOLDERS_HEADING}" lists \`${folder}/\`, which has no agent files`);
 }
 
 const gemini = '.gemini/settings.json';
@@ -133,4 +140,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  ✗ ${p}`);
   process.exit(1);
 }
-console.log(`✓ agent docs: ${pointerFiles().length + 2} files in sync with ${CANONICAL}, ${mcp} pinned`);
+console.log(`✓ agent docs: ${pointerFiles().length + 2 + nested.length * 2} files in sync with ${CANONICAL}, ${mcp} pinned`);

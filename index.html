@@ -9,6 +9,7 @@
   <body>
     <header class="toolbar">
       <strong>WebARKit Studio</strong>
+      <input id="graph-name" type="text" aria-label="Graph name" placeholder="Graph name" title="Graph name: each export is named after it" spellcheck="false" autocomplete="off" />
       <span class="sep"></span>
       <button id="btn-run" title="Run the graph in the preview">▶ Run</button>
       <button id="btn-reload" title="Stop and run again (applies every param change)" disabled>⟳ Reload</button>
@@ -21,6 +22,11 @@
         <option value="pinball-image">Demo: pinball · image, no camera</option>
         <option value="pinball-math">Demo: pinball · math and colour nodes (bobbing, fading cube)</option>
         <option value="pinball-expression">Demo: pinball · one formula (Expression node)</option>
+        <option value="pinball-animated">Demo: pinball · animated model (plays on found, pauses on lost)</option>
+        <option value="pinball-math-model">Demo: pinball · math on a model (bobbing, turning cube)</option>
+        <option value="pinball-script">Demo: pinball · one script (the math demo in a Script node)</option>
+        <option value="pinball-three-script">Demo: pinball · a three.js script builds the scene</option>
+        <option value="pinball-render-script">Demo: pinball · one three.js script renders it all</option>
       </select>
       <button id="btn-demo">Load demo</button>
       <button id="btn-new">New</button>
@@ -49,6 +55,29 @@
         <pre id="log" class="log"></pre>
       </aside>
     </main>
+    <dialog id="script-panel" class="script-panel" aria-label="Script code">
+      <header>
+        <strong>Script · <span class="script-node"></span></strong>
+        <input name="file" aria-label="File name" spellcheck="false" />
+        <span class="hint">Ctrl+Enter applies</span>
+        <button type="button" class="script-apply">Apply</button>
+        <button type="button" class="script-close">Close</button>
+      </header>
+      <textarea spellcheck="false" aria-label="Code"></textarea>
+      <pre class="script-problems"></pre>
+    </dialog>
+    <dialog id="script-trust" class="script-trust" aria-label="Run scripts?">
+      <h2>This graph has scripts</h2>
+      <p>
+        Script nodes run JavaScript in this page, with everything the page can do: your other graphs, your uploaded assets, the
+        camera once allowed. Run them only if you trust where this graph comes from.
+      </p>
+      <ul></ul>
+      <form method="dialog">
+        <button value="no">Don't run them</button>
+        <button value="run" class="primary">Run the scripts</button>
+      </form>
+    </dialog>
     <script type="module" src="/src/app/studio.ts"></script>
   </body>
 </html>

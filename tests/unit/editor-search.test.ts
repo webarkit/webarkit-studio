@@ -1,11 +1,36 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
-import { searchNodes } from '../../src/editor/node-search';
+import { CATEGORY_ORDER, searchNodes } from '../../src/editor/node-search';
 
 const defs = Object.values(NODE_CATALOG);
 const types = (query: string) => searchNodes(query, defs).map((d) => d.type);
 
 describe('node search', () => {
+  it('orders every category of the catalog: the palette only shows those it lists', () => {
+    for (const def of defs) expect(CATEGORY_ORDER).toContain(def.category);
+  });
+
+  it('has a color group right after math, with every color.* node, and none left in math (#104)', () => {
+    expect(CATEGORY_ORDER.indexOf('color')).toBe(CATEGORY_ORDER.indexOf('math') + 1);
+    const colour = defs.filter((d) => d.type.startsWith('color.'));
+    expect(colour.length).toBeGreaterThanOrEqual(7);
+    for (const def of colour) expect(def.category, def.type).toBe('color');
+    expect(defs.filter((d) => d.category === 'color').every((d) => d.type.startsWith('color.'))).toBe(true);
+    // In the palette's order: the math nodes, then the colour nodes.
+    const all = types('  ');
+    const lastMath = all.map((t) => NODE_CATALOG[t].category).lastIndexOf('math');
+    expect(all.slice(lastMath + 1, lastMath + 1 + colour.length).every((t) => t.startsWith('color.'))).toBe(true);
+  });
+
+  it('every category has its colour in the studio: palette, node header and Properties share the cat-<category> class (#104)', () => {
+    const css = readFileSync('src/app/studio.css', 'utf8');
+    for (const category of CATEGORY_ORDER) {
+      expect(css, category).toContain(`--cat-${category}:`);
+      expect(css, category).toContain(`.cat-${category} { --c: var(--cat-${category}); }`);
+    }
+  });
+
   it('lists every node, grouped by category, for an empty query', () => {
     const all = types('  ');
     expect(all).toHaveLength(defs.length);
@@ -27,7 +52,7 @@ describe('node search', () => {
   });
 
   it('matches the type namespace', () => {
-    expect(types('three')).toEqual(['three.renderer']);
+    expect(types('three').sort()).toEqual(['three.renderScript', 'three.renderer', 'three.script']);
   });
 
   it('requires every word to match: category plus label', () => {

@@ -30,7 +30,7 @@ export function formatValue(value: unknown): string {
     return rows.join('\n');
   }
   if (Array.isArray(value)) {
-    // Vectors (vector3, vector2): the numbers themselves.
+    // Vectors and rotations (vector2, vector3, quaternion, color): the numbers themselves.
     if (value.length && value.length <= 4 && value.every((v) => typeof v === 'number')) return `[${value.map(num).join(', ')}]`;
     // Tracking result: one line per marker.
     if (value.length && value.every((m) => m && typeof m === 'object' && 'found' in m && 'name' in m)) {
@@ -115,6 +115,7 @@ export const statsNode: NodeFactory = (params, ctx) => {
     if (!host) return;
     if (!overlay) {
       overlay = document.createElement('div');
+      overlay.className = 'stats-overlay'; // kept clear of by ui.* panels
       overlay.style.cssText =
         'position:absolute;left:8px;bottom:8px;padding:4px 6px;background:rgb(0 0 0 / .55);color:#7fffd4;font:11px/1.35 monospace;white-space:pre;border-radius:4px;pointer-events:none';
       host.appendChild(overlay);

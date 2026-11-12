@@ -14,7 +14,7 @@ Before reviewing, read:
 
 Then inspect the diff you are given (default: `git diff dev...HEAD`, plus uncommitted changes from `git diff HEAD`) and go through the checklist in order. For format changes, compare `src/nodes/catalog.ts` before and after key by key: node types, input and output names, socket types, param names, kinds, `select` options and the meaning of defaults. A renamed key shows up as a removal plus an addition.
 
-For each format change you find, check that all three are present: the `GRAPH_VERSION` bump in `src/core/graph.ts`, updated `public/graphs/`, and a `CHANGELOG.md` line under `## [Unreleased]`. A missing one is **Blocking**.
+For each format change you find, check that all four are present: the `GRAPH_VERSION` bump in `src/core/graph.ts`, its migration in `src/core/migrations.ts` with a test that an older document opens, updated `public/graphs/`, and a `CHANGELOG.md` line under `## [Unreleased]`. A missing one is **Blocking**.
 
 Run the commands the checklist lists and report the outcome of each. If the assets are missing (`npm run assets` not run), say so instead of reporting test failures as findings.
 

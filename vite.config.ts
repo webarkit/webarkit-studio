@@ -2,9 +2,12 @@ import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 // A plugin's build-time part: the tracker's worker files, served outside the module graph.
 import { jsartoolkitNftWorkerFiles } from './plugins/jsartoolkit-nft/vite.ts';
+import { CODEGEN_PACKAGES, packageVersions } from './scripts/package-versions.mjs';
 
 export default defineConfig({
   base: './',
+  // The exact versions the source code export writes into its package.json (#64).
+  define: { __CODEGEN_VERSIONS__: JSON.stringify(packageVersions(CODEGEN_PACKAGES, import.meta.dirname)) },
   // 'mpa' makes unknown paths return 404 instead of the SPA index.html fallback.
   // Required by JsartoolkitNFT: the tracker probes `<marker>.zft` and treats any
   // HTTP 200 (e.g. an HTML fallback page) as a compressed dataset.

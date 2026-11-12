@@ -15,7 +15,7 @@ result is a plain JSON graph that a lightweight **player** executes with
 choice (Three.js or Babylon.js). The graph can be exported as a standalone app.
 
 > **Status: prototype.** The architecture is being validated: the graph format
-> may still change between versions (older graphs are rejected, see
+> may still change between versions (graphs since v0.1.0 upgrade when opened, see
 > [Known issues](#known-issues--notes)). Nothing is published to npm.
 
 ## Quick start
@@ -34,7 +34,10 @@ assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
 `math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
 "pinball · one formula" moves it the same way with a single `math.expression`
-(`40 + 30 * sin(t * 180)`). **⟳ Reload** restarts the preview (Stop + Run),
+(`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
+`onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
+with math nodes wired into its Position and Rotation; "pinball · one script" is the math demo in one
+Script node (see "Scripts"). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
 Editing:
@@ -61,7 +64,7 @@ into the same nodes.
 ```bash
 npm test             # unit + integration (Vitest)
 npm run test:e2e     # end-to-end (Playwright, Chromium); once: npx playwright install chromium
-npm run bench        # benchmarks (tinybench); npm run bench -- runtime | tracker
+npm run bench        # benchmarks (tinybench); npm run bench -- runtime | math | tracker
 npm run test:all     # typecheck + unit + integration + e2e
 ```
 
@@ -138,7 +141,26 @@ every push / PR; benchmarks on pushes to `main`, in the job summary.
 | Graph (.json) | the node graph only; re-import it in the studio |
 | Project (.zip) | the graph and its uploaded assets; open it with **Import…** |
 | Standalone app (.zip) | player + graph + assets, runs on any static web server |
-| jsartoolkitNFT source code (.zip) | planned: readable code generated from the graph |
+| GitHub Pages project (.zip) | the standalone app in `site/`, a GitHub Actions workflow that deploys it, and a README with the steps |
+| Source code (.zip) | a small Vite project with the graph as readable code (Three.js): `npm install`, `npm run dev`; see "Source code" below ([#64](https://github.com/webarkit/webarkit-studio/issues/64)) |
+
+Each file is named after the graph: type its name in the **Graph name** field
+next to the studio's title (one undo step, kept by the autosave; a demo, a
+file or a project brings its own, and **New** is `Untitled`). `My Graph`
+exports as `my-graph.json`, `my-graph.webarkit.zip`, `my-graph.zip`,
+`my-graph-pages.zip` and `my-graph-source.zip`; with no name, `webar-app`.
+The folder inside a zip, the exported page's title and the Pages project's
+README use the graph's name too.
+
+In Chromium browsers (Chrome, Edge) an export first asks where to save it,
+with that name suggested: the file can be renamed and put in any folder, and
+a cancel saves nothing. The chosen name names the file only: the folder inside
+the zip and the page title keep the graph's name. Elsewhere (Firefox, Safari)
+the file downloads under its default name, as the browser saves downloads. A graph the source code export cannot write is refused before the dialog
+opens, so no file is created. If
+an export fails after you picked a file, the file is left empty there:
+Chromium creates it, or empties an existing one, when it is picked, and the log
+says so ([#118](https://github.com/webarkit/webarkit-studio/issues/118)).
 
 The standalone app is the prebuilt player (`npm run build:player`, run
 automatically by `dev` and `build`) plus `graph.json` and the files its nodes
@@ -147,7 +169,10 @@ datasets). Only the chunks the graph uses are included: a Three.js graph
 leaves out Babylon.js, a SIMD controller leaves out the standard build
 (manifest written by `vite.player.config.ts`). Asset URLs inside the studio
 keep their path; others are copied under `data/_ext/` and the graph is
-rewritten. Uploaded assets are copied under `data/assets/<id>/`. glTF
+rewritten. Uploaded assets are copied under `data/assets/<id>/`. File names
+there are ASCII (`café#1.glb` is `cafe_1.glb`), two remote files of the same
+name get `name-2.glb` and so on, and a query string or fragment is left out
+of the name (#88). glTF
 models must be `.glb` or self-contained `.gltf` files: the export refuses a
 `.gltf` that loads separate buffers or images.
 
@@ -161,8 +186,273 @@ pinball-nft-three-js/
 
 Serve it with `npx serve .` or `python3 -m http.server`. The host must answer
 404 for missing files (see Known issues).
+
+A controller on the **Threaded** build (or **Auto**, which picks it on an
+isolated page) needs a cross-origin isolated page (COOP / COEP). Its export
+adds `coi-sw.js`, a service worker that sets those headers where the host
+cannot (GitHub Pages; the page reloads once on the first visit, over HTTPS
+only), and `_headers` for Netlify and Cloudflare Pages. The studio's own page
+is not isolated: there, Threaded stops at once with a message, and Auto runs
+SIMD. The threaded build is experimental upstream.
+
 Camera access requires a secure context: `localhost` works; on a phone use
 HTTPS or `adb reverse tcp:5173 tcp:5173`.
+
+### GitHub Pages
+
+The GitHub Pages project publishes the app with no credential: the export
+carries a workflow, and you push it to a repository of your own. The studio
+makes no request to GitHub.
+
+```
+pinball-nft-three-js-pages/
+  site/                                the standalone app
+  .github/workflows/deploy-pages.yml   deploys site/ on each push
+  README.md                            the steps
+  .gitattributes                       commits every file byte for byte
+```
+
+Create a public repository, set Settings → Pages → Source to **GitHub
+Actions**, and push. The URL Pages gives is HTTPS, which a camera on a phone
+needs. The deploy leaves out names that start with a dot, so the export refuses
+a file named that way, by name. To publish the plain standalone app from a branch
+instead, it has a `.nojekyll`, without which Jekyll would drop `data/_ext/`.
+
+## Talking to the page
+
+A graph and the page that holds it (the studio's preview, or the page of an
+exported app) talk through named events, in both directions:
+
+- **Dispatch Event** (`action.dispatchEvent`) tells the page each time its
+  Trigger fires;
+- **Page Event** (`page.event`) fires its `onEvent` for each event of its name
+  from the page, on the next frame, and keeps in `number` the last detail that
+  was a number (or a number `value` in it), so a page can drive a value.
+
+Rules, for both: a name needs a colon (`shop:coupon`, `studio:next`), so a
+graph can neither hear nor fake the browser's own events such as `click`.
+Only plain values cross: strings, finite numbers, booleans, `null`, and arrays
+and plain objects of those, four levels deep. Anything else, a DOM node or a
+function included, is dropped. Events follow the graph's frames: several in
+one frame fire Page Event's `onEvent` once, with the last detail, and a
+trigger that fires several times in one frame sends once.
+
+**In the same page** (channel *DOM*). The graph's event is a `CustomEvent`
+that bubbles from the stage to `window`; its `detail` is `{ data, time }`, the
+trigger's data and when it fired (`Date.now()`, in milliseconds). Found, with
+Select Marker's `onFound` on the Trigger:
+
+```js
+window.addEventListener('shop:found', (e) => showCoupon(e.detail.data.name));
+```
+
+The page drives the graph with a `CustomEvent` on `window`; its `detail` is
+the event's data in the graph:
+
+```js
+window.dispatchEvent(new CustomEvent('shop:next', { detail: { value: 2 } }));
+```
+
+A graph's own Dispatch Event reaches its Page Events of the same name too,
+with `{ data, time }` as their detail: wiring one into the other repeats it
+every frame, so give each direction its own name.
+
+**From an iframe** (channel *postMessage*), for an export embedded in another
+site. Each node names the other page's origin exactly; `*` is refused, so a
+graph neither sends to nor hears from any page that frames it. The graph sends
+`{ type, detail }` to its parent, and hears messages of that shape:
+
+```js
+// In the page that frames the app, served from https://shop.example.com.
+const app = document.querySelector('iframe').contentWindow;
+window.addEventListener('message', (e) => {
+  if (e.origin === 'https://ar.example.com' && e.data?.type === 'shop:found') showCoupon(e.data.detail.data.name);
+});
+app.postMessage({ type: 'shop:next', detail: { value: 2 } }, 'https://ar.example.com');
+```
+
+Here the graph's Dispatch Event has the target origin
+`https://shop.example.com`, and its Page Event the origin
+`https://shop.example.com`.
+
+## UI controls
+
+Five nodes give a graph a few controls: **Button** (`ui.button`, fires
+`onClick`), **Switch** (`ui.toggle`, a boolean), **Slider** (`ui.slider`, a
+number within *min* and *max*), **Colour Picker** (`ui.colorPicker`, a colour
+`[r, g, b, a]`) and **Choice** (`ui.select`, the index of an option). Each
+change sets `value` and fires `onChange` on the next frame; the value a control
+has when the graph starts is the first value, and fires nothing.
+
+- **Drawn:** with *Element id* empty, the node draws its control with its
+  *Label* in a panel on the AR view, in the studio's preview and in an exported
+  app. A tap on the panel does not reach the scene. *Position* (live) picks the
+  panel: `top-right` (the default), `top-left`, `bottom-left`, `bottom-right` or
+  `bottom-center` (controls in a row). Controls with the same position share a
+  panel. Each position has its own part of the view, so panels never cover one
+  another, nor the renderer badge, the FPS label, Debug Stats' overlay or Open
+  URL's link. A panel takes at most its part of the view and scrolls beyond:
+  a slider may wrap under its label on a phone held upright.
+- **Bound:** with *Element id* set, the node uses that element of the page that
+  holds the app, a site's own control, and leaves it as it found it. It must be
+  of the node's kind: a `<button>` or `<input type="button">`, an
+  `<input type="checkbox">`, an `<input type="range">` or `type="number"`, an
+  `<input type="color">`, a `<select>`. Anything else is refused by name when
+  the graph starts, so a graph never reads what is typed in the page. An id
+  that names nothing draws the control instead, and the node says so.
+
+## Scripts
+
+**Script** (`script.lite`) runs JavaScript whose header comment declares the
+node's interface, after Sverchok's Script Node Lite. "pinball · one script" is
+the math demo written that way:
+
+```js
+/*
+in  t       number  d=0
+in  height  number  d=30 min=0 max=200
+out position vector3
+*/
+position = [0, 0, 40 + height * Math.sin(t * Math.PI)];
+```
+
+- **The header**, a block comment at the very start, one declaration per line:
+  - `in <name> <socket> [d=<default>] [min=…] [max=…] [step=…]`: an input, a variable of the code;
+  - `out <name> <socket>`: an output, set by assigning to that variable;
+  - `enum <name> <a> <b> …`: a dropdown param, a string in the code;
+  - `run on-change`: run only when an input or a param changed (the default, `run every-frame`, runs every frame).
+
+  Sockets are values only: `number`, `boolean`, `vector2`, `vector3`,
+  `quaternion`, `color`, `matrix4`, `event`. A script never touches a renderer,
+  so it runs the same on both. A mistake in the header shows on the node with
+  its line, and the node then has no ports.
+- **Params:** an `in` of a `number`, `boolean`, `vector3` or `color` also gets a
+  param with its default; while the input is wired it wins and the param is
+  disabled. An `enum` is a param only.
+- **The code** gets its inputs, `time` and `delta` (seconds) and `state` (an
+  object kept between runs). An output it does not assign keeps its last value;
+  an `event` output fires when it is given a value (`true`, or the event's data),
+  and an `event` input is `true` on the frame it fires. Outputs are checked
+  against their socket (a colour is clamped to 0–1) and sent only when they
+  change.
+- **Errors never stop the graph:** an exception shows on the node with its line,
+  and the outputs keep their last values. A `return` (of anything) ends a run
+  early: no outputs that run. A live edit that does not compile stays shown on
+  the node while the last good script runs on, until a script compiles. An infinite loop, though, freezes the
+  page: nothing can stop code that runs in it.
+- **Editing:** the node shows the script's file name, its ports and params, not
+  its code. **Edit** opens a large code panel (Ctrl+Enter applies), **Import**
+  reads a `.js` file or one of the examples. Applying a script whose ports
+  changed rebuilds the node and drops the wires that no longer fit, as one undo
+  step. An imported file is copied into the graph: edit it in VS Code or
+  similar, then import it again. A live edit applies while the preview runs; one
+  that changes the ports, or a default (`d=`), applies on **⟳ Reload**. A
+  script whose header has a mistake is not applied: the panel and the log say
+  which line. Applying drops the values of params whose header line is gone or
+  changed kind, in the same undo step.
+
+**Trust.** A script runs in the page, with everything the page can do: your
+other graphs, your uploaded assets, the camera once allowed. So the studio asks
+before running scripts it did not get from you: opening a graph or a project with
+scripts, or restoring an autosave whose scripts were never allowed, shows which
+nodes have them, and **Run**, **⟳ Reload**, **Open in player** and **Export** ask
+again until you allow them. The answer is
+remembered per script text (in this browser). Scripts you write, import or pick
+from the examples here, and the demos', are allowed. The player runs the scripts
+of an exported app's own graph and of the studio's **Open in player**, but
+refuses a graph with scripts named by a link (`player.html?graph=…`). An
+exported app compiles its scripts with `new Function`: a Content Security
+Policy on its host needs `'unsafe-eval'`. The MCP server never runs a script
+(`tracking_run` refuses a graph with one). All of this applies to every node
+that runs code (**Script**, **three.js Script** and **three.js Render Script**), as its catalog definition
+marks it (`runsCode`), never by its name.
+
+### three.js Script
+
+**three.js Script** (`three.script`) builds part of the scene with three.js.
+Wire its *Object* into a Marker Anchor's *Children*, like a Primitive: the
+studio keeps the camera, the marker pose, found / lost visibility and the
+export, and the script only creates and animates content. "pinball · a three.js
+script builds the scene" is a knot and a ring of spheres made that way.
+
+```js
+/*
+in  height  number  d=30 min=0 max=200
+*/
+let cube;
+function onInit({ THREE, group }) {
+  cube = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 40), new THREE.MeshStandardMaterial({ color: 0xff0055 }));
+  group.add(cube);
+}
+function onFrame({ group, time, inputs }) {
+  group.position.z = 40 + inputs.height * Math.sin(time * Math.PI);
+  cube.rotation.z = time;
+}
+```
+
+- `onInit({ THREE, group, inputs })` creates meshes, materials and lights in
+  `group`, a `THREE.Group` in marker space (mm, +Z up); `onFrame({ THREE, group,
+  time, delta, inputs })` animates (seconds); `onDispose()` releases what
+  `onInit` made. Each is optional. The geometries, materials and textures under
+  `group` are disposed anyway.
+- The header declares value inputs and dropdowns as Script's does (`in`, `enum`,
+  read in `inputs`); it has no `out` lines: what the script makes goes in its
+  group.
+- A live code change runs `onDispose`, frees the old group and runs `onInit` on a
+  fresh one; header params apply live. Errors show on the node with their line,
+  and in the code panel and the log, and never stop the graph.
+- It needs the Three.js renderer: with Babylon.js it fails at start and says so.
+
+### three.js Render Script
+
+**three.js Render Script** (`three.renderScript`) renders on its own, in place of
+Scene, Renderer, AR Camera, Marker Anchor and AR View: wire the camera's
+*Video*, the controller's *Projection*, and a Select Marker's *Pose*, *Found*
+and *Marker info*. The node makes a `WebGLRenderer` on its own canvas, laid
+over the video as AR View's is, a scene and a camera at the origin looking down
+−Z; each frame it puts the tracker's projection on the camera, runs `onFrame`
+and renders. "pinball · one three.js script renders it all" is its demo.
+
+- `onInit({ THREE, canvas, renderer, scene, camera, helpers, inputs })` builds
+  the scene; `onFrame({ THREE, renderer, scene, camera, pose, found,
+  projection, markerInfo, time, delta, helpers, inputs })` places and animates;
+  `onDispose()` releases. The scene's geometries, materials and textures are
+  disposed anyway.
+- `helpers.placeOnMarker(object, pose, found, markerInfo)` places an object as a
+  Marker Anchor does (centred on the marker, hidden when lost);
+  `helpers.markerMatrix`, `helpers.markerOffset` and
+  `helpers.applyArProjection` are the same placement in parts. They are the
+  studio's own, so a render script lines up with the standard pipeline.
+- The header declares value inputs and dropdowns; no `out` lines. A live code
+  change rebuilds the scene. Errors show on the node and never stop the graph.
+- Import offers its own examples (a bobbing cube, a rainbow knot); the menu
+  lists only examples the node accepts.
+- An AR View and a render script on one video share it: the later one stacks
+  its canvas over the frame that holds the video.
+- It needs no renderer node: an exported app with only this node ships three.js
+  without the studio's Three.js adapter.
+
+### Source code
+
+**Export ▾ → Source code (.zip)** writes the graph as a small Vite project that depends on
+three.js, `@webarkit/jsartoolkit-nft` and `@webarkit/camera-view` (the exact versions the studio
+uses), and on nothing of the studio:
+
+- `src/main.js`, one file to read top to bottom: the setup, then the frame loop. Each part is one
+  node of the graph, in the order the graph runs them, under a `// <node id> (<node type>)` comment;
+  variable names come from the node ids;
+- `index.html`, `vite.config.js`, `package.json` and a `README.md` (`npm install`, `npm run dev`);
+- `public/data/`, the assets, collected as the standalone app does, and
+  `scripts/copy-jsartoolkit-nft.mjs`, which copies the tracker's worker file from `node_modules`
+  before `dev` and `build`.
+
+The first version writes the nodes of "pinball · Three.js" (camera, the jsartoolkitNFT camera
+parameters, dataset, settings and controller, the One Euro filter, Select Marker, Three.js renderer,
+scene, AR camera, light, primitive, anchor, AR view, Inspector and Tracking stats) and glTF models. A
+graph with any other node (math, logic, actions, scripts, `page.*`, `ui.*`, Babylon.js…) is refused,
+with the list of those nodes: export a Standalone app for it. The controller's Threaded and Auto
+builds are refused too, as they need a cross-origin isolated page. Plugins write their own nodes'
+code: see `codeEmitters` in [docs/plugins.md](docs/plugins.md).
 
 ## MCP server
 
@@ -179,6 +469,7 @@ npm run mcp:studio   # stdio, from the repository root
 | `graph_validate` | the studio's validation, as a list of problems |
 | `graph_create` / `graph_edit` | build or change a graph with ops: add / remove nodes, connect, set params |
 | `tracking_run` | the graph's tracker on JPEG images in Node: per-frame poses and found / lost, as trace records |
+| `trackability_check` | rates an NFT dataset from its `.fset3` and `.fset`: the report of `npm run trackability -- <dataset> --json` |
 | `export_bundle` | the standalone app `.zip`, from the studio build (`npm run build`, in `dist/`) |
 
 ### Try it
@@ -186,7 +477,7 @@ npm run mcp:studio   # stdio, from the repository root
 1. Once: `npm install`, `npm run assets` (camera parameters, datasets and the test photo
    `tests/fixtures/pinball-demo.jpg`), and `npm run build` if you want `export_bundle` (it exports from `dist/`).
 2. Open your MCP client in the repository root. Claude Code picks up `.mcp.json` and asks to
-   approve `webarkit-studio`; `/mcp` then shows it connected with its six tools. Other clients:
+   approve `webarkit-studio`; `/mcp` then shows it connected with its seven tools. Other clients:
    add a stdio server running `node --import tsx src/mcp/main.ts` from the repository root.
 3. Ask, for example:
 
@@ -201,7 +492,7 @@ npm run mcp:studio   # stdio, from the repository root
 
 Graphs are passed inline or as a path; the tools write nothing except `export_bundle`'s zip.
 The tests (`tests/unit/mcp-*.test.ts`, `tests/integration/mcp-*.test.ts`, and `tests/e2e/mcp-export.spec.ts` on the real build) cover every tool, the
-stdio transport and this scenario. See `AGENTS.md`, "MCP server".
+stdio transport and this scenario. See `src/mcp/AGENTS.md`.
 
 ## Assets
 
@@ -222,7 +513,8 @@ its tracking traces.
 
 glTF Model (`scene.gltf`) stands models up on the marker with their front
 (glTF +Z) facing the marker's bottom edge (marker −Y); turn them with
-the Z of *Rotation*. It plays no animations. Compressed models (Draco,
+the Z of *Rotation*. *Autoplay* plays the model's first clip in a loop, on
+both renderers, and its status lists the clips. Compressed models (Draco,
 KTX2, meshopt) are not supported on Three.js; Babylon.js decodes them with
 decoders it downloads from its CDN, so prefer uncompressed models.
 
@@ -245,7 +537,7 @@ Krita as MCP servers for markers and models, and walks through the example.
             │  nodes: [{id, type, params, position}]               │
             │  edges: [{from:{node,port}, to:{node,port}}]          │
             └───────────────▲───────────────────────┬──────────────┘
-          load / toDocument │                       │ validateGraph + topologicalOrder
+          load / toDocument │                       │ loadGraphDocument + topologicalOrder
 ┌───────────────────────────┴─────┐   ┌─────────────▼──────────────────────────┐
 │ Editor (Rete.js + lit-html)     │   │ Runtime / player (no Rete)             │
 │ - StudioNode = view of catalog  │   │ - NODE_REGISTRY: type → factory        │
@@ -288,7 +580,8 @@ Key decisions:
    the Settings node becomes a new settings value, the controller sees it and
    calls its tracker's `configure()`.
 9. **Events are values.** An event output carries `{count, time, data}` and a
-   new object each time it fires; consumers detect it by reference. `onFound` /
+   new object each time it fires, though a new object is not always a firing
+   ([Events](docs/plugins.md#events) says how to detect one). `onFound` /
    `onLost` come from the tracker's per-frame `transitions` (`found` on the
    first tracked frame, `lost` once after `lostTimeout`, 200 ms by default);
    a marker's `found` output is the raw per-frame tracking.
@@ -303,7 +596,8 @@ Key decisions:
 
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
-use generic namespaces (`source.*`, `filter.*`, `scene.*`, `output.*`).
+use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
+`output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
@@ -360,11 +654,13 @@ src/
     filters/   the pose filter slot's config (applied by the tracker)
     renderers/ RendererAdapter + Three.js / Babylon.js adapters
   app/         studio.ts (editor + live preview), player.ts (standalone)
-  export/      exporters (graph JSON, standalone app bundle)
+  export/      exporters (graph JSON, project, standalone app bundle, GitHub Pages project)
 plugins/
   jsartoolkit-nft/  the jsartoolkitNFT plugin: catalog, factories, NftSession (the graph mapped onto
                     the tracker facade, shared by the browser and the tests), the tracker's
                     worker files (served by its Vite plugin, vite.ts) and virtual-fetch.ts
+packages/
+  studio-plugin-api/  the plugin API's types as a package, generated from src/plugin-api (not published)
 webarkit-studio.config.ts  the plugins this build loads
 public/graphs/ pinball-three.json, pinball-babylon.json, multi-three.json
 scripts/       fetch-assets.mjs, trace-record.mjs / trace-diff.mjs (tracking traces), check-agent-docs.mjs
@@ -383,10 +679,17 @@ Planned split once the format stabilises (npm workspaces):
 | `source.camera` | ✅ | → video |
 | `source.image` | ✅ | → video (a still image: testing without a camera) |
 | `source.videoFile` | ✅ ⚡ | → video (a video file, loop: testing without a camera) |
+| `page.event` | ✅ | → onEvent, number (a named event from the page: DOM or postMessage; see "Talking to the page") |
+| `ui.button` | ✅ ⚡ | → onClick (a button of the page, or drawn on the view; see "UI controls") |
+| `ui.toggle` | ✅ ⚡ | → value (boolean), onChange (a checkbox) |
+| `ui.slider` | ✅ ⚡ | → value (number, within *min* and *max*), onChange (a range or number input) |
+| `ui.colorPicker` | ✅ ⚡ | → value (color), onChange (a colour input) |
+| `ui.select` | ✅ ⚡ | → value (number: the option's index), onChange (a select; drawn with *options*) |
+| `script.lite` | ✅ ⚡ | the inputs and outputs its script's header declares (JavaScript; asks before running a script from someone else; see "Scripts") |
 | `jsartoolkitNFT.cameraParams` | ✅ | → camera params |
 | `jsartoolkitNFT.dataset` | ✅ | → NFT dataset |
 | `jsartoolkitNFT.settings` | ✅ ⚡ | → settings (continuous detection, detection interval, log level, near / far, lost after, AR2 tracking parameters) |
-| `jsartoolkitNFT.controller` | ✅ | video, cameraParams, datasets[], settings?, filter? → markers, onFound, onLost, projection, cameraMatrix, stats, trace |
+| `jsartoolkitNFT.controller` | ✅ | video, cameraParams, datasets[], settings?, filter? → markers, onFound, onLost, projection, cameraMatrix, stats, trace (*build*: SIMD, Standard, Threaded, Auto) |
 | `tracking.selectMarker` | ✅ ⚡ | markers → pose, found, onFound, onLost, markerInfo |
 | `jsartoolkitNFT.nativeFilter` | ✅ | → poseFilter (the tracker's `'native'` filter) |
 | `filter.oneEuro` | ✅ | → poseFilter (One Euro, @webarkit/oneeurofilter-ts inside the tracker) |
@@ -396,33 +699,68 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
 | `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
-| `scene.gltf` | ✅ ⚡ | scene → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position) |
+| `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
+| `three.renderScript` | ✅ ⚡ | video, pose, found, projection, markerInfo, the inputs its script's header declares → — (a three.js script with its own renderer, scene and camera over the video; asks before running a script from someone else; see "three.js Render Script") |
+| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
-| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`) |
+| `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |
 | `math.number` | ✅ ⚡ | → number |
 | `math.vector3` | ✅ ⚡ | x?, y?, z? → vector3 (connected inputs override the params) |
 | `math.splitVector3` | ✅ | vector3 → x, y, z |
 | `math.add` / `math.multiply` | ✅ ⚡ | a?, b? → number |
+| `math.subtract` / `math.divide` / `math.min` / `math.max` / `math.mod` | ✅ ⚡ | a?, b? → number (divide by 0: ±Infinity or NaN; mod is floored, with the sign of b: −30 mod 360 = 330) |
+| `math.negate` / `math.abs` / `math.sqrt` / `math.log` / `math.exp` | ✅ ⚡ | x? → number (log is natural; outside its domain, NaN or −Infinity) |
+| `math.round` / `math.floor` / `math.ceil` | ✅ ⚡ | x? → number (round: halves up) |
+| `math.clamp` | ✅ ⚡ | x?, min?, max? → number (max wins if min is above it) |
+| `math.lerp` | ✅ ⚡ | a?, b?, t? → a + (b − a) × t (not clamped) |
+| `math.remap` | ✅ ⚡ | x?, inMin?, inMax?, outMin?, outMax? → number (not clamped) |
+| `math.pow` | ✅ ⚡ | base?, exponent? → number |
 | `math.addVector3` / `math.scaleVector3` | ✅ ⚡ | a?, b? → vector3 / vector?, factor? → vector3 |
-| `math.sin` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin(x) |
-| `math.time` | ✅ ⚡ | → seconds since start (× speed) |
+| `math.vector2` / `math.splitVector2` | ✅ ⚡ | x?, y? → vector2 / vector2 → x, y |
+| `math.length` / `math.normalize` | ✅ ⚡ | vector? → number / vector3 (zero stays zero) |
+| `math.dot` / `math.cross` / `math.distance` | ✅ ⚡ | a?, b? (vector3) → number / vector3 / number |
+| `math.matrix4` | ✅ ⚡ | position?, rotation? (degrees), scale? → matrix4 (T · R · S, column-major, as models are placed) |
+| `math.decomposeMatrix4` | ✅ | matrix4 → position, rotation (degrees), quaternion, scale (one uniform scale: a non-uniform scale or shear is lost) |
+| `math.matrixFromPose` | ✅ | pose → matrix4, valid (identity and false without a pose) |
+| `math.matrixMultiply` | ✅ | a?, b? (matrix4) → a · b (b first; unwired is the identity) |
+| `math.invert` | ✅ | matrix4 → inverse, valid (identity and false for a singular matrix) |
+| `math.transformPoint` | ✅ ⚡ | matrix4?, point? → point (divided by w) |
+| `math.sin` / `math.cos` / `math.tan` | ✅ ⚡ | x? (degrees) → offset + amplitude × sin / cos / tan(x) |
+| `math.atan2` | ✅ ⚡ | y?, x? → angle in degrees (−180 to 180) |
+| `math.degToRad` / `math.radToDeg` | ✅ ⚡ | x? → number |
+| `math.time` | ✅ ⚡ | → seconds since start (× speed), delta (since the last frame, × speed) |
 | `color.rgba` | ✅ ⚡ | r?, g?, b?, a? → color (`[r, g, b, a]`, 0–1, sRGB) |
 | `color.split` | ✅ | color → r, g, b, a |
+| `color.hex` | ✅ ⚡ | → color (the picker's colour, opaque) |
+| `color.hsv` | ✅ ⚡ | h? (degrees, wrapped), s?, v?, a? (0–1) → color |
+| `color.mix` | ✅ ⚡ | a?, b? (colours), t? (0–1, clamped) → color (each channel and alpha, in sRGB) |
+| `color.brightness` | ✅ ⚡ | color?, factor? → color (red, green and blue × factor, clamped; alpha kept) |
+| `color.invert` | ✅ ⚡ | color? → color (1 − red, green and blue; alpha kept) |
+| `logic.and` / `logic.or` | ✅ | a, b (boolean) → value |
+| `logic.not` | ✅ | value → value |
+| `logic.toggle` | ✅ | trigger, reset? (event) → value (flips on trigger; *initial*) |
+| `logic.timer` | ✅ ⚡ | start, cancel? (event), duration? → onDone, running (*duration* in s, *repeat*) |
+| `logic.compare` | ✅ ⚡ | a?, b? → value (`==`, `!=`, `<`, `<=`, `>`, `>=`, with a tolerance for `==` and `!=`) |
+| `logic.edge` | ✅ | value → onRise, onFall |
+| `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
+| `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
+| `action.playAnimation` | ✅ ⚡ | target, play?, pause?, stop? (events) → (a clip of a glTF model; *loop*, *speed*) |
+| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a primitive) |
+| `action.playSound` | ✅ ⚡ | play?, stop? (events) → (a sound file; *volume*, *loop*) |
+| `action.openUrl` | ✅ ⚡ | show?, hide? (events) → (a link on the AR view; http and https only; *label*) |
+| `action.dispatchEvent` | ✅ | trigger? (event) → (a named event to the page: DOM or postMessage; see "Talking to the page") |
 | `debug.inspector` | ✅ | any → (value shown in the node) |
 | `debug.stats` | ✅ ⚡ | stats? → (fps, process ms, latency; optional overlay on the AR view) |
 | `debug.trace` | ✅ ⚡ | trace → (records while *Recording* is on, downloads a JSONL trace) |
 | `jsartoolkitNFT.datasetZft` | planned | → NFT dataset (`.zft`) |
-| `jsartoolkitNFT.controller` threaded build (`/td`) | planned | needs COOP/COEP headers |
 | `webarkit.cvBackend` | planned | → cvBackend (jsfeatNext / PureCV, @webarkit/cv-backend-spec) |
 | `webarkit.target` | planned | → wnftTarget (`.wnft`) |
 | `webarkit.nftTracker` | planned | video, cvBackend, target, filter? → pose, found, … |
 | `filter.ema`, `filter.kalman` | planned | → poseFilter |
 | `scene.text`, `scene.video` | planned | scene → sceneObject |
-| AR Camera near / far override | idea | renderer-side override, for trackers that do not own their planes |
+| AR Camera near / far override | planned | renderer-side override, for trackers that do not own their planes |
 | `playcanvas.renderer`, `aframe.renderer` | idea | → renderer |
-| `logic.and` / `not` / `timer` / `toggle` | planned | boolean / event |
-| `action.playAnimation` / `playSound` / `openUrl` | planned | event → |
 | `debug.featurePoints` | planned | → overlay |
 
 `?` = optional input, `[]` = accepts several connections, ⚡ = live params.
@@ -455,18 +793,34 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   Vite config sets `appType: 'mpa'` for this reason.
 - Each tracker worker embeds its WASM (~716 kB); the page loads only the light
   client (a few kB, in the plugin's chunk) and the worker of the selected build
-  (SIMD or standard). The worker files are served unchanged from
+  (SIMD, standard or threaded). The worker files are served unchanged from
   `jsartoolkit-nft/<version>/` next to the page, outside the Vite pipeline (the plugin's
-  `vite.ts`), and exported apps get only their build's. The threaded build
-  (`td`) and `build: 'auto'` are not offered: they need COOP / COEP headers.
+  `vite.ts`), and exported apps get only their build's: the threaded build adds its
+  pthread file (about 1.5 MB in all), and *Auto* needs the three builds (about 2.9 MB).
+- The **Threaded** build (`td`) needs a cross-origin isolated page, which the studio's is
+  not (see "Export"), and upstream calls it experimental; on `td`, `dispose()` skips the
+  native teardown (jsartoolkitNFT#695), and ending the worker frees the memory. It is
+  also heavy on memory: upstream notes that each threaded module reserves 1 GB of
+  shared memory, so keep to one Threaded or Auto controller per graph. Its poses match
+  SIMD's within run-to-run noise, but it may report the first found a few frames later
+  (it detects on a separate thread), which is expected for this opt-in build. *Auto*
+  picks `td` on an isolated page, then SIMD, then standard; the facade does not report
+  which one it picked, so the log says only which build was asked for and whether the
+  page is isolated.
 - Lazy chunks: Three.js adapter ~530 kB, Babylon.js adapter ~790 kB (deep
   imports from `@babylonjs/core`; the barrel import would be ~5 MB).
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
-- Graph format is `webarkit-studio/graph` v5; older versions are rejected, the
-  studio falls back to the demo. Graphs saved by the prototype under its former
-  name (`webar-studio/graph`) still load, and so does its last autosave.
+- Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
+  and the file itself is not touched. v2 and v3, prototype formats, are refused, and
+  a newer document asks for a newer studio. An unfinished graph, with a required
+  input not connected, reopens from an autosave or a file on **Import…** (a `.json` or
+  a project, #86): **Run** and the standalone app export report what it lacks. An
+  autosave that cannot be opened is kept in localStorage as
+  `webarkit-studio:autosave-set-aside`, and the demo opens. Graphs
+  saved by the prototype under its former name (`webar-studio/graph`) still load,
+  and so does its last autosave.
 - JsartoolkitNFT ≥ 1.16.0 is required (the tracker facade and its light
   client). Since 1.16.0 the One Euro filter keeps poses rigid, so filtered poses
   differ slightly from 1.15.0. Its lens follows
@@ -483,6 +837,9 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   1.16.0 the light client for its worker.
 
 ## Roadmap
+
+The source of truth for the roadmap is
+[#1](https://github.com/webarkit/webarkit-studio/issues/1). This list follows it.
 
 **Phase 1 — Foundation (this prototype)**
 - [x] Graph format v1 + validation
@@ -509,23 +866,36 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - [x] Inspector panel for complex params (`vector3`, `matrix4` param kinds)
 - [x] Undo / redo (`rete-history-plugin`), including param edits
 - [x] Context menu / search to add nodes, minimap, auto-arrange (a layered layout instead of elkjs), copy / paste
-- [ ] Asset manager: upload images and datasets, glTF models
+- [x] Asset manager: upload images and datasets, glTF models
 - [x] First math nodes and a Primitive position driven by an input (#25)
 - [x] Plugin API (#12): typed manifest, graph format v5 `plugins`, jsartoolkitNFT moved onto it
 - [x] jsartoolkit-nft 1.16.0: the facade's own worker (`createNFTTrackerWorker`, light client) replaces ours (#14)
 - [x] MCP server (#8): catalog, graph editing and validation, tracking on images in Node, app export
-- [ ] artoolkit5-ts as the first external plugin (#12, Phase C), runtime loading from a URL (#12, Phase D)
 
-**Phase 3 — Logic & publishing**
-- [ ] Logic and action nodes consuming events
-- [ ] Math nodes: numbers, vectors, matrices, functions, renderer-independent (#24)
-- [ ] Export: readable jsartoolkitNFT source code (code generation, Three.js first)
-- [ ] Deploy: publish the bundle to GitHub Pages from the studio
-- [ ] Graph format migrations (`version` field)
+**Phase 3 — Logic and publishing (released in [v0.3.0](https://github.com/webarkit/webarkit-studio/releases/tag/v0.3.0); [#3](https://github.com/webarkit/webarkit-studio/issues/3) has the full list)**
+- [x] glTF animations on both renderers ([#58](https://github.com/webarkit/webarkit-studio/issues/58))
+- [x] Logic nodes and the event model ([#59](https://github.com/webarkit/webarkit-studio/issues/59))
+- [x] Action nodes triggered by events ([#60](https://github.com/webarkit/webarkit-studio/issues/60))
+- [x] Math nodes: numbers, vectors, matrices, functions, renderer-independent ([#24](https://github.com/webarkit/webarkit-studio/issues/24))
+- [x] Script nodes: `script.lite` ([#35](https://github.com/webarkit/webarkit-studio/issues/35)), `three.script` ([#36](https://github.com/webarkit/webarkit-studio/issues/36)), `three.renderScript` ([#37](https://github.com/webarkit/webarkit-studio/issues/37))
+- [x] Graph format migrations: older `version`s upgrade on load ([#61](https://github.com/webarkit/webarkit-studio/issues/61))
+- [x] Deploy: an export with a GitHub Actions workflow, which you push to your own repository for GitHub Pages; the studio holds no credential ([#62](https://github.com/webarkit/webarkit-studio/issues/62))
+- [x] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
+- [x] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
-**Phase 4 — WebARKit integration**
-- [ ] `webarkit.*` nodes on @webarkit/nft-tracker, cv-backend-spec backends and `.wnft` targets
-- [ ] In-editor NFT dataset generation from an uploaded image
+**Phase 4 — Scene and editor (v0.4.0)**
+- [ ] Node selection and macros in the editor
+- [ ] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
+
+**Phase 5 — Authoring tools and interaction (v0.5.0)**
+- [ ] Near / far on AR Camera, a preview camera, scene helpers, fog, custom geometry
+- [ ] NFT dataset generation from an uploaded image
+- [ ] Touch and mouse interaction with meshes and markers
+
+**Unscheduled**
+- [ ] WebARKit integration ([#4](https://github.com/webarkit/webarkit-studio/issues/4)): no phase and no version; it starts when webarkit/webarkit publishes `@webarkit/nft-tracker`
+- [ ] Not planned for a release yet: artoolkit5-ts as the first external plugin ([#31](https://github.com/webarkit/webarkit-studio/issues/31))
+- [ ] Not planned for a release yet: loading plugins from a URL ([#32](https://github.com/webarkit/webarkit-studio/issues/32))
 
 ## History
 

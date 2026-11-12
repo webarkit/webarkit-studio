@@ -7,16 +7,53 @@ import { unzipSync } from 'fflate';
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
-/** Loads a demo graph in the studio (fresh autosave) and waits until every node and wire is drawn. */
-export async function loadDemo(page: Page, demo: string) {
-  const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { nodes: unknown[]; edges: unknown[] };
+/** Waits until the studio has finished opening what it opens at startup: an autosave, or the demo. */
+export async function startupDone(page: Page) {
+  await expect(page.locator('body[data-startup="done"]')).toBeAttached({ timeout: 30_000 });
+}
+
+/**
+ * Exports download, as in a browser with no save dialog (#118). Headless Chromium has `showSaveFilePicker`, but
+ * rejects it at once with an AbortError, which the studio reads as a cancel: nothing would be saved. Before the
+ * page loads.
+ */
+export async function withoutSaveDialog(page: Page) {
+  await page.addInitScript(() => delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker);
+}
+
+/**
+ * Opens the studio with no autosave and no save dialog (exports download). It waits for the startup load both
+ * times: a load still running would autosave again after the clear.
+ */
+export async function openStudio(page: Page) {
+  await withoutSaveDialog(page);
   await page.goto('/index.html');
+  await startupDone(page);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  await startupDone(page);
+}
+
+/**
+ * Picks a demo and waits for that load to have applied (the studio counts them on the body: the demo
+ * may be the one already shown), then until every node and wire is drawn. Several demos have the same
+ * counts, so it also checks the graph's name, as the studio saves it.
+ */
+export async function pickDemo(page: Page, demo: string) {
+  const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
+  const loads = Number(await page.locator('body').getAttribute('data-loads'));
   await page.selectOption('#demo-select', demo);
   await page.click('#btn-demo');
+  await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
   await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
   await expect(page.locator('svg.connection path')).toHaveCount(doc.edges.length);
+}
+
+/** Loads a demo graph in a studio with no autosave. */
+export async function loadDemo(page: Page, demo: string) {
+  await openStudio(page);
+  await pickDemo(page, demo);
 }
 
 /** Runs the preview and waits until the whole graph is initialised. */
@@ -38,15 +75,15 @@ const TYPES: Record<string, string> = {
   '.txt': 'text/plain',
 };
 
-/** Minimal static server with 404 for missing files, like a plain web host. */
-export async function serveDir(root: string): Promise<{ url: string; close: () => Promise<void> }> {
+/** Minimal static server with 404 for missing files, like a plain web host. `headers` go on every file it serves. */
+export async function serveDir(root: string, headers: Record<string, string> = {}): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer(async (req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^([/\\])+/, '');
     const file = join(root, path || 'index.html');
     try {
       const s = await stat(file);
       const target = s.isDirectory() ? join(file, 'index.html') : file;
-      res.writeHead(200, { 'content-type': TYPES[extname(target)] ?? 'application/octet-stream' });
+      res.writeHead(200, { ...headers, 'content-type': TYPES[extname(target)] ?? 'application/octet-stream' });
       res.end(await readFile(target));
     } catch {
       res.writeHead(404).end('not found');
@@ -58,9 +95,12 @@ export async function serveDir(root: string): Promise<{ url: string; close: () =
 }
 
 /** Exports the current graph as a standalone app and unzips it. Returns the app folder. */
-export async function exportApp(page: Page): Promise<{ dir: string; files: string[] }> {
+export const exportApp = (page: Page) => exportZip(page, 'app-bundle');
+
+/** Exports the current graph with this exporter and unzips the result. Returns the folder in the zip. */
+export async function exportZip(page: Page, exporter: string): Promise<{ dir: string; files: string[] }> {
   await page.click('#export-menu summary');
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-exporter=app-bundle]')]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click(`[data-exporter=${exporter}]`)]);
   const entries = unzipSync(new Uint8Array(readFileSync(await download.path())));
   const out = mkdtempSync(join(tmpdir(), 'webar-export-'));
   for (const [name, data] of Object.entries(entries)) {

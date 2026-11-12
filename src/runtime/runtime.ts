@@ -6,7 +6,9 @@
  * standalone player page.
  */
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
-import { resolveParams, topologicalOrder, validateGraph, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
+import { resolveParams, topologicalOrder, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
+import { loadGraphDocument } from '../core/migrations';
+import { effectiveDefinition } from '../core/script';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup } from '../assets/asset';
 import { RuntimeAssets } from './assets';
@@ -76,7 +78,7 @@ export class GraphRuntime {
   constructor(doc: unknown, opts: RuntimeOptions) {
     this.catalog = opts.catalog ?? NODE_CATALOG;
     this.registry = opts.registry ?? NODE_REGISTRY;
-    this.doc = validateGraph(doc, this.catalog);
+    this.doc = loadGraphDocument(doc, this.catalog).doc;
     this.opts = opts;
   }
 
@@ -87,7 +89,7 @@ export class GraphRuntime {
     const assets = (this.assets = new RuntimeAssets(this.opts.assets ?? (() => undefined)));
 
     for (const node of topologicalOrder(this.doc)) {
-      const factory = this.registry[node.type];
+      const factory = Object.hasOwn(this.registry, node.type) ? this.registry[node.type] : undefined;
       if (!factory) throw new NodeRuntimeError(node.id, `No runtime implementation for "${node.type}"`);
       const ctx: RuntimeContext = {
         nodeId: node.id,
@@ -100,7 +102,7 @@ export class GraphRuntime {
       };
       let params: Record<string, ParamValue>;
       try {
-        params = this.resolveAssets(node, resolveParams(this.catalog[node.type], node.params), assets);
+        params = this.resolveAssets(node, resolveParams(this.definition(node)!, node.params), assets);
       } catch (err) {
         this.stop();
         throw new NodeRuntimeError(node.id, `Node ${node.id} (${node.type}): ${(err as Error).message}`);
@@ -148,7 +150,8 @@ export class GraphRuntime {
   setParam(nodeId: string, key: string, value: ParamValue): ParamChangeResult {
     const inst = this.instances.get(nodeId);
     if (!this.running || !inst) return 'not-running';
-    const spec = this.catalog[inst.node.type]?.params[key];
+    // The params as they are now: a script's live edit can declare new ones.
+    const spec = this.definition({ type: inst.node.type, params: { ...inst.params, [key]: value } })?.params[key];
     // Asset params are resolved at start (resolveAssets), so they never apply live.
     if (!spec?.live || (spec.kind === 'string' && spec.asset)) return 'restart';
     inst.params[key] = value;
@@ -174,7 +177,7 @@ export class GraphRuntime {
 
   /** Replaces `asset://` references in params marked `asset` with URLs the node can load. */
   private resolveAssets(node: GraphNode, params: Record<string, ParamValue>, assets: RuntimeAssets): Record<string, ParamValue> {
-    for (const [key, spec] of Object.entries(this.catalog[node.type].params)) {
+    for (const [key, spec] of Object.entries(this.definition(node)!.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       const ref = parseAssetRef(String(params[key]));
       if (ref) params[key] = assets.resolve(ref, spec.asset);
@@ -187,8 +190,13 @@ export class GraphRuntime {
    * topological order, so every source already exists. Done once per start,
    * which keeps the per-frame cost linear in the number of edges.
    */
+  /** A node's effective definition: the catalog's, with a script node's header ports and params (src/core/script.ts). */
+  private definition(node: { type: string; params?: Record<string, ParamValue> }): NodeDefinition | undefined {
+    return effectiveDefinition(node, this.catalog);
+  }
+
   private planInputs(node: GraphNode): InputPlan[] {
-    const def = this.catalog[node.type];
+    const def = this.definition(node)!;
     return Object.entries(def.inputs).map(([key, spec]) => ({
       key,
       multiple: Boolean(spec.multiple),
