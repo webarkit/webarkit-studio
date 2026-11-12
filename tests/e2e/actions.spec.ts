@@ -107,7 +107,9 @@ for (const engine of ['three', 'babylon']) {
           [['select_pinball', 'onLost'], ['link', 'hide']],
         ],
       });
-      // Slow: over the 4 s of a finding, the 2 s clip does not come round to where it started.
+      // Slow: over the 4 s of a finding, the 2 s clip moves about 1.2 s, less than a turn. It loops, and a finding
+      // starts where the last one held, so how far it moved is read modulo its length.
+      const CLIP = 2;
       Object.assign(doc.nodes.find((n: { id: string }) => n.id === 'play').params, { speed: 0.3 });
       await openGraph(page, doc);
       const { dir, files } = await exportApp(page);
@@ -120,13 +122,14 @@ for (const engine of ['three', 'babylon']) {
         const app = await browser.newPage({ viewport: { width: 844, height: 390 } });
         const errors: string[] = [];
         const missing: string[] = [];
-        const marks: Array<{ mark: string; time: number }> = [];
+        /** Each change of the clip: its mark, the time the engine reads, and when the test saw it (ms). */
+        const marks: Array<{ mark: string; time: number; at: number }> = [];
         app.on('pageerror', (e) => errors.push(e.message));
         app.on('response', (r) => r.status() >= 400 && !r.url().endsWith('.zft') && missing.push(`${r.status()} ${r.url()}`));
         // The player has no status: each change of the clip is in the log, with the time the engine reads.
         app.on('console', (m) => {
           const found = m.text().match(/play: ([▶‖■]) animation0 (\d+\.\d+) s/);
-          if (found) marks.push({ mark: found[1], time: Number(found[2]) });
+          if (found) marks.push({ mark: found[1], time: Number(found[2]), at: Date.now() });
         });
         // Records what starts. Headless Chromium runs a context with no gesture at all, so this shows that the
         // sound starts on a running clock, not that the Start button unlocks it: that is the check on a phone.
@@ -142,41 +145,56 @@ for (const engine of ['three', 'babylon']) {
         await app.goto(server.url);
         await app.click('#start');
 
-        // Found: the clip plays, the sound starts on a running context, and the link appears.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(1);
-        expect(marks[0].mark).toBe('▶');
+        // A finding can be cut short: the first one by when the tracker is ready, any one by a found that comes
+        // late after the blank (#91). Each is measured, found to lost, and the checks are those of the first one
+        // that outlasts them and is long enough for the clip to move well past 0.5 s.
+        const LONG = 2500; // ms: the clip moves 0.75 s
+        // A sound starts on each found, and a ▶ is logged only on a found.
+        const founds = (until: number) => marks.slice(0, until + 1).filter((m) => m.mark === '▶').length;
         const link = app.locator('.ar-view a');
-        await expect(link).toHaveText('Read more');
-        await expect(link).toHaveAttribute('href', 'https://example.com/more');
-        await expect(link).toHaveAttribute('target', '_blank');
-        await expect(link).toHaveAttribute('rel', 'noopener');
-        // What a tap there reaches, with no scrolling: a Playwright click would scroll to it.
-        const tapped = await link.evaluate((a) => {
-          const { left, top, width, height } = a.getBoundingClientRect();
-          return document.elementFromPoint(left + width / 2, top + height / 2) === a;
-        });
-        expect(tapped).toBe(true);
         const sound = () =>
           app.evaluate(() => {
             const { starts, context } = (window as unknown as { sound: { starts: number; context?: BaseAudioContext } }).sound;
             return { starts, state: context?.state, time: context?.currentTime ?? 0 };
           });
-        const before = await sound();
-        expect(before).toMatchObject({ starts: 1, state: 'running' });
-        await expect.poll(async () => (await sound()).time, { timeout: 3000 }).toBeGreaterThan(before.time);
+        let found = -1;
+        for (let k = 0; found < 0; k += 2) {
+          expect(k / 2, 'a finding long enough for the checks, within 10').toBeLessThan(10);
+          await expect.poll(() => marks.length, NEXT).toBeGreaterThan(k);
+          expect(marks[k].mark).toBe('▶');
 
-        // Lost: it holds at a later time, and the link goes.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(2);
-        expect(marks[1].mark).toBe('‖');
-        expect(marks[1].time).toBeGreaterThan(marks[0].time + 0.5);
-        await expect(link).toHaveCount(0);
+          // Found: the clip plays, the sound starts on a running context, and the link appears.
+          await expect(link).toHaveText('Read more', NEXT);
+          await expect(link).toHaveAttribute('href', 'https://example.com/more');
+          await expect(link).toHaveAttribute('target', '_blank');
+          await expect(link).toHaveAttribute('rel', 'noopener');
+          // What a tap there reaches, with no scrolling: a Playwright click would scroll to it.
+          const tapped = await link.evaluate((a) => {
+            const { left, top, width, height } = a.getBoundingClientRect();
+            return document.elementFromPoint(left + width / 2, top + height / 2) === a;
+          });
+          const before = await sound();
+          // Lost before the checks ended: they may have read the next finding.
+          if (marks.length > k + 1) continue;
+          expect(tapped).toBe(true);
+          expect(before).toMatchObject({ starts: founds(k), state: 'running' });
+          await expect.poll(async () => (await sound()).time, { timeout: 3000 }).toBeGreaterThan(before.time);
 
-        // Found again: it goes on from where it held, and a second sound starts.
-        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(3);
-        expect(marks[2].mark).toBe('▶');
-        expect(Math.abs(marks[2].time - marks[1].time)).toBeLessThan(0.05);
+          // Lost: the link goes.
+          await expect.poll(() => marks.length, NEXT).toBeGreaterThan(k + 1);
+          expect(marks[k + 1].mark).toBe('‖');
+          await expect(link).toHaveCount(0);
+          if (marks[k + 1].at - marks[k].at >= LONG) found = k;
+        }
+        // It held at a later time.
+        expect((marks[found + 1].time - marks[found].time + CLIP) % CLIP).toBeGreaterThan(0.5);
+
+        // Found again: it goes on from where it held, and another sound starts.
+        await expect.poll(() => marks.length, NEXT).toBeGreaterThanOrEqual(found + 3);
+        expect(marks[found + 2].mark).toBe('▶');
+        expect(Math.abs(marks[found + 2].time - marks[found + 1].time)).toBeLessThan(0.05);
         await expect(link).toHaveCount(1);
-        await expect.poll(async () => (await sound()).starts).toBe(2);
+        await expect.poll(async () => (await sound()).starts).toBe(founds(found + 2));
 
         await expect(app.locator('#error')).toBeHidden();
         expect(errors).toEqual([]);
