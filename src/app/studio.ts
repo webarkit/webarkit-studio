@@ -10,7 +10,8 @@ import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
 import { HANDOFF_KEY } from './handoff';
-import { EXPORTERS } from '../export/exporters';
+import { defaultFilename, EXPORTERS } from '../export/exporters';
+import { type SaveFailed, saveFile } from './save-file';
 import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
@@ -80,6 +81,9 @@ const scriptHandlers: ScriptHandlers = {
   edit: (node) => scriptPanel.open(node),
   apply: (node, text, file) => void studio.applyScript(node.id, text, file),
 };
+
+/** The graph's name (#118): it names every export. Set with `value`, as typed text, never markup. */
+const graphNameInput = $<HTMLInputElement>('graph-name');
 
 const inspectorEl = $('inspector');
 let inspected: StudioNode | null = null;
@@ -161,8 +165,19 @@ const studio = await createStudioEditor($('editor'), {
   // The user wrote, imported or picked it here: no need to ask before running it.
   onScriptApplied: (text) => void trustScripts([text]),
   onScriptRefused: (nodeId, problem) => log(`✗ ${nodeId}: the script was not applied, its header has a mistake: ${problem}`),
+  onNameChange(name) {
+    // Not over what the user is typing: "my " is stored as "my", and the space stays in the field.
+    if (graphNameInput.value.trim() !== name) graphNameInput.value = name;
+  },
 });
 showInspector();
+graphNameInput.value = studio.toDocument().name ?? '';
+graphNameInput.oninput = () => studio.setName(graphNameInput.value);
+// Enter or leaving the field ends the edit: the next one is another undo step.
+graphNameInput.onchange = () => {
+  studio.endNameEdit();
+  graphNameInput.value = studio.toDocument().name ?? '';
+};
 $('btn-undo').onclick = () => void studio.undo();
 $('btn-redo').onclick = () => void studio.redo();
 $('btn-arrange').onclick = () => void studio.arrange();
@@ -265,13 +280,16 @@ for (const exporter of EXPORTERS) {
     // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
     if (!(await scriptsAllowed(doc, 'export'))) return;
     log(`⇩ export: ${exporter.label}`);
+    // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
     try {
-      const { filename, blob } = await exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore });
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
+      const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore }), accept);
+      if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
+      else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
     } catch (err) {
-      log(`✗ export failed: ${(err as Error).message}`);
+      const { message, picked } = err as SaveFailed;
+      // Chromium creates (or empties) the chosen file as soon as it is picked, before the export runs.
+      log(`✗ export failed: ${message}${picked ? `; ${picked} was left empty where you chose to save it` : ''}`);
     }
   };
   exportItems.appendChild(item);

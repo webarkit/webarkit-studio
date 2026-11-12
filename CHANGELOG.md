@@ -8,6 +8,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Added
 
+- The graph's name can be edited in the toolbar (#118), as one undo step, and every export is named after
+  it. In Chromium browsers an export asks where to save it and under which name; elsewhere it downloads
+  as before.
 - MCP server: `trackability_check` (#44) rates an NFT dataset and returns the report of
   `npm run trackability -- <dataset> --json`. Plugins can provide such a check with a `DatasetCheck`
   (plugin API, optional), listed in `webarkit-studio.node.config.ts`.

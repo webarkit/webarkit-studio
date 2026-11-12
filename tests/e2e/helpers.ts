@@ -13,10 +13,20 @@ export async function startupDone(page: Page) {
 }
 
 /**
- * Opens the studio with no autosave. It waits for the startup load both times:
- * a load still running would autosave again after the clear.
+ * Exports download, as in a browser with no save dialog (#118). Headless Chromium has `showSaveFilePicker`, but
+ * rejects it at once with an AbortError, which the studio reads as a cancel: nothing would be saved. Before the
+ * page loads.
+ */
+export async function withoutSaveDialog(page: Page) {
+  await page.addInitScript(() => delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker);
+}
+
+/**
+ * Opens the studio with no autosave and no save dialog (exports download). It waits for the startup load both
+ * times: a load still running would autosave again after the clear.
  */
 export async function openStudio(page: Page) {
+  await withoutSaveDialog(page);
   await page.goto('/index.html');
   await startupDone(page);
   await page.evaluate(() => localStorage.clear());

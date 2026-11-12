@@ -15,7 +15,7 @@ import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
-import { mergeParamEdit, ParamEditAction, sameParamValue } from './history';
+import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
 import { searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
@@ -39,6 +39,8 @@ export interface StudioEditorEvents {
   onScriptApplied?: (text: string) => void;
   /** A script was not applied: its header has a mistake (the first one, with its line). */
   onScriptRefused?: (nodeId: string, problem: string) => void;
+  /** The graph's name changed: a load, New, an edit, its undo or redo (#118). */
+  onNameChange?: (name: string) => void;
 }
 
 export interface StudioEditor {
@@ -56,6 +58,12 @@ export interface StudioEditor {
   /** Sets a param as a user edit (undo, live runtime, autosave). */
   setParam(nodeId: string, key: string, value: ParamValue): void;
   /**
+   * Renames the graph as a user edit (#118), trimmed: an empty name stays empty. The edits of one session are one
+   * undo step; endNameEdit() ends the session (the name field lost the focus, or Enter).
+   */
+  setName(name: string): void;
+  endNameEdit(): void;
+  /**
    * Gives a script node a new script (#35), as one undo step: the wires to ports it no longer has, or has with
    * another socket type, are removed, with the param values that no longer fit, and the node's ports rebuilt.
    * Undo brings back the script, its wires and its values. False, with nothing changed, when the header has mistakes.
@@ -69,7 +77,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const editor = new NodeEditor<Schemes>();
   const area = new AreaPlugin<Schemes, AreaExtra>(container);
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
-  const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction>();
+  const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction | NameEditAction>();
   let graphName = 'Untitled';
 
   /**
@@ -138,6 +146,31 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       if (file !== undefined && recordInStep(node, 'file', file)) applyParam(nodeId, 'file', file);
     });
     return true;
+  }
+
+  /** Applies a name without recording it: an edit, its undo or redo. */
+  function applyName(name: string) {
+    graphName = name;
+    events.onNameChange?.(name);
+    onChange();
+  }
+  /** The open session's step: the next edit folds into it while it is still the latest record. */
+  let nameEdit: NameEditAction | undefined;
+  function editName(value: string) {
+    const name = value.trim();
+    if (name === graphName) return;
+    const action = new NameEditAction(graphName, name, applyName);
+    applyName(name);
+    const latest = history.getHistorySnapshot().at(-1)?.action;
+    if (latest === nameEdit && mergeNameEdit(nameEdit, action)) {
+      notifyHistory();
+      return;
+    }
+    history.separate();
+    history.add(action);
+    history.separate();
+    nameEdit = action;
+    notifyHistory();
   }
 
   let lastParamEdit: ParamEditAction | undefined;
@@ -515,6 +548,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   async function loadGraph(doc: GraphDocument) {
     await editor.clear();
     graphName = doc.name ?? 'Untitled';
+    events.onNameChange?.(graphName);
     for (const n of doc.nodes) await addNode(n.type, n.position, n.id, n.params);
     for (const e of doc.edges) {
       const source = editor.getNode(e.from.node);
@@ -561,6 +595,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         // A loaded graph starts a new history: undo must not bring back the previous one.
         history.clear();
         lastParamEdit = undefined;
+        nameEdit = undefined;
         notifyHistory();
       }
     },
@@ -577,6 +612,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
     arrange: () => serial(arrange),
     setParam: editParam,
+    setName: editName,
+    endNameEdit() {
+      nameEdit = undefined;
+    },
     applyScript: async (nodeId, text, file) => {
       let applied = false;
       await serial(async () => void (applied = await applyScript(nodeId, text, file)));
