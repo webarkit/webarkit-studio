@@ -11,6 +11,7 @@ test-results/
 .idea/
 .playwright-mcp/
 .claude/settings.local.json
+.claude/worktrees/
 generated/
 out/
 # Generated from src/plugin-api and the root LICENSE (scripts/build-plugin-api.mjs).
