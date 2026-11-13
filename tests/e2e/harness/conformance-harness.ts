@@ -252,7 +252,10 @@ export interface Harness {
    * until Babylon.js's shaders are ready; throws if they are not after 2 s, so a blank frame is never measured.
    */
   buildAdapterScene(ops: AdapterOp[]): Promise<void>;
-  /** World-space bounds of an object made by buildAdapterScene, by its id. */
+  /**
+   * World-space bounds of a mesh made by buildAdapterScene, by its id: the mesh alone, without children (Three.js's
+   * Box3.setFromObject would include them, Babylon.js's bounding info does not), so give it a mesh with none.
+   */
   adapterBounds(id: string): { min: V3; max: V3 };
   render(): void;
   /** Framebuffer RGBA averaged over a w × h block, top-left origin, straight after a render. */
@@ -303,6 +306,16 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   let adapterObjects: SceneObject[] = [];
   /** The objects of buildAdapterScene, by id. */
   const named = new Map<string, SceneObject>();
+  /** Renders until Babylon.js's shaders are ready; throws after 2 s, so a blank frame is never measured. */
+  async function babylonReady() {
+    if (engine !== 'babylon') return;
+    const scene = babylonScene();
+    for (let i = 0; i < 200 && !scene.isReady(); i++) {
+      handle.render(PROJECTION);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    if (!scene.isReady()) throw new Error('the Babylon.js scene is not ready after 2 s');
+  }
   const probe: SceneObject = handle.createGroup();
   handle.addRoot(probe);
   if (engine === 'babylon' && options.exactSrgb) {
@@ -853,24 +866,21 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             handle.setIntensity(get(step.id), step.intensity);
             break;
           case 'render':
+            // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.
+            await babylonReady();
             handle.render(PROJECTION);
             break;
           default:
             throw new Error(`unknown operation ${JSON.stringify(step)}`);
         }
       }
-      if (engine === 'babylon') {
-        const scene = babylonScene();
-        for (let i = 0; i < 200 && !scene.isReady(); i++) {
-          handle.render(PROJECTION);
-          await new Promise((r) => setTimeout(r, 10));
-        }
-        if (!scene.isReady()) throw new Error('the Babylon.js scene is not ready after 2 s');
-      }
+      await babylonReady();
     },
     adapterBounds(id) {
       const o = named.get(id);
       if (!o) throw new Error(`no object "${id}"`);
+      if (engine === 'babylon' && !('getBoundingInfo' in (o.native as object))) throw new Error(`bounds of "${id}": not a mesh`);
+      if (engine === 'three' && !(o.native as THREE.Mesh).isMesh) throw new Error(`bounds of "${id}": not a mesh`);
       if (engine === 'three') {
         // From the root, as WebGLRenderer.render does: a group whose matrixAutoUpdate is off is forced only from above.
         threeScene().updateMatrixWorld();

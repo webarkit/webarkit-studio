@@ -70,7 +70,7 @@ function worldBounds(engine: Engine, object: SceneObject): Bounds {
 /** The report's geometry tolerance: 1e-4 mm per coordinate (docs/proposals/scene-nodes-equivalence.md). */
 const GEOMETRY = 1e-4;
 
-export interface PrimitiveCase {
+interface PrimitiveCase {
   spec: PrimitiveSpec;
   /** Local bounds both engines must give, about the object's origin. */
   bounds: Bounds;
@@ -80,7 +80,7 @@ export interface PrimitiveCase {
 
 const half = (s: number): Bounds => ({ min: [-s / 2, -s / 2, -s / 2], max: [s / 2, s / 2, s / 2] });
 
-export const PRIMITIVE_CASES: PrimitiveCase[] = [
+const PRIMITIVE_CASES: PrimitiveCase[] = [
   { spec: { shape: 'box', size: 80, color: '#ffffff' }, bounds: half(80), restingMinZ: 0 },
   { spec: { shape: 'box', size: 37, color: '#ffffff' }, bounds: half(37), restingMinZ: 0 },
   { spec: { shape: 'sphere', size: 80, color: '#ffffff' }, bounds: half(80), restingMinZ: 0 },
@@ -97,28 +97,34 @@ describe('primitive conformance: SceneHandle.createPrimitive on both adapters', 
     for (const engine of Object.keys(ENGINES) as Engine[]) {
       test(`${engine}: ${name(c)}, its bounds`, () => {
         const adapter = ENGINES[engine]();
-        const scene = adapter.createScene({ defaultLights: false });
-        const object = scene.createPrimitive(c.spec);
-        scene.addRoot(object);
-        const b = worldBounds(engine, object);
-        console.log('primitive bounds', engine, name(c), JSON.stringify(b));
-        for (let i = 0; i < 3; i++) {
-          expect(Math.abs(b.min[i] - c.bounds.min[i]), `min[${i}] ${b.min[i]}`).toBeLessThanOrEqual(GEOMETRY);
-          expect(Math.abs(b.max[i] - c.bounds.max[i]), `max[${i}] ${b.max[i]}`).toBeLessThanOrEqual(GEOMETRY);
+        try {
+          const scene = adapter.createScene({ defaultLights: false });
+          const object = scene.createPrimitive(c.spec);
+          scene.addRoot(object);
+          const b = worldBounds(engine, object);
+          console.log('primitive bounds', engine, name(c), JSON.stringify(b));
+          for (let i = 0; i < 3; i++) {
+            expect(Math.abs(b.min[i] - c.bounds.min[i]), `min[${i}] ${b.min[i]}`).toBeLessThanOrEqual(GEOMETRY);
+            expect(Math.abs(b.max[i] - c.bounds.max[i]), `max[${i}] ${b.max[i]}`).toBeLessThanOrEqual(GEOMETRY);
+          }
+        } finally {
+          adapter.dispose();
         }
-        adapter.dispose();
       });
 
       test(`${engine}: ${name(c)}, stood on the marker by scene.primitive`, () => {
         const adapter = ENGINES[engine]();
-        const scene = adapter.createScene({ defaultLights: false });
-        const params = { ...resolveParams(NODE_CATALOG['scene.primitive'], {}), shape: c.spec.shape, size: c.spec.size, spin: false };
-        const outputs = primitive(params, {} as RuntimeContext).init!({ scene }) as { object: SceneObject };
-        scene.addRoot(outputs.object);
-        const b = worldBounds(engine, outputs.object);
-        console.log('primitive resting', engine, name(c), b.min[2]);
-        expect(Math.abs(b.min[2] - c.restingMinZ), `min z ${b.min[2]}`).toBeLessThanOrEqual(GEOMETRY);
-        adapter.dispose();
+        try {
+          const scene = adapter.createScene({ defaultLights: false });
+          const params = { ...resolveParams(NODE_CATALOG['scene.primitive'], {}), shape: c.spec.shape, size: c.spec.size, spin: false };
+          const outputs = primitive(params, {} as RuntimeContext).init!({ scene }) as { object: SceneObject };
+          scene.addRoot(outputs.object);
+          const b = worldBounds(engine, outputs.object);
+          console.log('primitive resting', engine, name(c), b.min[2]);
+          expect(Math.abs(b.min[2] - c.restingMinZ), `min z ${b.min[2]}`).toBeLessThanOrEqual(GEOMETRY);
+        } finally {
+          adapter.dispose();
+        }
       });
     }
   }

@@ -5,6 +5,8 @@
 //
 // - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
 //   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
+// - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
+//   light kinds, and stays a table of its own because #131, #144 and #145 cite its test.fail titles.
 // - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
 //   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
 // - Node cases (no WebGL): tests/unit/conformance/. Animations keep their own table on both engines:
@@ -435,16 +437,19 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
   //
   // A difference the adapters have today is `known`: its rules become a test marked test.fail with the issue that fixes
   // it, and a passing test pins what each engine renders, so the failing one fails for that reason and no other.
+  //
+  // The scene has no default lights: an unlit primitive is black on both engines, so a `same` rule on it compares
+  // coverage (alpha) only, not colour, while the lit colours differ (#131).
 
   type Region = [number, number, number, number];
   type Rule =
-    /** Per engine: alpha ≥ 250 (something drawn) or ≤ 2 (nothing). Pair an `empty` with a `drawn` in the same frame. */
+    /** Per engine: alpha ≥ 250 (something drawn) or ≤ 2 (nothing). A case with `empty` needs a `drawn` (checked). */
     | { region: string; is: 'drawn' | 'empty' }
     /** Across engines: RGBA within SAME. */
     | { region: string; is: 'same' }
     /** Across engines: alpha within SAME. */
     | { region: string; is: 'sameAlpha' }
-    /** Across engines: the first and last pixel with alpha > 128 on this row, within EDGE px. */
+    /** Across engines: the first and last pixel with alpha > 128 on this row, within EDGE px; something drawn on both. */
     | { row: number; is: 'edges' }
     /** Per engine: the object's world bounds, within the report's 1e-4 mm. */
     | { bounds: string; min: V3; max: V3 };
@@ -478,8 +483,14 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       (shape): Case => ({
         name: `createPrimitive ${shape}, unlit: the same silhouette`,
         ops: [{ op: 'createPrimitive', id: 'p', spec: { shape, size: 40, color: '#808080' } }, { op: 'setPosition', id: 'p', position: [0, 0, -80] }, { op: 'addRoot', id: 'p' }],
-        regions: { centre: [62, 62, 4, 4] },
-        rules: [{ region: 'centre', is: 'same' }, { row: 64, is: 'edges' }, { row: 56, is: 'edges' }],
+        // The torus knot has a hole about its axis (2 px here): its rows carry the check, not its centre.
+        regions: shape === 'torusKnot' ? {} : { centre: [62, 62, 4, 4] },
+        rules: [
+          ...(shape === 'torusKnot' ? [] : [{ region: 'centre', is: 'drawn' } as const, { region: 'centre', is: 'same' } as const]),
+          { row: 64, is: 'edges' },
+          { row: 56, is: 'edges' },
+          { row: 72, is: 'edges' },
+        ],
       }),
     ),
     {
@@ -537,9 +548,12 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ...box('a', 40, [0, 0, -80]),
         { op: 'addRoot', id: 'a' },
         { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 0.5] },
+        // An opaque neighbour: the frame is drawn, so a half-transparent alpha cannot be a blank one.
+        ...box('b', 30, [40, 0, -80]),
+        { op: 'addRoot', id: 'b' },
       ],
-      regions: { centre: [60, 60, 8, 8] },
-      rules: [{ region: 'centre', is: 'sameAlpha' }],
+      regions: { centre: [60, 60, 8, 8], b: [104, 62, 4, 4] },
+      rules: [{ region: 'b', is: 'drawn' }, { region: 'centre', is: 'sameAlpha' }],
       known: {
         issue: '#131',
         why: 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4 and colours unconverted: the lit colour differs; #131 fixes it',
@@ -589,7 +603,8 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     if ('row' in rule) {
       const t = edgesOf(r.three.rows[rule.row]);
       const b = edgesOf(r.babylon.rows[rule.row]);
-      expect(t[0], `row ${rule.row}: something drawn`).toBeGreaterThanOrEqual(0);
+      expect(t[0], `row ${rule.row}: something drawn on Three.js`).toBeGreaterThanOrEqual(0);
+      expect(b[0], `row ${rule.row}: something drawn on Babylon.js`).toBeGreaterThanOrEqual(0);
       expect(Math.max(Math.abs(t[0] - b[0]), Math.abs(t[1] - b[1])), `row ${rule.row} edges: three ${t} / babylon ${b}`).toBeLessThanOrEqual(EDGE);
     } else if ('bounds' in rule) {
       for (const engine of ENGINES) {
@@ -614,6 +629,10 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
   }
 
   for (const c of CASES) {
+    // A case must see something drawn, or a blank frame (alpha 0 on both) would pass its `same` and `empty` rules.
+    const kinds = new Set<string>(c.rules.map((r) => ('row' in r ? 'edges' : 'bounds' in r ? 'bounds' : r.is)));
+    if (!['drawn', 'edges', 'bounds'].some((k) => kinds.has(k))) throw new Error(`case "${c.name}": no drawn, edges or bounds rule`);
+    if (kinds.has('empty') && !kinds.has('drawn')) throw new Error(`case "${c.name}": an empty rule needs a drawn one in the same frame`);
     test(c.known ? `pinned: ${c.name}` : c.name, async ({ page }) => {
       const r = await measure(page, c);
       console.log('scene handle', c.name, JSON.stringify(r.three.regions), JSON.stringify(r.babylon.regions));
