@@ -108,8 +108,10 @@ a diffuse region away from it, each sample with its own intensity (found on Thre
 | `#c04040` | 1 | 0.6 | same (1.1) | same (0.2) |
 | `#c04040` | 1 | 1 | look (3.9) | look (6.0) |
 
-Residuals in 8-bit levels, on the channels inside 30..225 (`conformance.spec.ts` › "conformance: materials …", one test
-per cell). Metalness 1 without an environment is **not** black here: the direct light's specular lights it.
+Residuals in 8-bit levels, on the channels inside 30..225, as the tests log them (`conformance.spec.ts` › "conformance:
+materials …", one test per cell). Each test asserts the cell's category: same (≤ 3), or look (> 3 and ≤ 8). A look
+cell therefore fails if a later revision renders the two engines closer; that is intended, and the cell is then
+re-measured. Metalness 1 without an environment is **not** black here: the direct light's specular lights it.
 
 | Behaviour | Verdict | Translation | Test |
 |---|---|---|---|
@@ -123,13 +125,13 @@ per cell). Metalness 1 without an environment is **not** black here: the direct 
 | Light | Verdict | Translation (Babylon intensity = k × Three.js intensity) | Test |
 |---|---|---|---|
 | Directional | Equivalent with a translation | **k = 1** on `PBRMaterial`. The tolerance pins k to **0.942–1.061**; a control at 1.1 and one at 0.4 (`BABYLON_INTENSITY`) fail | e2e "directional, k = 1: …" (grey at 45° and 60°, saturated albedo with a coloured light, white), "directional: the interval of k …" |
-| Hemisphere | Equivalent with a translation | **k = 1/π**: Babylon's PBR does not divide a hemispheric light by π (k = 1 is 3.19× too bright in linear). Ground colour as sRGB → linear | e2e "hemisphere, k = 1/π …" |
+| Hemisphere | Equivalent with a translation | **k = 1/π**: Babylon's PBR does not divide a hemispheric light by π (k = 1 measured 3.19× too bright in linear, logged; the control asserts a difference above same). Ground colour as sRGB → linear | e2e "hemisphere, k = 1/π …" |
 | Ambient | Equivalent with a translation | A hemispheric light with ground = sky and no specular, **k = 1/π** | e2e "ambient (a hemispheric light …), k = 1/π" |
 | Point, inverse square | Equivalent | k = 1, in mm, at 20, 100, 500 and 1000 mm | e2e "point, inverse square in mm, k = 1: …" |
 | Point, `distance` (cut-off) | Equivalent with a translation | Three.js windows by (1 − (d / distance)⁴)²; Babylon `range` with **`falloffType = Light.FALLOFF_GLTF`** does the same (100, 200, 280, 300 mm). With the default physical falloff, `range` is ignored | e2e "point, Three.js distance 300 = Babylon.js range 300 …", "point: the physical falloff … ignores range" |
-| Point, `decay` ≠ 2 | **Not equivalent** (Three.js only) | Babylon has no decay exponent in the physical or glTF falloff: decay 1 gives 104 on Three.js, 5 on Babylon. The common node keeps decay = 2 | e2e "point: decay other than 2 is Three.js only …" |
+| Point, `decay` ≠ 2 | **Not equivalent** (Three.js only) | Babylon has no decay exponent in the physical or glTF falloff: decay 1 gave 104 on Three.js and 5 on Babylon (logged); the test asserts Babylon below 10, with a decay-2 control at the same distance within same. The common node keeps decay = 2 | e2e "point: decay other than 2 is Three.js only …" |
 | Spot, cone | Equivalent with a translation | Babylon `angle` = 2 × Three.js `angle` (full cone against half-angle), glTF falloff, `innerAngle` = 2 × angle × (1 − penumbra), `exponent` 0. Same edges within ±2 px | e2e "spot, hard cone: …" |
-| Spot, penumbra profile | **Not equivalent** | Three.js `smoothstep` between the cosines; Babylon's glTF falloff a squared linear ramp: up to **22 levels** apart inside the penumbra. Babylon's default falloff with `exponent` is a different, bell-shaped profile | e2e "spot, penumbra 0.5 …" |
+| Spot, penumbra profile | **Not equivalent** | Three.js `smoothstep` between the cosines; Babylon's glTF falloff a squared linear ramp: up to **22 levels** apart inside the penumbra (logged; the test asserts more than look). Babylon's default falloff with `exponent` is a different, bell-shaped profile | e2e "spot, penumbra 0.5 …" |
 
 `BABYLON_INTENSITY` (`babylon-adapter.ts:46`) is **replaced**: once Babylon uses `PBRMaterial`, directional, point and
 spot lights take k = 1, hemisphere and ambient k = 1/π. Measured on a diffuse plane (no specular) at 45°, 60°, with a
@@ -161,12 +163,12 @@ colours unconverted, `pow(1/2.2)` encode.
 
 | Behaviour | Verdict | Translation | Test |
 |---|---|---|---|
-| Directional shadow on a catcher | Equivalent with a translation | Three.js `ShadowMaterial` (opacity 0.5); Babylon **`BackgroundMaterial`, `shadowOnly = true`, `primaryColor` black**, alpha 0.5: the same pixels (25, 25, 25, 160), fully transparent outside the shadow | e2e "directional: ShadowMaterial against BackgroundMaterial, shadowOnly, primaryColor black (@babylonjs/core)" |
+| Directional shadow on a catcher | Equivalent with a translation | Three.js `ShadowMaterial` (opacity 0.5); Babylon **`BackgroundMaterial`, `shadowOnly = true`, `primaryColor` black**, alpha 0.5: the same pixels within same (measured 25, 25, 25, 160 on both, pinned on Three.js), alpha ≤ 2 outside the shadow | e2e "directional: ShadowMaterial against BackgroundMaterial, shadowOnly, primaryColor black (@babylonjs/core)" |
 | Spot shadow on a catcher | Equivalent with a translation | The same | e2e "spot: ShadowMaterial against BackgroundMaterial …" |
 | `ShadowOnlyMaterial` (`@babylonjs/materials`) | Equivalent | The same pixels as `ShadowMaterial` with no further setting | e2e "directional / spot: ShadowMaterial against ShadowOnlyMaterial …" |
 | `BackgroundMaterial` `shadowOnly` with its default `primaryColor` | Not equivalent as is | The right alpha (160), a grey shadow (120 against 25) | e2e "BackgroundMaterial shadowOnly with its default primaryColor …" |
 | Map size and bias | Equivalent with a translation | Three.js `light.shadow.mapSize`, `bias`, `normalBias`; Babylon `ShadowGenerator(mapSize)`, `bias`, `normalBias`. Explicit values used: 1024, −0.0005, 0 | the shadow cases |
-| Defaults at mm scale | Not the same | Three.js: map 512, bias 0, a directional shadow camera of **±5 mm**, near 0.5, far 500: most of a shadow at marker scale falls outside it (alpha 64 against 160). Babylon: bias 0.00005, `autoUpdateExtends` fits the frustum. The node must set Three.js's shadow camera (extent, near, far) | e2e "defaults at mm scale: …" |
+| Defaults at mm scale | Not the same | Three.js: map 512, bias 0, a directional shadow camera of **±5 mm**, near 0.5, far 500: most of a shadow at marker scale falls outside it (measured alpha 64 against 160; the test asserts Three.js below 100 and Babylon near 160). Babylon: bias 0.00005, `autoUpdateExtends` fits the frustum. The node must set Three.js's shadow camera (extent, near, far) | e2e "defaults at mm scale: …" |
 
 **The shadow catcher:** `BackgroundMaterial` with `shadowOnly` works at 9.30.0 once its `primaryColor` is black, and
 it is in `@babylonjs/core`: #134 needs no new runtime dependency. `ShadowOnlyMaterial` also works, with no extra
@@ -181,7 +183,7 @@ setting, but would make `@babylonjs/materials` a runtime dependency; this report
 | Around the vertical | Equivalent with a translation | The equirect mappings are a quarter turn apart, not mirrored: Babylon `rotationY` = 90° (`EnvCubeTexture.rotationY`) gives the same bands left and right of a mirror sphere | e2e "longitude as loaded: a quarter turn apart", "longitude with Babylon.js rotationY 90° …" | run |
 | Diffuse (rough white sphere) | Equivalent within **look** | Residual up to 8 levels (top of the sphere) | e2e "latitude …" | run |
 | Intensity | Not measured beyond 1 | Three.js `scene.environmentIntensity`; Babylon `scene.environmentIntensity` | — | source |
-| Neutral environment | **Missing** on Babylon.js (offline) | Three.js `RoomEnvironment` (`examples/jsm/environments/`). Babylon's `createDefaultEnvironment` loads `https://assets.babylonjs.com/core/environments/environmentSpecular.env` (`Helpers/environmentHelper.js:445-453`): with the network blocked it has none. A neutral environment on Babylon needs a generated or bundled texture (for example an `.hdr` the node writes, as the tests do) | e2e "Babylon.js's default environment fetches from assets.babylonjs.com …" | run |
+| Neutral environment | **Missing** on Babylon.js (offline) | Three.js `RoomEnvironment` (`examples/jsm/environments/`). Babylon's `createDefaultEnvironment` loads `https://assets.babylonjs.com/core/environments/environmentSpecular.env` (`Helpers/environmentHelper.js:445-453`): with the network blocked the scene never becomes ready (it waits for that texture). A neutral environment on Babylon needs a generated or bundled texture (for example an `.hdr` the node writes, as the tests do) | e2e "Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked the scene never gets ready" | run |
 
 ### Fog (Phase 5)
 

@@ -642,6 +642,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         const tex = await new Promise<HDRCubeTexture>((resolve, reject) => {
           const t: HDRCubeTexture = new HDRCubeTexture(url, scene, 64, false, true, false, true, () => resolve(t), (m) => reject(new Error(String(m))));
         });
+        URL.revokeObjectURL(url);
         tex.rotationY = (env.babylonRotationY ?? 0) * DEG;
         scene.environmentTexture = tex;
         extras.push(tex);
@@ -656,6 +657,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       handle.render(PROJECTION);
       await new Promise((r) => setTimeout(r, 10));
     }
+    // A frame read before the shaders are ready is blank: fail loudly rather than measure it.
+    if (!scene.isReady()) throw new Error('the Babylon.js scene is not ready after 2 s');
   }
 
   function clear() {

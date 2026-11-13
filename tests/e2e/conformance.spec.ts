@@ -97,6 +97,12 @@ test.describe('conformance: calibration', () => {
     expect(three.toneMapping).toBe(0); // NoToneMapping
     expect(babylon.toneMappingEnabled).toBe(false);
     expect(babylon.exposure).toBe(1);
+    expect(three.premultipliedAlpha).toBe(true);
+    expect(three.toneMappingExposure).toBe(1);
+    expect(three.clearAlpha).toBe(0);
+    expect(babylon.premultipliedAlpha).toBe(false);
+    expect(babylon.contrast).toBe(1);
+    expect(babylon.clearColor).toEqual([0, 0, 0, 0]);
   });
 });
 
@@ -221,14 +227,18 @@ test.describe('conformance: lights (Babylon.js on PBRMaterial, exact sRGB)', () 
     await open(page, 'babylon', 128, true);
     const desc: SceneDesc = { size: 128, objects: [diffusePlane('#808080', -280, 840)], lights: [{ kind: 'point', intensity: 2 * 280 * 280, position: [0, 0, 0], distance: 300 }] };
     const r = await shoot(page, desc, { c: CENTRE });
-    expect(r.c[0]).toBeGreaterThan(90); // Three.js gives 22 here
+    expect(r.c[0]).toBeGreaterThan(90); // Three.js's distance gives 22 here (the glTF-falloff cases above)
   });
 
   test('point: decay other than 2 is Three.js only (Babylon.js has no decay exponent)', async ({ page }) => {
     const desc: SceneDesc = { size: 128, objects: [diffusePlane('#808080', -100, 300)], lights: [{ kind: 'point', intensity: 200, position: [0, 0, 0], decay: 1 }] };
     const r = await onBoth(page, 128, () => shoot(page, desc, { c: CENTRE }));
     expect(unclipped(r.three.c)).toBe(true);
+    expect(r.babylon.c[3]).toBe(255); // the plane is drawn
     expect(r.babylon.c[0]).toBeLessThan(10); // inverse square regardless
+    // Control: decay 2 at the same distance agrees, so the dark plane is the decay, not a failed draw.
+    const control = await onBoth(page, 128, () => shoot(page, { ...desc, lights: [{ kind: 'point', intensity: 2 * 100 * 100, position: [0, 0, 0] }] }, { c: CENTRE }));
+    expect(maxDiff(control.babylon.c, control.three.c)).toBeLessThanOrEqual(SAME);
   });
 
   // A spot at the origin onto a plane at 100 mm, half-angle 20°: the lit disc's radius is 36 mm, ±47 px of 256.
@@ -627,7 +637,7 @@ test.describe('conformance: environment (an .hdr written by the test, flat scanl
     for (const k of ['left', 'right']) expect(maxDiff(m.babylon[k], m.three[k]), `${k}: ${rgb(m.three[k])} / ${rgb(m.babylon[k])}`).toBeLessThanOrEqual(LOOK);
   });
 
-  test("Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked it has none", async ({ page }) => {
+  test("Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked the scene never gets ready", async ({ page }) => {
     const requests: string[] = [];
     await page.route('**/*', (route) => {
       const url = route.request().url();
@@ -639,9 +649,16 @@ test.describe('conformance: environment (an .hdr written by the test, flat scanl
     });
     await open(page, 'babylon', 128, true);
     const desc: SceneDesc = { ...sphere(1, 0.05), environment: { kind: 'default', intensity: 1 } };
-    const r = await shoot(page, desc, REGIONS);
+    const error = await page.evaluate(async (d) => {
+      try {
+        await (window as never as { H: Harness }).H.build(d);
+        return null;
+      } catch (err) {
+        return String(err);
+      }
+    }, desc);
     expect(requests.some((u) => u.includes('assets.babylonjs.com'))).toBe(true);
-    expect(Math.max(...rgb(r.left))).toBeLessThan(10); // a mirror with nothing to reflect
+    expect(error).toContain('not ready'); // it waits for a texture that never arrives
   });
 });
 
