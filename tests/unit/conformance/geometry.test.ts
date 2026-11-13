@@ -136,6 +136,18 @@ describe('geometry conformance: translations', () => {
     expect(onAxis(t)).toBe(false);
     expect(onAxis(b)).toBe(true);
   });
+
+  test('icosahedron: Babylon.js scaled by 1 / 1.17557 and turned atan(φ) = 58.283° about +Y gives the same vertices', () => {
+    // Found among the 60 rotations that map one solid onto the other: the one about a single axis.
+    const [t, b] = both('icosahedron');
+    const theta = Math.atan((1 + Math.sqrt(5)) / 2);
+    const [c, s] = [Math.cos(theta), Math.sin(theta)];
+    const k = 15 / measure(b).radius;
+    const mapped = (v: Vec3): Vec3 => [k * (c * v[0] + s * v[2]), k * v[1], k * (-s * v[0] + c * v[2])];
+    expect(vertexSetDistance(b, t, mapped)).toBeLessThan(MM);
+    // Control: without the rotation, the vertices do not meet.
+    expect(vertexSetDistance(b, t, (v) => [k * v[0], k * v[1], k * v[2]])).toBeGreaterThan(1);
+  });
 });
 
 describe('geometry conformance: missing', () => {
