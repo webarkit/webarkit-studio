@@ -36,6 +36,9 @@ import { Light } from '@babylonjs/core/Lights/light';
 import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
 import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent';
 import '@babylonjs/core/Helpers/sceneHelpers';
+// VideoTexture needs the engine's dynamic-texture extension, which a side-effect import registers.
+import '@babylonjs/core/Engines/Extensions/engine.dynamicTexture';
+import '@babylonjs/core/Engines/Extensions/engine.videoTexture';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import type { Material as BMaterial } from '@babylonjs/core/Materials/material';
 import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture';
@@ -67,6 +70,8 @@ export interface MaterialDesc {
   twoSidedLighting?: boolean;
   /** A texture from the page's texture registry. */
   map?: string;
+  /** Babylon.js only: offsets and scales on the texture, to test a UV translation. */
+  babylonUv?: { uOffset?: number; vOffset?: number; uScale?: number; vScale?: number };
   repeat?: number;
   wrap?: 'repeat' | 'clamp';
 }
@@ -121,7 +126,8 @@ export interface SceneDesc {
   /** Everything under one group with this column-major matrix, as the marker's anchor. */
   anchor?: number[];
   fog?: { mode: 'linear' | 'exp' | 'exp2'; color: string; near?: number; far?: number; density?: number };
-  environment?: { kind: 'room' | 'hdr' | 'default'; hdr?: string; intensity?: number };
+  /** babylonRotationY: degrees about the engine's Y, applied to Babylon.js's environment (EnvCubeTexture.rotationY). */
+  environment?: { kind: 'room' | 'hdr' | 'default'; hdr?: string; intensity?: number; babylonRotationY?: number };
   /** Babylon.js only: scale every light's intensity by this (the k under test). */
   babylonLightScale?: number;
 }
@@ -422,6 +428,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         const equirect = new THREE.DataTexture(hdr.data, hdr.width, hdr.height, THREE.RGBAFormat, hdr.type);
         equirect.mapping = THREE.EquirectangularReflectionMapping;
         equirect.colorSpace = THREE.LinearSRGBColorSpace;
+        // As HDRLoader.load() sets it (DataTextureLoader): a Radiance file's first row is the top.
+        equirect.flipY = true;
         equirect.needsUpdate = true;
         texture = pmrem.fromEquirectangular(equirect).texture;
         extras.push(equirect);
@@ -452,6 +460,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         }
         tex.wrapU = tex.wrapV = m.wrap === 'clamp' ? Texture.CLAMP_ADDRESSMODE : Texture.WRAP_ADDRESSMODE;
         tex.uScale = tex.vScale = m.repeat ?? 1;
+        if (m.babylonUv) Object.assign(tex, m.babylonUv);
         extras.push(tex);
       });
     }
@@ -485,6 +494,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           const b = new BackgroundMaterial('catcher', scene);
           b.shadowOnly = true;
           b.alpha = m.opacity ?? 1;
+          if (m.color) b.primaryColor = Color3.FromHexString(m.color);
           material = b;
           break;
         }
@@ -632,6 +642,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         const tex = await new Promise<HDRCubeTexture>((resolve, reject) => {
           const t: HDRCubeTexture = new HDRCubeTexture(url, scene, 64, false, true, false, true, () => resolve(t), (m) => reject(new Error(String(m))));
         });
+        tex.rotationY = (env.babylonRotationY ?? 0) * DEG;
         scene.environmentTexture = tex;
         extras.push(tex);
       } else if (env.kind === 'default') {

@@ -473,6 +473,218 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
   });
 });
 
+test.describe('conformance: textures', () => {
+  // The harness's 64 px canvas: top left red, top right green, bottom left blue, bottom right white, an sRGB 128 grey
+  // centre; nearest filtering, sRGB colour space on both. Unlit, so the texel comes out as it is.
+  const QUADS: Record<string, [number, number, number, number]> = { tl: [20, 20, 8, 8], tr: [100, 20, 8, 8], bl: [20, 100, 8, 8], br: [100, 100, 8, 8], centre: [60, 60, 8, 8] };
+  const cases: Array<{ name: string; material: SceneDesc['objects'][number]['material']; expected?: Record<string, number[]> }> = [
+    { name: 'an image on a plane: the same orientation and colour space', material: { kind: 'basic', map: 'quadrants' }, expected: { tl: [255, 0, 0], tr: [0, 255, 0], bl: [0, 0, 255], br: [255, 255, 255], centre: [128, 128, 128] } },
+    { name: 'repeat 2, wrap repeat', material: { kind: 'basic', map: 'quadrants', repeat: 2, wrap: 'repeat' } },
+    { name: 'repeat 2, wrap clamp', material: { kind: 'basic', map: 'quadrants', repeat: 2, wrap: 'clamp' } },
+  ];
+  for (const c of cases) {
+    test(c.name, async ({ page }) => {
+      const r = await onBoth(page, 128, () => shoot(page, { size: 128, objects: [{ ...FILL, material: c.material }], lights: [] }, QUADS));
+      for (const k of Object.keys(QUADS)) {
+        expect(maxDiff(r.babylon[k], r.three[k]), `${k}: ${rgb(r.three[k])} / ${rgb(r.babylon[k])}`).toBeLessThanOrEqual(SAME);
+        if (c.expected) expect(maxDiff(r.three[k], c.expected[k]), k).toBeLessThanOrEqual(SAME);
+      }
+    });
+  }
+
+  test('a video texture (a canvas stream, no codec): the frame colour on both', async ({ page }) => {
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async (d) => {
+        const H = (window as never as { H: Harness }).H;
+        await H.build(d);
+        // Three.js uploads a video frame when one is ready: render a few times.
+        for (let i = 0; i < 10; i++) {
+          H.render();
+          await new Promise((res) => setTimeout(res, 50));
+        }
+        return H.region(56, 56, 16, 16);
+      }, { size: 128, objects: [{ ...FILL, material: { kind: 'basic', map: 'video' } }], lights: [] } satisfies SceneDesc),
+    );
+    for (const engine of ENGINES) expect(maxDiff(r[engine], [0xc0, 0x80, 0x40]), `${engine} ${rgb(r[engine])}`).toBeLessThanOrEqual(SAME);
+  });
+
+  const SPHERE: Record<string, [number, number, number, number]> = { left: [40, 64, 4, 4], right: [84, 64, 4, 4], top: [62, 40, 4, 4], bottom: [62, 84, 4, 4] };
+  const sphere = (material: SceneDesc['objects'][number]['material']): SceneDesc => ({ size: 128, objects: [{ shape: 'sphere', size: 80, position: [0, 0, -70], material }], lights: [] });
+
+  test('sphere UVs as built: not the same (Babylon.js: u half a turn on, v reversed)', async ({ page }) => {
+    const r = await onBoth(page, 128, () => shoot(page, sphere({ kind: 'basic', map: 'quadrants' }), SPHERE));
+    console.log('sphere uv', JSON.stringify(r));
+    expect(rgb(r.three.top)).toEqual([255, 0, 0]);
+    expect(rgb(r.babylon.top)).toEqual([255, 255, 255]);
+  });
+
+  test('sphere UVs with Babylon.js uOffset 0.5 and vScale −1: the same texels', async ({ page }) => {
+    const r = await onBoth(page, 128, (engine) =>
+      shoot(page, sphere({ kind: 'basic', map: 'quadrants', ...(engine === 'babylon' ? { babylonUv: { uOffset: 0.5, vScale: -1 } } : {}) }), SPHERE),
+    );
+    for (const k of Object.keys(SPHERE)) expect(maxDiff(r.babylon[k], r.three[k]), `${k}: ${rgb(r.three[k])} / ${rgb(r.babylon[k])}`).toBeLessThanOrEqual(SAME);
+  });
+});
+
+test.describe('conformance: shadows (256 px, RGBA over a clear canvas)', () => {
+  // A ground plane at −150 mm facing the camera, a 30 mm box at −90 mm casting onto it. Explicit settings at mm scale.
+  const EXPLICIT = { mapSize: 1024, extent: 150, near: 1, far: 600, bias: -0.0005 };
+  const DIRECTIONAL = { kind: 'directional' as const, intensity: 2, direction: [0.35, -0.35, -0.87] as [number, number, number], position: [0, 0, -120] as [number, number, number] };
+  const SPOT = { kind: 'spot' as const, intensity: 200000, position: [-60, 60, 0] as [number, number, number], direction: [0.4, -0.4, -0.82] as [number, number, number], angle: 40, penumbra: 0, falloff: 'gltf' as const, innerAngle: 80, exponent: 0 };
+  const REGIONS: Record<string, [number, number, number, number]> = { shadow: [150, 150, 8, 8], lit: [40, 200, 8, 8] };
+  const scene = (catcher: SceneDesc['objects'][number]['material'], light: SceneDesc['lights'][number]): SceneDesc => ({
+    size: 256,
+    objects: [
+      { shape: 'plane', size: 400, position: [0, 0, -150], material: catcher, receiveShadow: true },
+      { shape: 'box', size: 30, position: [0, 0, -90], material: { kind: 'pbr', color: '#808080' }, castShadow: true },
+    ],
+    lights: [light],
+  });
+  const catchers = {
+    'ShadowOnlyMaterial (@babylonjs/materials)': { kind: 'shadowOnlyMaterial' as const, opacity: 0.5 },
+    'BackgroundMaterial, shadowOnly, primaryColor black (@babylonjs/core)': { kind: 'backgroundShadowOnly' as const, opacity: 0.5, color: '#000000' },
+  };
+  for (const [name, babylonCatcher] of Object.entries(catchers)) {
+    for (const [lname, light] of [['directional', { ...DIRECTIONAL, shadow: EXPLICIT }], ['spot', { ...SPOT, shadow: { mapSize: 1024, near: 10, far: 600, bias: -0.0005 } }]] as const) {
+      test(`${lname}: ShadowMaterial against ${name}`, async ({ page }) => {
+        const r = await onBoth(page, 256, (engine) => shoot(page, scene(engine === 'three' ? { kind: 'shadowMaterial', opacity: 0.5 } : babylonCatcher, light), REGIONS));
+        for (const engine of ENGINES) {
+          expect(r[engine].shadow[3], `${engine} shadow alpha`).toBeGreaterThan(0.3 * 255);
+          expect(r[engine].lit[3], `${engine} outside alpha`).toBeLessThanOrEqual(2);
+        }
+        expect(maxDiff(r.babylon.shadow, r.three.shadow)).toBeLessThanOrEqual(SAME);
+        expect(Math.abs(r.babylon.shadow[3] - r.three.shadow[3])).toBeLessThanOrEqual(SAME);
+      });
+    }
+  }
+
+  test('BackgroundMaterial shadowOnly with its default primaryColor: the right alpha, a grey shadow', async ({ page }) => {
+    await open(page, 'babylon', 256, true);
+    const r = await shoot(page, scene({ kind: 'backgroundShadowOnly', opacity: 0.5 }, { ...DIRECTIONAL, shadow: EXPLICIT }), REGIONS);
+    expect(r.shadow[3]).toBeCloseTo(160, -1);
+    expect(r.shadow[0]).toBeGreaterThan(100); // ShadowMaterial: 25
+  });
+
+  test('defaults at mm scale: Three.js shadow camera ±5 mm, map 512; Babylon.js fits its frustum (autoUpdateExtends)', async ({ page }) => {
+    const r = await onBoth(page, 256, (engine) =>
+      shoot(page, scene(engine === 'three' ? { kind: 'shadowMaterial', opacity: 0.5 } : catchers['BackgroundMaterial, shadowOnly, primaryColor black (@babylonjs/core)'], { ...DIRECTIONAL, shadow: {} }), REGIONS),
+    );
+    const defaults = await onBoth(page, 64, () => page.evaluate(() => (window as never as { H: Harness }).H.state('shadowDefaults')));
+    console.log('shadow defaults', JSON.stringify({ r, defaults }));
+    expect(defaults.three).toMatchObject({ mapSize: 512, bias: 0, normalBias: 0, directionalFrustum: [-5, 5, 0.5, 500] });
+    expect(defaults.babylon).toMatchObject({ bias: 0.00005, normalBias: 0, autoUpdateExtends: true });
+    expect(r.babylon.shadow[3]).toBeCloseTo(160, -1);
+    expect(r.three.shadow[3]).toBeLessThan(100); // most of the shadow is outside a ±5 mm frustum
+  });
+});
+
+test.describe('conformance: environment (an .hdr written by the test, flat scanlines)', () => {
+  const REGIONS: Record<string, [number, number, number, number]> = { left: [36, 64, 4, 4], right: [88, 64, 4, 4], top: [62, 36, 4, 4], bottom: [62, 90, 4, 4] };
+  /** Two-colour by latitude (top half red), or four bands by longitude (red, green, blue, white). Radiance 0.5. */
+  async function shootEnv(page: Page, desc: SceneDesc, layout: 'latitude' | 'longitude') {
+    return page.evaluate(
+      async ([d, l, rs]) => {
+        const w = window as never as { H: Harness; makeHdr(w: number, h: number, f: (u: number, v: number) => number[]): Uint8Array };
+        const bands = [[0.5, 0.02, 0.02], [0.02, 0.5, 0.02], [0.02, 0.02, 0.5], [0.5, 0.5, 0.5]];
+        const bytes = l === 'longitude' ? w.makeHdr(64, 32, (u) => bands[Math.floor(u * 4)]) : w.makeHdr(64, 32, (_u, v) => (v < 0.5 ? [0.5, 0.02, 0.02] : [0.02, 0.02, 0.5]));
+        let bin = '';
+        for (const b of bytes) bin += String.fromCharCode(b);
+        d.environment!.hdr = btoa(bin);
+        await w.H.build(d);
+        w.H.render();
+        return Object.fromEntries(Object.entries(rs).map(([k, [x, y, ww, hh]]) => [k, w.H.region(x, y, ww, hh)]));
+      },
+      [desc, layout, REGIONS] as const,
+    );
+  }
+  const sphere = (metalness: number, roughness: number, babylonRotationY = 0): SceneDesc => ({
+    size: 128,
+    objects: [{ shape: 'sphere', size: 80, position: [0, 0, -70], material: { kind: 'pbr', color: '#ffffff', metalness, roughness } }],
+    lights: [],
+    environment: { kind: 'hdr', intensity: 1, babylonRotationY },
+  });
+
+  test('latitude: up and down agree (engine +Y up on both); a rough sphere within the same-look tolerance', async ({ page }) => {
+    const r = await onBoth(page, 128, () => shootEnv(page, sphere(0, 1), 'latitude'));
+    const m = await onBoth(page, 128, () => shootEnv(page, sphere(1, 0.05), 'latitude'));
+    console.log('env latitude', JSON.stringify({ r, m }));
+    for (const engine of ENGINES) {
+      expect(m[engine].top[0], `${engine} mirror top is red`).toBeGreaterThan(m[engine].top[2] + 100);
+      expect(m[engine].bottom[2], `${engine} mirror bottom is blue`).toBeGreaterThan(m[engine].bottom[0] + 100);
+    }
+    for (const k of Object.keys(REGIONS)) expect(maxDiff(r.babylon[k], r.three[k]), k).toBeLessThanOrEqual(LOOK);
+  });
+
+  test('longitude as loaded: a quarter turn apart', async ({ page }) => {
+    const m = await onBoth(page, 128, () => shootEnv(page, sphere(1, 0.05), 'longitude'));
+    console.log('env longitude', JSON.stringify(m));
+    expect(maxDiff(m.babylon.left, m.three.left)).toBeGreaterThan(LOOK);
+  });
+
+  test('longitude with Babylon.js rotationY 90°: the same bands in the same directions', async ({ page }) => {
+    const m = await onBoth(page, 128, (engine) => shootEnv(page, sphere(1, 0.05, engine === 'babylon' ? 90 : 0), 'longitude'));
+    console.log('env longitude rotated', JSON.stringify(m));
+    for (const k of ['left', 'right']) expect(maxDiff(m.babylon[k], m.three[k]), `${k}: ${rgb(m.three[k])} / ${rgb(m.babylon[k])}`).toBeLessThanOrEqual(LOOK);
+  });
+
+  test("Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked it has none", async ({ page }) => {
+    const requests: string[] = [];
+    await page.route('**/*', (route) => {
+      const url = route.request().url();
+      if (url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+        requests.push(url);
+        return route.abort();
+      }
+      return route.continue();
+    });
+    await open(page, 'babylon', 128, true);
+    const desc: SceneDesc = { ...sphere(1, 0.05), environment: { kind: 'default', intensity: 1 } };
+    const r = await shoot(page, desc, REGIONS);
+    expect(requests.some((u) => u.includes('assets.babylonjs.com'))).toBe(true);
+    expect(Math.max(...rgb(r.left))).toBeLessThan(10); // a mirror with nothing to reflect
+  });
+});
+
+test.describe('conformance: fog in the browser (centre of the view)', () => {
+  // A black unlit plane at depth d in white fog: the pixel is the fog as each engine blends it. Three.js mixes after the
+  // sRGB encode (so the pixel is f · 255), Babylon.js before it (fogFragment before pbrBlockImageProcessing).
+  const at = (d: number, fog: SceneDesc['fog']): SceneDesc => ({ size: 128, objects: [{ ...FILL, size: 3 * d, position: [0, 0, -d], material: { kind: 'basic', color: '#000000' } }], lights: [], fog });
+  const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+  const cases: Array<{ name: string; d: number; fog: SceneDesc['fog']; three: number; babylon: number }> = [
+    { name: 'linear 100–1000, 200 mm', d: 200, fog: { mode: 'linear', color: '#ffffff', near: 100, far: 1000 }, three: 255 * smooth(100 / 900), babylon: 133 },
+    { name: 'linear 100–1000, 500 mm', d: 500, fog: { mode: 'linear', color: '#ffffff', near: 100, far: 1000 }, three: 255 * smooth(400 / 900), babylon: 222 },
+    { name: 'exp2 0.002, 200 mm', d: 200, fog: { mode: 'exp2', color: '#ffffff', density: 0.002 }, three: 255 * (1 - Math.exp(-0.16)), babylon: 150 },
+    { name: 'exp2 0.002, 500 mm', d: 500, fog: { mode: 'exp2', color: '#ffffff', density: 0.002 }, three: 255 * (1 - Math.exp(-1)), babylon: 242 },
+  ];
+  for (const c of cases) {
+    test(`${c.name}: Three.js follows its formula after the encode; Babylon.js pinned, not equivalent`, async ({ page }) => {
+      const r = await onBoth(page, 128, () => shoot(page, at(c.d, c.fog), { c: CENTRE }));
+      expect(Math.abs(r.three.c[0] - c.three), `three ${r.three.c[0]}`).toBeLessThanOrEqual(SAME);
+      expect(Math.abs(r.babylon.c[0] - c.babylon), `babylon ${r.babylon.c[0]}`).toBeLessThanOrEqual(SAME);
+      expect(Math.abs(r.babylon.c[0] - r.three.c[0])).toBeGreaterThan(LOOK);
+    });
+  }
+});
+
+test.describe('conformance: under the marker anchor (rotated 90° about X, translated)', () => {
+  const ANCHOR = [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 10, -5, -60, 1];
+  const plane = { ...FILL, position: [0, 0, 0] as [number, number, number], rotation: [-90, 0, 0] as [number, number, number], material: { kind: 'pbr' as const, color: '#808080', noSpecular: true } };
+
+  test('a directional light and a plane under the anchor: the same on both', async ({ page }) => {
+    const desc: SceneDesc = { size: 128, anchor: ANCHOR, objects: [plane], lights: [{ kind: 'directional', intensity: 3, direction: D45, position: [0, 0, 0] }] };
+    const r = await onBoth(page, 128, () => shoot(page, desc, { c: CENTRE }));
+    expect(unclipped(r.three.c)).toBe(true);
+    expect(maxDiff(r.babylon.c, r.three.c)).toBeLessThanOrEqual(SAME);
+  });
+
+  test("a hemisphere light under the anchor: Babylon.js's HemisphericLight ignores its parent (the adapter compensates, babylon-adapter.ts:197)", async ({ page }) => {
+    const desc: SceneDesc = { size: 128, anchor: ANCHOR, objects: [plane], lights: [{ kind: 'hemisphere', intensity: 2, direction: [0, 1, 0], ground: '#000000' }], babylonLightScale: 1 / Math.PI };
+    const r = await onBoth(page, 128, () => shoot(page, desc, { c: CENTRE }));
+    expect(r.three.c[0]).toBeLessThan(10); // the sky turned to face away from the plane
+    expect(r.babylon.c[0]).toBeGreaterThan(60); // still lit from the engine's +Y
+  });
+});
+
 test.describe('conformance: facing', () => {
   // Front faces only; seen from the camera at the origin. A visible object covers the centre (alpha 255).
   const cases: Array<{ name: string; desc: Partial<SceneDesc['objects'][number]>; visible: { three: boolean; babylon: boolean } }> = [
