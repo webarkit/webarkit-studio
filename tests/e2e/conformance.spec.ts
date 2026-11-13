@@ -688,6 +688,35 @@ test.describe('conformance: environment (an .hdr written by the test, flat scanl
     for (const k of Object.keys(REGIONS)) expect(maxDiff(r.babylon[k], r.three[k]), k).toBeLessThanOrEqual(LOOK);
   });
 
+  // Both scale with environmentIntensity; the residual (a hue difference: Babylon.js slightly redder, less blue) grows
+  // with brightness: measured 6, 8 and 10.5 levels at 0.5, 1 and 2. Within look up to 1, beyond it at 2.
+  const ENV_RESIDUAL: Record<number, [number, number]> = { 0.5: [0, LOOK], 1: [0, LOOK], 2: [LOOK, 12] };
+  for (const intensity of [0.5, 1, 2]) {
+    test(`intensity ${intensity}, k = 1: a rough sphere, residual in [${ENV_RESIDUAL[intensity].join(', ')}] levels (channels in 30..225)`, async ({ page }) => {
+      const desc = (i: number): SceneDesc => ({ ...sphere(0, 1), environment: { kind: 'hdr', intensity: i } });
+      const r = await onBoth(page, 128, () => shootEnv(page, desc(intensity), 'latitude'));
+      console.log('env intensity', intensity, JSON.stringify(r));
+      let judged = 0;
+      let worst = 0;
+      for (const k of Object.keys(REGIONS)) {
+        for (const ch of [0, 1, 2]) {
+          if (r.three[k][ch] < 30 || r.three[k][ch] > 225) continue;
+          judged++;
+          worst = Math.max(worst, Math.abs(r.babylon[k][ch] - r.three[k][ch]));
+        }
+      }
+      expect(judged).toBeGreaterThanOrEqual(4);
+      const [low, high] = ENV_RESIDUAL[intensity];
+      expect(worst).toBeGreaterThanOrEqual(low);
+      expect(worst).toBeLessThanOrEqual(high);
+      if (intensity !== 1) {
+        // Control: the intensity changes what Three.js renders, so the comparison is not of two unchanged frames.
+        const one = await onBoth(page, 128, () => shootEnv(page, desc(1), 'latitude'));
+        for (const engine of ENGINES) expect(Math.abs(r[engine].top[0] - one[engine].top[0]), engine).toBeGreaterThan(LOOK);
+      }
+    });
+  }
+
   test('longitude as loaded: a quarter turn apart', async ({ page }) => {
     const m = await onBoth(page, 128, () => shootEnv(page, sphere(1, 0.05), 'longitude'));
     console.log('env longitude', JSON.stringify(m));
