@@ -321,6 +321,158 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
   }
 });
 
+test.describe('conformance: materials (MeshStandardMaterial against PBRMaterial, exact sRGB, k = 1)', () => {
+  // A plane turned 45° about X and a light 45° from its normal on the other side: the mirror direction, and so the
+  // highlight, falls at the centre of the view. Two regions, each with its own intensity so that it lands unclipped.
+  const scene = (color: string, metalness: number, roughness: number, I: number): SceneDesc => ({
+    size: 128,
+    objects: [{ shape: 'plane', size: 160, position: [0, 0, -60], rotation: [45, 0, 0], material: { kind: 'pbr', color, metalness, roughness } }],
+    lights: [{ kind: 'directional', intensity: I, direction: [0, 1, 0], position: [0, 0, -60] }],
+  });
+  const REGIONS = { highlight: [60, 60, 8, 8], diffuse: [60, 16, 8, 8] } as const;
+  type Region = keyof typeof REGIONS;
+  /** Measured; 'look' where the residual exceeds SAME (8/255 at most), with the residual in the report. */
+  const GRID: Array<{ color: string; metalness: number; roughness: number; expect: Record<Region, 'same' | 'look' | 'rejected'> }> = [
+    { color: '#808080', metalness: 0, roughness: 0.2, expect: { highlight: 'look', diffuse: 'same' } },
+    { color: '#808080', metalness: 0, roughness: 0.6, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#808080', metalness: 0, roughness: 1, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#808080', metalness: 1, roughness: 0.2, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#808080', metalness: 1, roughness: 0.6, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#808080', metalness: 1, roughness: 1, expect: { highlight: 'same', diffuse: 'look' } },
+    { color: '#c04040', metalness: 0, roughness: 0.2, expect: { highlight: 'look', diffuse: 'same' } },
+    { color: '#c04040', metalness: 0, roughness: 0.6, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#c04040', metalness: 0, roughness: 1, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#c04040', metalness: 1, roughness: 0.2, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#c04040', metalness: 1, roughness: 0.6, expect: { highlight: 'same', diffuse: 'same' } },
+    { color: '#c04040', metalness: 1, roughness: 1, expect: { highlight: 'look', diffuse: 'look' } },
+  ];
+
+  async function sample(page: Page, desc: SceneDesc, region: Region) {
+    return (await shoot(page, desc, { v: REGIONS[region] as unknown as [number, number, number, number] })).v;
+  }
+
+  for (const c of GRID) {
+    for (const region of ['highlight', 'diffuse'] as const) {
+      test(`${c.color}, metalness ${c.metalness}, roughness ${c.roughness}: ${region} (${c.expect[region]})`, async ({ page }) => {
+        // The intensity that puts Three.js's brightest channel near sRGB 128, found on Three.js (linear in I).
+        await open(page, 'three', 128);
+        let I = 1;
+        let three = await sample(page, scene(c.color, c.metalness, c.roughness, I), region);
+        for (let i = 0; i < 4 && !(Math.max(...rgb(three)) >= 110 && Math.max(...rgb(three)) <= 150); i++) {
+          const top = Math.max(...rgb(three));
+          I *= top >= 250 ? 1 / 8 : top <= 2 ? 64 : 0.216 / toLinear(top);
+          three = await sample(page, scene(c.color, c.metalness, c.roughness, I), region);
+        }
+        await open(page, 'babylon', 128, true);
+        const babylon = await sample(page, scene(c.color, c.metalness, c.roughness, I), region);
+        const residual = maxDiff(babylon, three);
+        console.log('material', c.color, c.metalness, c.roughness, region, `I ${I.toFixed(3)}`, rgb(three), rgb(babylon), residual);
+        // The clipping rule on the brightest channel: a darker channel of a saturated colour is reported, not judged.
+        const usable = Math.max(...rgb(three)) >= 30 && Math.max(...rgb(three)) <= 225;
+        if (c.expect[region] === 'rejected') return void expect(usable).toBe(false);
+        expect(usable, `three ${rgb(three)}`).toBe(true);
+        const channels = [0, 1, 2].filter((k) => three[k] >= 30 && three[k] <= 225);
+        const judged = Math.max(...channels.map((k) => Math.abs(babylon[k] - three[k])));
+        if (c.expect[region] === 'same') expect(judged).toBeLessThanOrEqual(SAME);
+        else {
+          expect(judged).toBeGreaterThan(SAME);
+          expect(judged).toBeLessThanOrEqual(LOOK);
+        }
+      });
+    }
+  }
+
+  test('side: back and double show a plane facing away on both', async ({ page }) => {
+    for (const side of ['back', 'double'] as const) {
+      const desc: SceneDesc = { size: 128, objects: [{ ...FILL, rotation: [0, 180, 0], material: { kind: 'basic', color: '#ffffff', side } }], lights: [] };
+      const r = await onBoth(page, 128, () => shoot(page, desc, { c: CENTRE }));
+      for (const engine of ENGINES) expect(r[engine].c[3], `${engine} ${side}`).toBe(255);
+    }
+  });
+
+  test('double side: a back face lit from behind is lit on Three.js; Babylon.js needs twoSidedLighting', async ({ page }) => {
+    // The plane faces away (its back towards the camera); the light comes from the camera's side.
+    const desc = (twoSidedLighting: boolean): SceneDesc => ({
+      size: 128,
+      objects: [{ ...FILL, rotation: [0, 180, 0], material: { kind: 'pbr', color: '#808080', side: 'double', noSpecular: true, twoSidedLighting } }],
+      lights: [{ kind: 'directional', intensity: 3, direction: D45 }],
+    });
+    const plain = await onBoth(page, 128, () => shoot(page, desc(false), { c: CENTRE }));
+    await open(page, 'babylon', 128, true);
+    const twoSided = await shoot(page, desc(true), { c: CENTRE });
+    console.log('double side', rgb(plain.three.c), rgb(plain.babylon.c), rgb(twoSided.c));
+    expect(unclipped(plain.three.c)).toBe(true);
+    expect(maxDiff(plain.babylon.c, plain.three.c)).toBeGreaterThan(LOOK);
+    expect(maxDiff(twoSided.c, plain.three.c)).toBeLessThanOrEqual(SAME);
+  });
+});
+
+test.describe('conformance: opacity over the camera (framebuffer RGBA, then the page)', () => {
+  // The canvas is composited over the camera video: Three.js's context is premultiplied, the Babylon.js adapter's is not
+  // (babylon-adapter.ts:76). A half-transparent unlit plane of #c08040 over a clear canvas, then over a #4080c0 element.
+  const BG = [0x40, 0x80, 0xc0];
+  const desc: SceneDesc = { size: 128, objects: [{ ...FILL, material: { kind: 'basic', color: '#c08040', opacity: 0.5 } }], lights: [] };
+  /** The page's composite of a framebuffer pixel, per the context's premultipliedAlpha. */
+  const composite = (px: number[], premultiplied: boolean) => {
+    const a = px[3] / 255;
+    return [0, 1, 2].map((k) => (premultiplied ? px[k] : px[k] * a) + BG[k] * (1 - a));
+  };
+
+  async function screenshotCentre(page: Page) {
+    await page.evaluate((bg) => {
+      const back = document.createElement('div');
+      back.style.cssText = `position:absolute;left:0;top:0;width:128px;height:128px;background:rgb(${bg.join(',')})`;
+      document.body.prepend(back);
+      const canvas = document.querySelector('canvas')!;
+      canvas.style.zIndex = '1';
+    }, BG);
+    await page.evaluate(() => (window as never as { H: Harness }).H.render());
+    const png = await page.screenshot({ clip: { x: 60, y: 60, width: 8, height: 8 } });
+    return page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = c.height = 8;
+      const g = c.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, 8, 8).data;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k];
+      return sum.map((v) => v / 64);
+    }, png.toString('base64'));
+  }
+
+  const measure = async (page: Page) => {
+    const out = {} as Record<Engine, { framebuffer: number[]; computed: number[]; screen: number[] }>;
+    for (const engine of ENGINES) {
+      await open(page, engine, 128, true);
+      const framebuffer = (await shoot(page, desc, { c: CENTRE })).c;
+      const computed = composite(framebuffer, engine === 'three');
+      const screen = await screenshotCentre(page);
+      out[engine] = { framebuffer, computed, screen };
+    }
+    console.log('opacity', JSON.stringify(out));
+    return out;
+  };
+
+  test('pinned: the framebuffer, the computed composite and the screenshot agree, per engine', async ({ page }) => {
+    const r = await measure(page);
+    for (const engine of ENGINES) {
+      expect(r[engine].framebuffer[3], engine).toBeCloseTo(128, -1);
+      expect(maxDiff(r[engine].screen, r[engine].computed), `${engine} screen ${rgb(r[engine].screen)} computed ${r[engine].computed}`).toBeLessThanOrEqual(SAME);
+    }
+    // Three.js: 0.5 · #c08040 + 0.5 · #4080c0 in sRGB values, as the page blends.
+    expect(maxDiff(r.three.screen, [128, 128, 128])).toBeLessThanOrEqual(SAME);
+  });
+
+  test('known difference: a half-transparent object looks the same over the camera on both adapters', async ({ page }) => {
+    test.fail(true, 'the Babylon.js adapter creates its context with premultipliedAlpha: false, and its framebuffer holds colour × alpha: the page multiplies by alpha again');
+    const r = await measure(page);
+    expect(maxDiff(r.babylon.screen, r.three.screen)).toBeLessThanOrEqual(SAME);
+  });
+});
+
 test.describe('conformance: facing', () => {
   // Front faces only; seen from the camera at the origin. A visible object covers the centre (alpha 255).
   const cases: Array<{ name: string; desc: Partial<SceneDesc['objects'][number]>; visible: { three: boolean; babylon: boolean } }> = [

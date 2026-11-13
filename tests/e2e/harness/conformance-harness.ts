@@ -63,6 +63,8 @@ export interface MaterialDesc {
   noSpecular?: boolean;
   /** Babylon.js only: the colour given as Color3.FromHexString, unconverted (what the adapter does today). */
   rawHex?: boolean;
+  /** Babylon.js only: PBRMaterial.twoSidedLighting (a back face lit with its own normal, as Three.js does for DoubleSide). */
+  twoSidedLighting?: boolean;
   /** A texture from the page's texture registry. */
   map?: string;
   repeat?: number;
@@ -465,6 +467,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           p.emissiveColor = colour(m.emissive ?? '#000000');
           p.alpha = m.opacity ?? 1;
           if (m.noSpecular) p.metallicF0Factor = 0;
+          if (m.twoSidedLighting) p.twoSidedLighting = true;
           if (m.kind === 'basic') p.unlit = true;
           if (map) p.albedoTexture = map;
           material = p;
