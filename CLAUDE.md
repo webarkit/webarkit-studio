@@ -13,8 +13,9 @@ The canonical, tool-agnostic guidance for this repo lives in **AGENTS.md**. It i
   - `new-node` scaffolds a node across the catalog, the registry, a unit test and the README table;
   - `tracking-debugger` reproduces a tracking problem, records traces (Node or browser), diffs them with `npm run trace:diff` and drafts a report;
   - `check-upstream` reads the current state of the jsartoolkitNFT facade (webarkit/jsartoolkitNFT#720) with `gh` and drafts gap reports on the facade. It never posts them.
-- **E2e runs are long.** The Playwright web server builds the app first (up to 180 s), and each test may take up to 90 s. Run `npm run test:e2e` in the background rather than with a short timeout; it may first wait for a run in another worktree (see AGENTS.md). When Playwright's Chromium is not installed, set `PW_CHROMIUM_PATH` to a local Chromium or Chrome.
+- **E2e runs are long.** The Playwright web server builds the app first (up to 180 s), and each test may take up to 90 s: run the suite in the background rather than with a short timeout. The command, the lock between worktrees and `PW_CHROMIUM_PATH` are in AGENTS.md ("Commands").
 - **Assets first.** Integration and e2e tests need `npm run assets`. Run them from the repository root.
+- **Desktop worktree sessions** may only run git in their own worktree (no `cd` or `git -C` to another checkout): from the current one, run `git fetch origin`, then `git worktree add -b <branch> .claude/worktrees/<name> origin/dev`, then switch to it with `EnterWorktree` and its `path`.
 - **Hooks** (`.claude/settings.json`, scripts in `.claude/hooks/`), a convenience: CI is what enforces the rules.
   - `guard-bash` refuses `npx playwright test` (it skips the e2e lock) and force pushes, in Bash and PowerShell;
   - `post-edit` reruns `npm run check:agents` when an agent file changes and reports its problems, and reminds of the format change rule when a node catalog changes;
