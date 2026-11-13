@@ -116,6 +116,8 @@ export interface LightDesc {
   penumbra?: number;
   exponent?: number;
   innerAngle?: number;
+  /** Babylon.js only: the light's specular black (a hemispheric light has a white one by default). */
+  specularBlack?: boolean;
   shadow?: { mapSize?: number; bias?: number; normalBias?: number; extent?: number; near?: number; far?: number };
 }
 
@@ -210,8 +212,12 @@ export interface Harness {
   engine: Engine;
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
   build(desc: SceneDesc): Promise<void>;
-  /** The adapter's own scene.primitive box and scene.light lights, as the studio builds them today. */
-  buildWithAdapter(desc: { size: number; color: string; position: V3; lights: LightSpec[] }): Promise<void>;
+  /**
+   * The adapter's own scene.primitive box and scene.light lights, as the studio builds them today. lightsMatrix: the
+   * lights go under a group with this column-major matrix (an adopted hemisphere follows its parent). Babylon.js only:
+   * babylonSpecularBlack sets each light's specular to black after the adapter made it.
+   */
+  buildWithAdapter(desc: { size: number; color: string; position: V3; lights: LightSpec[]; lightsMatrix?: number[]; babylonSpecularBlack?: boolean }): Promise<void>;
   render(): void;
   /** Framebuffer RGBA averaged over a w × h block, top-left origin, straight after a render. */
   region(x: number, y: number, w: number, h: number): number[];
@@ -351,8 +357,12 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         }
         return [light, light.target as unknown as THREE.Light];
       }
-      case 'hemisphere':
-        return [new THREE.HemisphereLight(colour, l.ground ?? '#444444', l.intensity)];
+      case 'hemisphere': {
+        // Three.js's sky direction is the light's position (Babylon.js takes it as a direction).
+        const h = new THREE.HemisphereLight(colour, l.ground ?? '#444444', l.intensity);
+        h.position.set(...(l.direction ?? [0, 1, 0]));
+        return [h];
+      }
       case 'ambient':
         return [new THREE.AmbientLight(colour, l.intensity)];
       case 'point': {
@@ -611,7 +621,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         }
       }
       light.diffuse = colour;
-      light.specular = l.kind === 'ambient' ? Color3.Black() : colour;
+      light.specular = l.kind === 'ambient' || l.specularBlack ? Color3.Black() : colour;
       light.intensity = l.intensity * k;
       if (l.falloff) light.falloffType = l.falloff === 'gltf' ? Light.FALLOFF_GLTF : l.falloff === 'standard' ? Light.FALLOFF_STANDARD : Light.FALLOFF_PHYSICAL;
       if (l.shadow) {
@@ -692,9 +702,19 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       handle.setPosition(box, ...desc.position);
       handle.addRoot(box);
       adapterObjects.push(box);
+      let parent: SceneObject | null = null;
+      if (desc.lightsMatrix) {
+        parent = handle.createGroup();
+        handle.setMatrix(parent, desc.lightsMatrix);
+        handle.addRoot(parent);
+        adapterObjects.push(parent);
+      }
       for (const l of desc.lights) {
         const light = handle.createLight(l);
+        if (engine === 'babylon' && desc.babylonSpecularBlack) (light.native as Light).specular = Color3.Black();
+        // As scene.light does (src/runtime/nodes/scene.ts:61): in the root first, then adopted by its parent.
         handle.addRoot(light);
+        if (parent) handle.addChild(parent, light);
         adapterObjects.push(light);
       }
       if (engine === 'babylon') {

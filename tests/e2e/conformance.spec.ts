@@ -204,6 +204,31 @@ test.describe('conformance: lights (Babylon.js on PBRMaterial, exact sRGB)', () 
     expect(maxDiff(r.babylon.c, r.three.c)).toBeLessThanOrEqual(SAME);
   });
 
+  test('hemisphere facing the sky, k = 1/pi: the same; and PBRMaterial adds a specular term unless the light specular is black', async ({ page }) => {
+    // Sky towards the camera, a dielectric at roughness 0.3 with its specular on.
+    const desc = (specularBlack: boolean): SceneDesc => ({
+      size: 128,
+      objects: [{ ...diffusePlane('#808080'), material: { kind: 'pbr', color: '#808080', metalness: 0, roughness: 0.3 } }],
+      lights: [{ kind: 'hemisphere', intensity: 2, direction: [0, 0, 1], ground: '#000000', specularBlack }],
+      babylonLightScale: K.hemisphere,
+    });
+    const black = await onBoth(page, 128, () => shoot(page, desc(true), { c: CENTRE }));
+    expect(unclipped(black.three.c)).toBe(true);
+    expect(maxDiff(black.babylon.c, black.three.c)).toBeLessThanOrEqual(SAME);
+    await open(page, 'babylon', 128, true);
+    const white = await shoot(page, desc(false), { c: CENTRE });
+    console.log('pbr hemisphere specular', rgb(black.three.c), rgb(black.babylon.c), rgb(white.c));
+    expect(maxDiff(white.c, black.three.c)).toBeGreaterThan(LOOK); // measured 145 against 102
+  });
+
+  test('hemisphere, the ground colour alone (sky turned away), #444444 as sRGB on both, k = 1/pi', async ({ page }) => {
+    const desc: SceneDesc = { size: 128, objects: [diffusePlane('#ffffff')], lights: [{ kind: 'hemisphere', intensity: 2, direction: [0, 0, -1], color: '#000000', ground: '#444444', specularBlack: true }], babylonLightScale: K.hemisphere };
+    const r = await onBoth(page, 128, () => shoot(page, desc, { c: CENTRE }));
+    console.log('pbr ground', rgb(r.three.c), rgb(r.babylon.c));
+    expect(unclipped(r.three.c)).toBe(true);
+    expect(maxDiff(r.babylon.c, r.three.c)).toBeLessThanOrEqual(SAME);
+  });
+
   // A plane at d mm, a point light at the origin with intensity 2·d² (candela, mm): the same irradiance at the centre.
   for (const d of [20, 100, 500, 1000]) {
     test(`point, inverse square in mm, k = 1: plane at ${d} mm`, async ({ page }) => {
@@ -284,47 +309,85 @@ test.describe('conformance: lights (Babylon.js on PBRMaterial, exact sRGB)', () 
 });
 
 test.describe('conformance: lights in the current adapters (scene.light on scene.primitive)', () => {
-  // Today: Three.js MeshStandardMaterial; Babylon.js StandardMaterial with every light × BABYLON_INTENSITY 0.4, a
-  // hemisphere ground of 0.3 grey against 0x444444. Pinned here, then the equality the Phase 4 work must reach.
-  const pinned = {
-    groundOnly: { three: 0, babylon: 20 },
+  // Today: Three.js MeshStandardMaterial; Babylon.js StandardMaterial (specularColor 0.2, babylon-adapter.ts:135) with
+  // every light x BABYLON_INTENSITY 0.4. Red channel of a #808080 box whose front face looks at the camera (+Z). Both
+  // adapters point a hemisphere's sky along +Z (three-adapter.ts:20, babylon-adapter.ts:181), so with the sky black and
+  // the box facing it, the ground weighs nothing: what Babylon.js shows is its hemispheric light's specular (white by
+  // default; the adapter blacks it out for ambient only, :188), which Three.js's HemisphereLight does not have.
+  const RX180 = [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1];
+  const cases = {
+    hemisphereSpecular: { lights: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }] },
+    ambient: { lights: [{ kind: 'ambient', color: '#ffffff', intensity: 1 }] },
+    directional: { lights: [{ kind: 'directional', color: '#ffffff', intensity: 1 }] },
+    // The hemisphere under a group turned 180 degrees about X: the adapters re-orient an adopted hemisphere from its
+    // parent, so the sky points away and the front face sees only the ground (0x444444 on Three.js, 0.3 on Babylon.js).
+    groundOnly: { lights: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }], lightsMatrix: RX180 },
+  };
+  // groundOnly is read on the second frame: on the first, the Three.js adapter still points the adopted hemisphere along
+  // +Z (its direction comes from parent.updateWorldMatrix(true, false), which does not force a group whose
+  // matrixAutoUpdate is off: three/src/core/Object3D.js:1237). See "known difference: … one frame late" below.
+  type Name = keyof typeof cases;
+  const pinned: Record<Name, { three: number; babylon: number }> = {
+    hemisphereSpecular: { three: 0, babylon: 20 },
     ambient: { three: 74, babylon: 51 },
     directional: { three: 72, babylon: 56 },
-  } as const;
-  const lights = {
-    groundOnly: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }],
-    ambient: [{ kind: 'ambient', color: '#ffffff', intensity: 1 }],
-    directional: [{ kind: 'directional', color: '#ffffff', intensity: 1 }],
+    groundOnly: { three: 13, babylon: 15 },
   };
-  const measure = (page: Page) =>
+  const measure = (page: Page, extra: object = {}, frames = 2) =>
     onBoth(
       page,
       128,
       () =>
-        page.evaluate(async (all) => {
-          const H = (window as never as { H: Harness }).H;
-          const out: Record<string, number> = {};
-          for (const [name, ls] of Object.entries(all)) {
-            await H.buildWithAdapter({ size: 40, color: '#808080', position: [0, 0, -60], lights: ls as never });
-            H.render();
-            out[name] = Math.round(H.region(60, 60, 8, 8)[0]);
-          }
-          return out;
-        }, lights),
+        page.evaluate(
+          async ([all, x, n]) => {
+            const H = (window as never as { H: Harness }).H;
+            const out: Record<string, number> = {};
+            for (const [name, c] of Object.entries(all)) {
+              await H.buildWithAdapter({ size: 40, color: '#808080', position: [0, 0, -60], ...(c as object), ...(x as object) } as never);
+              for (let i = 0; i < n; i++) H.render();
+              out[name] = Math.round(H.region(60, 60, 8, 8)[0]);
+            }
+            return out;
+          },
+          [cases, extra, frames] as const,
+        ),
       false,
     );
 
   test('pinned: what each adapter renders today', async ({ page }) => {
     const r = await measure(page);
-    for (const name of Object.keys(pinned) as Array<keyof typeof pinned>) {
+    for (const name of Object.keys(pinned) as Name[]) {
       expect(Math.abs(r.three[name] - pinned[name].three), `three ${name} ${r.three[name]}`).toBeLessThanOrEqual(1);
       expect(Math.abs(r.babylon[name] - pinned[name].babylon), `babylon ${name} ${r.babylon[name]}`).toBeLessThanOrEqual(1);
     }
   });
 
-  for (const name of Object.keys(pinned) as Array<keyof typeof pinned>) {
+  test("the hemisphere's 20 on Babylon.js is its specular: black, it gives 0; the ground case does not change", async ({ page }) => {
+    const r = await measure(page, { babylonSpecularBlack: true });
+    expect(r.babylon.hemisphereSpecular).toBe(0);
+    expect(Math.abs(r.babylon.groundOnly - pinned.groundOnly.babylon)).toBeLessThanOrEqual(1);
+  });
+
+  test('the ground colour alone: the two adapters agree today (13 and 15)', async ({ page }) => {
+    const r = await measure(page);
+    expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
+  });
+
+  test('pinned: the first frame after a hemisphere is adopted, Three.js 0 (still the old direction), Babylon.js 15', async ({ page }) => {
+    const r = await measure(page, {}, 1);
+    expect(r.three.groundOnly).toBe(0);
+    expect(Math.abs(r.babylon.groundOnly - 15)).toBeLessThanOrEqual(1);
+  });
+
+  test('known difference: the Three.js adapter re-orients an adopted hemisphere one frame late', async ({ page }) => {
+    test.fail(true, 'three-adapter.ts reads the parent with updateWorldMatrix(true, false) before render(), which does not update a group whose matrixAutoUpdate is off');
+    const r = await measure(page, {}, 1);
+    expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
+  });
+
+  for (const name of ['hemisphereSpecular', 'ambient', 'directional'] as const) {
     test(`known difference (#131): ${name} renders alike on both adapters`, async ({ page }) => {
-      test.fail(true, 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4 and a 0.3 ground: the pinned values differ; #131 fixes it');
+      test.fail(true, 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4, and a white specular on its hemispheric light: the pinned values differ; #131 fixes it');
       const r = await measure(page);
       expect(Math.abs(r.babylon[name] - r.three[name])).toBeLessThanOrEqual(SAME);
     });
