@@ -385,6 +385,31 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
     expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
   });
 
+  // The parent's matrix changes between two frames; the frame right after is read with one render. Direct: the hemisphere's
+  // own group turns. Nested: an anchor turns, the group inside it does not.
+  const afterChange = (page: Page, nested: boolean) =>
+    onBoth(page, 128, () => page.evaluate((n) => (window as never as { H: Harness }).H.hemisphereAfterChange(n), nested), false);
+
+  for (const nested of [false, true]) {
+    const shape = nested ? 'a group inside an anchor that turns' : 'its own group that turns';
+    test(`pinned: a hemisphere in ${shape}, the frame after the change`, async ({ page }) => {
+      const r = await afterChange(page, nested);
+      console.log('hemisphere after change', nested ? 'nested' : 'direct', JSON.stringify(r));
+      for (const engine of ENGINES) {
+        expect(r[engine].settled, `${engine} settled`).toBe(0); // sky towards the box: no ground
+        expect(r[engine].secondFrame, `${engine} second frame`).toBeGreaterThan(8); // turned: the ground shows
+      }
+      expect(Math.abs(r.babylon.afterChange - r.babylon.secondFrame), 'Babylon.js on the frame itself').toBeLessThanOrEqual(1);
+      expect(r.three.afterChange, 'Three.js still the old direction').toBe(0);
+    });
+
+    test(`known difference: the Three.js adapter re-orients a hemisphere in ${shape} one frame late`, async ({ page }) => {
+      test.fail(true, 'three-adapter.ts aims an adopted hemisphere from a parent world matrix not yet recomputed for this frame');
+      const r = await afterChange(page, nested);
+      expect(Math.abs(r.three.afterChange - r.babylon.afterChange)).toBeLessThanOrEqual(SAME);
+    });
+  }
+
   for (const name of ['hemisphereSpecular', 'ambient', 'directional'] as const) {
     test(`known difference (#131): ${name} renders alike on both adapters`, async ({ page }) => {
       test.fail(true, 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4, and a white specular on its hemispheric light: the pinned values differ; #131 fixes it');

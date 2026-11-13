@@ -218,6 +218,13 @@ export interface Harness {
    * babylonSpecularBlack sets each light's specular to black after the adapter made it.
    */
   buildWithAdapter(desc: { size: number; color: string; position: V3; lights: LightSpec[]; lightsMatrix?: number[]; babylonSpecularBlack?: boolean }): Promise<void>;
+  /**
+   * A #808080 box facing the camera and a hemisphere (sky black) adopted by a group, itself inside an anchor group when
+   * `nested`; the outer group's matrix goes from identity to turned 180 degrees about X between two frames, the inner
+   * group's never changes. Returns the red channel at the centre once settled (two renders) and on the one frame right
+   * after the change. Babylon.js's light specular is black, so only the ground shows.
+   */
+  hemisphereAfterChange(nested: boolean): Promise<{ settled: number; afterChange: number; secondFrame: number }>;
   render(): void;
   /** Framebuffer RGBA averaged over a w × h block, top-left origin, straight after a render. */
   region(x: number, y: number, w: number, h: number): number[];
@@ -724,6 +731,48 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           await new Promise((r) => setTimeout(r, 10));
         }
       }
+    },
+    async hemisphereAfterChange(nested) {
+      clear();
+      const box = handle.createPrimitive({ shape: 'box', size: 40, color: '#808080' });
+      handle.setPosition(box, 0, 0, -60);
+      handle.addRoot(box);
+      const outer = handle.createGroup();
+      handle.addRoot(outer);
+      let parent = outer;
+      if (nested) {
+        parent = handle.createGroup();
+        handle.addChild(outer, parent);
+      }
+      const light = handle.createLight({ kind: 'hemisphere', color: '#000000', intensity: 1 });
+      if (engine === 'babylon') (light.native as Light).specular = Color3.Black();
+      handle.addRoot(light);
+      handle.addChild(parent, light);
+      adapterObjects.push(box, light, outer);
+      if (parent !== outer) adapterObjects.push(parent);
+      const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      const RX180 = [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1];
+      handle.setMatrix(outer, I);
+      if (engine === 'babylon') {
+        const scene = babylonScene();
+        for (let i = 0; i < 200 && !scene.isReady(); i++) {
+          handle.render(PROJECTION);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
+      const red = () => {
+        handle.render(PROJECTION);
+        last = readAll();
+        let sum = 0;
+        for (let j = 60; j < 68; j++) for (let i = 60; i < 68; i++) sum += last[((size - 1 - j) * size + i) * 4];
+        return Math.round(sum / 64);
+      };
+      red();
+      const settled = red();
+      handle.setMatrix(outer, RX180);
+      const afterChange = red();
+      const secondFrame = red();
+      return { settled, afterChange, secondFrame };
     },
     render() {
       handle.render(PROJECTION);
