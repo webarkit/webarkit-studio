@@ -1,10 +1,18 @@
-// Renderer conformance in the browser (#129; #130 adds its cases): one table per item, run on both real adapters through
-// tests/e2e/harness/conformance-harness.ts. Pixel tolerances are stated per table; the report
-// (docs/proposals/scene-nodes-equivalence.md) explains each and names the Chromium revision they were measured on.
+// Renderer conformance in the browser (#129; #130 makes it the suite every common scene node adds to): tables of cases,
+// each run on both real adapters through tests/e2e/harness/conformance-harness.ts. Pixel tolerances are stated per
+// table; the report (docs/proposals/scene-nodes-equivalence.md) explains each and names the Chromium revision they were
+// measured on (1248).
+//
+// - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
+//   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
+// - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
+//   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
+// - Node cases (no WebGL): tests/unit/conformance/. Animations keep their own table on both engines:
+//   tests/e2e/animations.spec.ts. Light kinds outside the catalog: tests/unit/light-kind.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
-import type { Harness, SceneDesc } from './harness/conformance-harness';
+import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
 
 const ENGINES = ['three', 'babylon'] as const;
 type Engine = (typeof ENGINES)[number];
@@ -416,6 +424,213 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
       const r = await measure(page);
       expect(Math.abs(r.babylon[name] - r.three[name])).toBeLessThanOrEqual(SAME);
     });
+  }
+});
+
+test.describe('conformance: SceneHandle (the adapters as the studio drives them)', () => {
+  // One entry per behaviour: an ordered list of SceneHandle calls (AdapterOp), the regions to read, and the rules both
+  // engines must meet. Run on the adapters as they are: Babylon.js without exact sRGB (onBoth(…, false)), since that is
+  // what the studio renders. 128 px, the harness's 90° projection: a point (x, y, z) shows at pixel
+  // 64 + 64·x/−z, 64 − 64·y/−z.
+  //
+  // A difference the adapters have today is `known`: its rules become a test marked test.fail with the issue that fixes
+  // it, and a passing test pins what each engine renders, so the failing one fails for that reason and no other.
+
+  type Region = [number, number, number, number];
+  type Rule =
+    /** Per engine: alpha ≥ 250 (something drawn) or ≤ 2 (nothing). Pair an `empty` with a `drawn` in the same frame. */
+    | { region: string; is: 'drawn' | 'empty' }
+    /** Across engines: RGBA within SAME. */
+    | { region: string; is: 'same' }
+    /** Across engines: alpha within SAME. */
+    | { region: string; is: 'sameAlpha' }
+    /** Across engines: the first and last pixel with alpha > 128 on this row, within EDGE px. */
+    | { row: number; is: 'edges' }
+    /** Per engine: the object's world bounds, within the report's 1e-4 mm. */
+    | { bounds: string; min: V3; max: V3 };
+  interface Case {
+    name: string;
+    ops: AdapterOp[];
+    regions?: Record<string, Region>;
+    rules: Rule[];
+    known?: {
+      issue: string;
+      why: string;
+      /** The rules that fail today; the others stay in the passing test. */
+      rules: Rule[];
+      /** RGBA each engine renders today, per region, within 1 level. */
+      pinned: Record<Engine, Record<string, number[]>>;
+    };
+  }
+  /** The report's ±2 px at 256 px for an edge (the spot cone), at this suite's 128 px. */
+  const EDGE = 1;
+  const GEOMETRY = 1e-4;
+
+  const box = (id: string, size: number, at: V3, color = '#808080'): AdapterOp[] => [
+    { op: 'createPrimitive', id, spec: { shape: 'box', size, color } },
+    { op: 'setPosition', id, position: at },
+  ];
+  /** Rotated 90° about Z, translated 80 mm down −Z (column-major). */
+  const RZ90_AT_80 = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, -80, 1];
+
+  const CASES: Case[] = [
+    ...(['box', 'sphere', 'torusKnot'] as const).map(
+      (shape): Case => ({
+        name: `createPrimitive ${shape}, unlit: the same silhouette`,
+        ops: [{ op: 'createPrimitive', id: 'p', spec: { shape, size: 40, color: '#808080' } }, { op: 'setPosition', id: 'p', position: [0, 0, -80] }, { op: 'addRoot', id: 'p' }],
+        regions: { centre: [62, 62, 4, 4] },
+        rules: [{ region: 'centre', is: 'same' }, { row: 64, is: 'edges' }, { row: 56, is: 'edges' }],
+      }),
+    ),
+    {
+      name: 'setVisible false: the object is not drawn, its neighbour is',
+      ops: [...box('a', 30, [-30, 0, -80]), { op: 'addRoot', id: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }, { op: 'setVisible', id: 'a', visible: false }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: 'setVisible false on a group hides its child',
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'addRoot', id: 'g' }, ...box('a', 30, [-30, 0, -80]), { op: 'addChild', parent: 'g', child: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }, { op: 'setVisible', id: 'g', visible: false }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: 'setVisible true on the group, a frame later: its child shows again',
+      ops: [
+        { op: 'createGroup', id: 'g' },
+        { op: 'addRoot', id: 'g' },
+        ...box('a', 30, [-30, 0, -80]),
+        { op: 'addChild', parent: 'g', child: 'a' },
+        ...box('b', 30, [30, 0, -80]),
+        { op: 'addRoot', id: 'b' },
+        { op: 'setVisible', id: 'g', visible: false },
+        { op: 'render' },
+        { op: 'setVisible', id: 'g', visible: true },
+      ],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'drawn' }, { region: 'b', is: 'drawn' }, { region: 'a', is: 'same' }],
+    },
+    {
+      name: 'an object hidden before it is added to a group stays hidden (SceneHandle.addChild)',
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'addRoot', id: 'g' }, ...box('a', 30, [-30, 0, -80]), { op: 'setVisible', id: 'a', visible: false }, { op: 'addChild', parent: 'g', child: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: "a child under its group's matrix (turned 90° about Z, moved): the same place and bounds",
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'setMatrix', id: 'g', matrix: RZ90_AT_80 }, { op: 'addRoot', id: 'g' }, ...box('a', 20, [20, 0, 0]), { op: 'addChild', parent: 'g', child: 'a' }],
+      // The child at x 20 in the group shows at y 20 once turned: above the centre, not to its right.
+      regions: { turned: [62, 44, 4, 4], unturned: [80, 62, 4, 4] },
+      rules: [{ region: 'turned', is: 'drawn' }, { region: 'unturned', is: 'empty' }, { region: 'turned', is: 'same' }, { bounds: 'a', min: [-10, 10, -90], max: [10, 30, -70] }],
+    },
+    {
+      name: 'setColor with alpha 0.5, then 1: opaque again',
+      ops: [...box('a', 40, [0, 0, -80]), { op: 'addRoot', id: 'a' }, { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 0.5] }, { op: 'render' }, { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 1] }],
+      regions: { centre: [60, 60, 8, 8] },
+      rules: [{ region: 'centre', is: 'drawn' }, { region: 'centre', is: 'same' }],
+    },
+    {
+      name: 'setColor with alpha 0.5 under a directional light: the same coverage',
+      ops: [
+        { op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } },
+        { op: 'addRoot', id: 'sun' },
+        ...box('a', 40, [0, 0, -80]),
+        { op: 'addRoot', id: 'a' },
+        { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 0.5] },
+      ],
+      regions: { centre: [60, 60, 8, 8] },
+      rules: [{ region: 'centre', is: 'sameAlpha' }],
+      known: {
+        issue: '#131',
+        why: 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4 and colours unconverted: the lit colour differs; #131 fixes it',
+        rules: [{ region: 'centre', is: 'same' }],
+        // Premultiplied in the framebuffer on both: colour × alpha, alpha 128.
+        pinned: { three: { centre: [55, 36, 18, 128] }, babylon: { centre: [39.875, 27.875, 15.875, 128] } },
+      },
+    },
+  ];
+
+  interface Shot {
+    regions: Record<string, number[]>;
+    rows: Record<number, number[]>;
+    bounds: Record<string, { min: V3; max: V3 }>;
+  }
+  const measure = (page: Page, c: Case) =>
+    onBoth(
+      page,
+      128,
+      () =>
+        page.evaluate(
+          async ([ops, regions, rows, ids]) => {
+            const H = (window as never as { H: Harness }).H;
+            await H.buildAdapterScene(ops);
+            H.render();
+            const out: Shot = { regions: {}, rows: {}, bounds: {} };
+            for (const [k, [x, y, w, h]] of Object.entries(regions)) out.regions[k] = H.region(x, y, w, h);
+            for (const y of rows) out.rows[y] = H.alphaRow(y);
+            for (const id of ids) out.bounds[id] = H.adapterBounds(id);
+            return out;
+          },
+          [
+            c.ops,
+            c.regions ?? {},
+            [...c.rules, ...(c.known?.rules ?? [])].flatMap((r) => ('row' in r ? [r.row] : [])),
+            [...c.rules, ...(c.known?.rules ?? [])].flatMap((r) => ('bounds' in r ? [r.bounds] : [])),
+          ] as const,
+        ),
+      false,
+    );
+
+  const edgesOf = (row: number[]) => {
+    const lit = row.map((v) => v > 128);
+    return [lit.indexOf(true), lit.lastIndexOf(true)];
+  };
+  function check(r: Record<Engine, Shot>, rule: Rule) {
+    if ('row' in rule) {
+      const t = edgesOf(r.three.rows[rule.row]);
+      const b = edgesOf(r.babylon.rows[rule.row]);
+      expect(t[0], `row ${rule.row}: something drawn`).toBeGreaterThanOrEqual(0);
+      expect(Math.max(Math.abs(t[0] - b[0]), Math.abs(t[1] - b[1])), `row ${rule.row} edges: three ${t} / babylon ${b}`).toBeLessThanOrEqual(EDGE);
+    } else if ('bounds' in rule) {
+      for (const engine of ENGINES) {
+        const got = r[engine].bounds[rule.bounds];
+        for (let i = 0; i < 3; i++) {
+          expect(Math.abs(got.min[i] - rule.min[i]), `${engine} ${rule.bounds} min[${i}] ${got.min[i]}`).toBeLessThanOrEqual(GEOMETRY);
+          expect(Math.abs(got.max[i] - rule.max[i]), `${engine} ${rule.bounds} max[${i}] ${got.max[i]}`).toBeLessThanOrEqual(GEOMETRY);
+        }
+      }
+    } else {
+      const t = r.three.regions[rule.region];
+      const b = r.babylon.regions[rule.region];
+      if (rule.is === 'drawn' || rule.is === 'empty')
+        for (const engine of ENGINES) {
+          const a = r[engine].regions[rule.region][3];
+          if (rule.is === 'drawn') expect(a, `${engine} ${rule.region} alpha`).toBeGreaterThanOrEqual(250);
+          else expect(a, `${engine} ${rule.region} alpha`).toBeLessThanOrEqual(2);
+        }
+      else if (rule.is === 'sameAlpha') expect(Math.abs(b[3] - t[3]), `${rule.region} alpha: ${t[3]} / ${b[3]}`).toBeLessThanOrEqual(SAME);
+      else expect(Math.max(maxDiff(b, t), Math.abs(b[3] - t[3])), `${rule.region}: ${t} / ${b}`).toBeLessThanOrEqual(SAME);
+    }
+  }
+
+  for (const c of CASES) {
+    test(c.known ? `pinned: ${c.name}` : c.name, async ({ page }) => {
+      const r = await measure(page, c);
+      console.log('scene handle', c.name, JSON.stringify(r.three.regions), JSON.stringify(r.babylon.regions));
+      for (const rule of c.rules) check(r, rule);
+      if (c.known)
+        for (const engine of ENGINES)
+          for (const [k, v] of Object.entries(c.known.pinned[engine]))
+            expect(Math.max(...r[engine].regions[k].map((x, i) => Math.abs(x - v[i]))), `${engine} ${k} ${r[engine].regions[k]}`).toBeLessThanOrEqual(1);
+    });
+    if (c.known) {
+      const known = c.known;
+      test(`known difference (${known.issue}): ${c.name}`, async ({ page }) => {
+        test.fail(true, known.why);
+        const r = await measure(page, c);
+        for (const rule of known.rules) check(r, rule);
+      });
+    }
   }
 });
 

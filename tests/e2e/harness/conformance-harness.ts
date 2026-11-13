@@ -45,7 +45,7 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { LightSpec, PrimitiveSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
 
 /** Looking down −Z from the origin, 90° field of view, near 0.1: the animation harness's projection. */
 export const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0];
@@ -133,6 +133,28 @@ export interface SceneDesc {
   /** Babylon.js only: scale every light's intensity by this (the k under test). */
   babylonLightScale?: number;
 }
+
+/**
+ * One SceneHandle call, as plain data (it crosses page.evaluate: JSON only). A scene is an ordered list of them, run on
+ * the real adapter as the studio's nodes would call it, so "hidden, then shown again" is two operations, not a flag.
+ * Objects are named by `id`. A new adapter method enters the suite as one more operation here (#130): its specs go
+ * through to the adapter as they are.
+ */
+export type AdapterOp =
+  | { op: 'createPrimitive'; id: string; spec: PrimitiveSpec }
+  | { op: 'createGroup'; id: string }
+  | { op: 'createLight'; id: string; spec: LightSpec }
+  | { op: 'addRoot'; id: string }
+  | { op: 'addChild'; parent: string; child: string }
+  | { op: 'setPosition'; id: string; position: V3 }
+  /** Column-major, 16 numbers. */
+  | { op: 'setMatrix'; id: string; matrix: number[] }
+  | { op: 'setVisible'; id: string; visible: boolean }
+  /** [r, g, b, a], sRGB 0–1. */
+  | { op: 'setColor'; id: string; color: number[] }
+  | { op: 'setIntensity'; id: string; intensity: number }
+  /** A frame drawn between two operations (what is read back is always the frame after the last one). */
+  | { op: 'render' };
 
 const DEG = Math.PI / 180;
 
@@ -225,11 +247,20 @@ export interface Harness {
    * after the change. Babylon.js's light specular is black, so only the ground shows.
    */
   hemisphereAfterChange(nested: boolean): Promise<{ settled: number; afterChange: number; secondFrame: number }>;
+  /**
+   * Runs the operations on the adapter's scene (replacing the previous one), through SceneHandle only, then renders
+   * until Babylon.js's shaders are ready; throws if they are not after 2 s, so a blank frame is never measured.
+   */
+  buildAdapterScene(ops: AdapterOp[]): Promise<void>;
+  /** World-space bounds of an object made by buildAdapterScene, by its id. */
+  adapterBounds(id: string): { min: V3; max: V3 };
   render(): void;
   /** Framebuffer RGBA averaged over a w × h block, top-left origin, straight after a render. */
   region(x: number, y: number, w: number, h: number): number[];
   /** One row of the red channel, after a render. */
   row(y: number): number[];
+  /** One row of the alpha channel, after a render. */
+  alphaRow(y: number): number[];
   /** Two renders of the same frame give the same bytes. */
   repeatIdentical(): boolean;
   /** Renderer state that decides colours: output colour space, tone mapping, exposure, alpha. */
@@ -270,6 +301,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   let extras: Array<{ dispose(): void }> = [];
   let objects: Array<THREE.Mesh | AbstractMesh> = [];
   let adapterObjects: SceneObject[] = [];
+  /** The objects of buildAdapterScene, by id. */
+  const named = new Map<string, SceneObject>();
   const probe: SceneObject = handle.createGroup();
   handle.addRoot(probe);
   if (engine === 'babylon' && options.exactSrgb) {
@@ -774,6 +807,84 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       const secondFrame = red();
       return { settled, afterChange, secondFrame };
     },
+    async buildAdapterScene(ops) {
+      clear();
+      named.clear();
+      const get = (id: string) => {
+        const o = named.get(id);
+        if (!o) throw new Error(`no object "${id}" (create it before using it)`);
+        return o;
+      };
+      const create = (id: string, o: SceneObject) => {
+        if (named.has(id)) throw new Error(`object "${id}" created twice`);
+        named.set(id, o);
+        adapterObjects.push(o);
+      };
+      for (const step of ops) {
+        switch (step.op) {
+          case 'createPrimitive':
+            create(step.id, handle.createPrimitive(step.spec));
+            break;
+          case 'createGroup':
+            create(step.id, handle.createGroup());
+            break;
+          case 'createLight':
+            create(step.id, handle.createLight(step.spec));
+            break;
+          case 'addRoot':
+            handle.addRoot(get(step.id));
+            break;
+          case 'addChild':
+            handle.addChild(get(step.parent), get(step.child));
+            break;
+          case 'setPosition':
+            handle.setPosition(get(step.id), ...step.position);
+            break;
+          case 'setMatrix':
+            handle.setMatrix(get(step.id), step.matrix);
+            break;
+          case 'setVisible':
+            handle.setVisible(get(step.id), step.visible);
+            break;
+          case 'setColor':
+            handle.setColor(get(step.id), step.color);
+            break;
+          case 'setIntensity':
+            handle.setIntensity(get(step.id), step.intensity);
+            break;
+          case 'render':
+            handle.render(PROJECTION);
+            break;
+          default:
+            throw new Error(`unknown operation ${JSON.stringify(step)}`);
+        }
+      }
+      if (engine === 'babylon') {
+        const scene = babylonScene();
+        for (let i = 0; i < 200 && !scene.isReady(); i++) {
+          handle.render(PROJECTION);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+        if (!scene.isReady()) throw new Error('the Babylon.js scene is not ready after 2 s');
+      }
+    },
+    adapterBounds(id) {
+      const o = named.get(id);
+      if (!o) throw new Error(`no object "${id}"`);
+      if (engine === 'three') {
+        // From the root, as WebGLRenderer.render does: a group whose matrixAutoUpdate is off is forced only from above.
+        threeScene().updateMatrixWorld();
+        const box = new THREE.Box3().setFromObject(o.native as THREE.Object3D);
+        return { min: box.min.toArray() as V3, max: box.max.toArray() as V3 };
+      }
+      const m = o.native as AbstractMesh;
+      let top: TransformNode = m;
+      while (top.parent) top = top.parent as TransformNode;
+      top.computeWorldMatrix(true);
+      m.computeWorldMatrix(true);
+      const b = m.getBoundingInfo().boundingBox;
+      return { min: b.minimumWorld.asArray() as V3, max: b.maximumWorld.asArray() as V3 };
+    },
     render() {
       handle.render(PROJECTION);
       last = readAll();
@@ -790,6 +901,11 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
     row(y) {
       const out: number[] = [];
       for (let i = 0; i < size; i++) out.push(last[((size - 1 - y) * size + i) * 4]);
+      return out;
+    },
+    alphaRow(y) {
+      const out: number[] = [];
+      for (let i = 0; i < size; i++) out.push(last[((size - 1 - y) * size + i) * 4 + 3]);
       return out;
     },
     repeatIdentical() {
