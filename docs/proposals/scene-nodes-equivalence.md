@@ -146,6 +146,7 @@ grey, a saturated albedo and a coloured light, and at 20–1000 mm for the point
 | Directional, white, 1 | 72 | 56 | the same, "… directional …" |
 | Hemisphere under a group turned 180° about X: the **ground colour** alone, second frame | 13 | 15 | e2e "the ground colour alone: the two adapters agree today (13 and 15)" |
 | The same, first frame after the hemisphere is adopted | 0 | 15 | e2e "pinned: the first frame after a hemisphere is adopted …", `test.fail` "known difference: the Three.js adapter re-orients an adopted hemisphere one frame late" |
+| A hemisphere whose own group, or the anchor above its group, turns: the frame of the change | 0 (13 the next frame) | 15 | e2e "pinned: a hemisphere in its own group that turns / in a group inside an anchor that turns, the frame after the change", `test.fail` "known difference: the Three.js adapter re-orients a hemisphere in … one frame late" |
 
 Red channel of a `#808080` box whose front face looks at the camera (+Z); Babylon on `StandardMaterial`
 (`specularColor` 0.2) with every light × 0.4, colours unconverted, `pow(1/2.2)` encode. Both adapters point a
@@ -231,9 +232,9 @@ contrast 1, context not premultiplied, clear colour transparent.
 (`GEOMETRY_CASES`, `TRANSFORM_CASES`), and the harness's `SceneDesc`. Use **same** (3/255) for equivalences and
 **look** (8/255) only where this report gives a measured residual; keep the clipping rule; name the Chromium revision.
 The harness builds with each engine's own classes, while the cases the issue lists (primitives, the three light kinds,
-`setColor` with alpha, `setVisible`) go through `SceneHandle`: add `buildWithAdapter`-style cases for them. The five
+`setColor` with alpha, `setVisible`) go through `SceneHandle`: add `buildWithAdapter`-style cases for them. The seven
 `test.fail` cases here are the known differences to keep marked until they are fixed: three by #131, the opacity
-and the hemisphere's one-frame lag by the draft issues below.
+and the hemisphere's one-frame lag (three cases) by the draft issues below.
 
 **#131, PBR on Babylon.js.** Translate: `PBRMaterial`; colours `Color3.FromHexString(hex).toLinearSpace(true)`; the
 engine created with `useExactSrgbConversions: true` and premultiplied alpha (see the defect below); light k = 1 for
@@ -317,15 +318,37 @@ the hemispheric light (`PBRMaterial` also adds one: 145 against 102 at roughness
 
 ### fix(three): an adopted hemisphere light follows its parent one frame late
 
-The Three.js adapter re-orients a hemisphere adopted by a group from the group's world matrix, read with
+The Three.js adapter aims a hemisphere adopted by a group from the group's world matrix, read with
 `parent.updateWorldMatrix(true, false)` before `renderer.render()` (`src/runtime/renderers/three-adapter.ts`, `render`).
-That call does not recompute a group whose `matrixAutoUpdate` is off (`three/src/core/Object3D.js:1237`): its world
-matrix is only updated inside `render()`, after the light has been aimed. So the light uses the previous frame's
-direction. Measured: a hemisphere under a group turned 180° about X lights the ground side 0 on the first frame and 13
-from the second; Babylon.js gives 15 at once (`conformance.spec.ts`, "known difference: the Three.js adapter re-orients
-an adopted hemisphere one frame late"). Under an anchor that moves every frame the sky lags the marker by a frame. Fix:
-force the parent's update before aiming the light (`parent.updateWorldMatrix(true, false, true)`: 0.186 takes a
-`force` argument, `Object3D.js:1225`), and remove `test.fail`.
+`setMatrix` writes the group's `matrix` without flagging `matrixWorldNeedsUpdate` (`three-adapter.ts:166-172`), and
+in three 0.186.1 `updateWorldMatrix` recomputes a node only when flagged or forced, the `force` argument reaching the
+node and its children but not its ancestors (`three/src/core/Object3D.js:1225-1270`). The world matrices are only
+recomputed inside `render()`, after the light has been aimed, so the sky uses the previous frame's direction.
+
+Measured (`tests/e2e/conformance.spec.ts`, red channel at the centre, the ground side lit once the parent has turned):
+
+| Case | Three.js, the frame of the change | Three.js, the next frame | Babylon.js, the frame of the change |
+|---|---|---|---|
+| First frame after the hemisphere is adopted by a turned group | 0 | 13 | 15 |
+| Its own group turns between two frames | 0 | 13 | 15 |
+| An anchor turns between two frames, the group inside it does not | 0 | 13 | 15 |
+
+Two fixes were tried locally on `src/` (not committed):
+
+| Fix | First frame | Own group | Anchor above the group |
+|---|---|---|---|
+| (a) `parent.updateWorldMatrix(true, false, true)` | fixed (13) | fixed (13) | **still late** (0): the force does not reach the anchor |
+| (b) `scene.updateMatrixWorld()` once, before the loop that aims the adopted hemispheres | fixed (13) | fixed (13) | fixed (13) |
+
+Fix: (b). The scene's own `updateMatrix()` flags it, so the call forces the whole tree, as `render()` does. Then remove
+`test.fail` from "known difference: the Three.js adapter re-orients an adopted hemisphere one frame late", "known
+difference: the Three.js adapter re-orients a hemisphere in its own group that turns one frame late" and "known
+difference: the Three.js adapter re-orients a hemisphere in a group inside an anchor that turns one frame late", and
+update their pinned cases ("pinned: the first frame after a hemisphere is adopted …", "pinned: a hemisphere in … the
+frame after the change").
+
+Babylon.js does not lag in either shape: it computes the parent's world matrix with `computeWorldMatrix(true)` before
+aiming the light (`babylon-adapter.ts:294`), and gives 15 on the frame of the change in all three cases.
 
 ## What this report could not tell
 
