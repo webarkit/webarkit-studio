@@ -56,7 +56,7 @@ All builders: Three.js winds faces counter-clockwise about their normals, Babylo
 | Capsule r 5, height 30 | Equivalent with a translation | Three.js `length` = height − 2r; Babylon `height` = total. Both along Y | "capsule: total height 30 is …" | run |
 | Circle r 15 (Phase 5) | Equivalent with a translation | As the plane: Babylon `CreateDisc` normal −Z | "plane and circle …" | run |
 | Ring (Phase 5) | **Missing** on Babylon.js | No ring builder in `@babylonjs/core` 9.30.0 (`Meshes/Builders/`); the adapter would build the vertex data itself | "ring: … no ring builder" | run, source |
-| Icosahedron r 15 (Phase 5) | Equivalent with a translation (not fully checked) | Babylon `CreatePolyhedron({ type: 3, size })`: radius = 1.17557 × size, and the solid is rotated (a vertex on +Z). Size = r / 1.17557 and a fixed rotation; the rotation was not determined | "icosahedron: Babylon.js's size is not the radius …" | run |
+| Icosahedron r 15 (Phase 5) | Equivalent with a translation | Babylon `CreatePolyhedron({ type: 3, size })`: radius = 1.17557 × size, and the solid is turned (a vertex on +Z). `size` = r / 1.17557, then a rotation of atan(φ) = 58.283° about +Y gives Three.js's vertices (the one rotation about a single axis among the 60 that map one solid onto the other) | "icosahedron: Babylon.js's size is not the radius …", "icosahedron: Babylon.js scaled by 1 / 1.17557 and turned atan(φ) = 58.283° about +Y …" | run |
 
 ### Custom geometry (Phase 5, `geometry.custom`)
 
@@ -125,7 +125,7 @@ re-measured. Metalness 1 without an environment is **not** black here: the direc
 | Light | Verdict | Translation (Babylon intensity = k × Three.js intensity) | Test |
 |---|---|---|---|
 | Directional | Equivalent with a translation | **k = 1** on `PBRMaterial`. The tolerance pins k to **0.942–1.061**; a control at 1.1 and one at 0.4 (`BABYLON_INTENSITY`) fail | e2e "directional, k = 1: …" (grey at 45° and 60°, saturated albedo with a coloured light, white), "directional: the interval of k …" |
-| Hemisphere | Equivalent with a translation | **k = 1/π**: Babylon's PBR does not divide a hemispheric light by π (k = 1 measured 3.19× too bright in linear, logged; the control asserts a difference above same). Ground colour as sRGB → linear | e2e "hemisphere, k = 1/π …" |
+| Hemisphere | Equivalent with a translation | **k = 1/π**: Babylon's PBR hemispheric diffuse is `mix(ground, sky, NdotL)` with no division by π (`Shaders/ShadersInclude/pbrDirectLightingFunctions.js`, `computeHemisphericDiffuseLighting`; k = 1 measured 3.19× too bright in linear, logged; the control asserts a difference above same). Holds with the sky across the surface and facing it. **The light's specular must be black:** `PBRMaterial` adds a specular term for a hemispheric light (`lightFragment.js`, `computeHemisphericLighting`), which Three.js's `HemisphereLight` has not: at roughness 0.3, 145 against 102 with Babylon's default white specular, 102 against 102 with black. The ground colour as sRGB → linear: `#444444` seen alone (sky turned away) gives 54 on both | e2e "hemisphere, k = 1/π …", "hemisphere facing the sky, k = 1/π: … PBRMaterial adds a specular term …", "hemisphere, the ground colour alone (sky turned away) …" |
 | Ambient | Equivalent with a translation | A hemispheric light with ground = sky and no specular, **k = 1/π** | e2e "ambient (a hemispheric light …), k = 1/π" |
 | Point, inverse square | Equivalent | k = 1, in mm, at 20, 100, 500 and 1000 mm | e2e "point, inverse square in mm, k = 1: …" |
 | Point, `distance` (cut-off) | Equivalent with a translation | Three.js windows by (1 − (d / distance)⁴)²; Babylon `range` with **`falloffType = Light.FALLOFF_GLTF`** does the same (100, 200, 280, 300 mm). With the default physical falloff, `range` is ignored | e2e "point, Three.js distance 300 = Babylon.js range 300 …", "point: the physical falloff … ignores range" |
@@ -141,12 +141,18 @@ grey, a saturated albedo and a coloured light, and at 20–1000 mm for the point
 
 | Case | Three.js | Babylon.js today | Test |
 |---|---|---|---|
-| Hemisphere, black sky (the ground colour alone) | 0 | 20 | e2e "pinned: what each adapter renders today", `test.fail` "known difference (#131): groundOnly …" |
+| Hemisphere, black sky, the box facing the sky: the **hemisphere's specular** | 0 | 20 (0 with the light's specular black) | e2e "pinned: what each adapter renders today", "the hemisphere's 20 on Babylon.js is its specular …", `test.fail` "known difference (#131): hemisphereSpecular …" |
 | Ambient, white, 1 | 74 | 51 | the same, "… ambient …" |
 | Directional, white, 1 | 72 | 56 | the same, "… directional …" |
+| Hemisphere under a group turned 180° about X: the **ground colour** alone, second frame | 13 | 15 | e2e "the ground colour alone: the two adapters agree today (13 and 15)" |
+| The same, first frame after the hemisphere is adopted | 0 | 15 | e2e "pinned: the first frame after a hemisphere is adopted …", `test.fail` "known difference: the Three.js adapter re-orients an adopted hemisphere one frame late" |
 
-Red channel of a `#808080` box at the centre; Babylon on `StandardMaterial` with every light × 0.4, ground 0.3 grey,
-colours unconverted, `pow(1/2.2)` encode.
+Red channel of a `#808080` box whose front face looks at the camera (+Z); Babylon on `StandardMaterial`
+(`specularColor` 0.2) with every light × 0.4, colours unconverted, `pow(1/2.2)` encode. Both adapters point a
+hemisphere's sky along +Z (`three-adapter.ts:20`, `babylon-adapter.ts:181`), so in the first case the ground weighs
+nothing: Babylon's 20 is its hemispheric light's specular (white by default × 0.4 × 0.2 = 0.08), which the adapter
+blacks out for ambient (`babylon-adapter.ts:188`) but not for hemisphere. The ground colours (0x444444 on Three.js,
+0.3 × 0.4 on `StandardMaterial`) already render alike today.
 
 ### Textures (`scene.texture`)
 
@@ -182,7 +188,7 @@ setting, but would make `@babylonjs/materials` a runtime dependency; this report
 | Up and down | Equivalent | The environment's up is the engine's +Y on both. In marker space (Z up), a horizon on the marker plane needs a rotation of the environment by the node, the same on both | e2e "latitude: up and down agree …" | run |
 | Around the vertical | Equivalent with a translation | The equirect mappings are a quarter turn apart, not mirrored: Babylon `rotationY` = 90° (`EnvCubeTexture.rotationY`) gives the same bands left and right of a mirror sphere | e2e "longitude as loaded: a quarter turn apart", "longitude with Babylon.js rotationY 90° …" | run |
 | Diffuse (rough white sphere) | Equivalent within **look** | Residual up to 8 levels (top of the sphere) | e2e "latitude …" | run |
-| Intensity | Not measured beyond 1 | Three.js `scene.environmentIntensity`; Babylon `scene.environmentIntensity` | — | source |
+| Intensity | Scales alike, k = 1; residual grows with brightness | `scene.environmentIntensity` on both. On a rough white sphere the residual (a hue difference: Babylon slightly redder, less blue) is 6 levels at 0.5 and 8 at 1, within look, and 10.5 at 2, beyond it | e2e "intensity 0.5 / 1 / 2, k = 1: a rough sphere, residual in …" | run |
 | Neutral environment | **Missing** on Babylon.js (offline) | Three.js `RoomEnvironment` (`examples/jsm/environments/`). Babylon's `createDefaultEnvironment` loads `https://assets.babylonjs.com/core/environments/environmentSpecular.env` (`Helpers/environmentHelper.js:445-453`): with the network blocked the scene never becomes ready (it waits for that texture). A neutral environment on Babylon needs a generated or bundled texture (for example an `.hdr` the node writes, as the tests do) | e2e "Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked the scene never gets ready" | run |
 
 ### Fog (Phase 5)
@@ -225,13 +231,16 @@ contrast 1, context not premultiplied, clear colour transparent.
 (`GEOMETRY_CASES`, `TRANSFORM_CASES`), and the harness's `SceneDesc`. Use **same** (3/255) for equivalences and
 **look** (8/255) only where this report gives a measured residual; keep the clipping rule; name the Chromium revision.
 The harness builds with each engine's own classes, while the cases the issue lists (primitives, the three light kinds,
-`setColor` with alpha, `setVisible`) go through `SceneHandle`: add `buildWithAdapter`-style cases for them. The four
-`test.fail` cases here are the known differences to keep marked until #131 fixes them.
+`setColor` with alpha, `setVisible`) go through `SceneHandle`: add `buildWithAdapter`-style cases for them. The five
+`test.fail` cases here are the known differences to keep marked until they are fixed: three by #131, the opacity
+and the hemisphere's one-frame lag by the draft issues below.
 
 **#131, PBR on Babylon.js.** Translate: `PBRMaterial`; colours `Color3.FromHexString(hex).toLinearSpace(true)`; the
 engine created with `useExactSrgbConversions: true` and premultiplied alpha (see the defect below); light k = 1 for
-directional, 1/π for hemisphere and ambient, replacing `BABYLON_INTENSITY`; the hemisphere ground colour the same value
-as Three.js's (0x444444 as sRGB). Defaults: set metalness 0 and roughness 1 explicitly (Babylon's are null).
+directional, 1/π for hemisphere and ambient, replacing `BABYLON_INTENSITY`; **a black specular on the hemispheric
+light**, on `StandardMaterial` today and on `PBRMaterial` too (both add a specular term Three.js has not); the
+hemisphere ground colour converted like every colour (0x444444 as sRGB → linear, which gives the same 54 on both on
+PBR). Defaults: set metalness 0 and roughness 1 explicitly (Babylon's are null).
 Tolerance: same, except the cells marked look. Must not promise identical highlights at low roughness (3.8 levels) or
 on rough metals (up to 6).
 
@@ -260,7 +269,7 @@ document the difference or make penumbra engine-specific. Point-light shadows we
 way on both, after that offset; intensity by name. Tolerance: look on a rough sphere (up to 8 levels). Must not rely
 on Babylon's `createDefaultEnvironment` for the neutral source (it fetches from the network): generate the neutral
 environment on Babylon (for example a small `.hdr` written by the node), and compare it to `RoomEnvironment` in a new
-case. Intensity above 1 was not measured.
+case. Intensity: the same scale; must not promise the same look above intensity 1 (10.5 levels apart at 2).
 
 **#136, `scene.group`.** Equivalent through `setMatrix` on both, including negative scale. Tolerance 1e-4 per matrix
 element. A direction-only light (hemispheric) in a group must keep the adapter's compensation.
@@ -298,15 +307,30 @@ from "known difference: a half-transparent object looks the same over the camera
 ### fix(babylon): lights and colours do not match Three.js (covered by #131)
 
 Pinned today (`conformance.spec.ts`, "conformance: lights in the current adapters"): ambient 51 against 74,
-directional 56 against 72, the hemisphere ground alone 20 against 0. The causes: `StandardMaterial` with every
-light × 0.4, colours passed with `Color3.FromHexString` unconverted, the engine's `pow(1/2.2)` encode, and a ground
-colour of 0.3 linear against 0x444444 sRGB. #131 already plans the material and the light mapping; this report adds
-the colour conversion, the exact sRGB encode and the ground colour to its scope.
+directional 56 against 72, and a hemisphere with a black sky 20 against 0. That last value is the hemispheric light's
+specular: Babylon.js's `HemisphericLight` has a white specular by default, and the adapter sets it to black for
+ambient (`babylon-adapter.ts:188`) but not for hemisphere; with it black, Babylon gives 0. The causes: `StandardMaterial`
+with every light × 0.4, the hemispheric light's specular, colours passed with `Color3.FromHexString` unconverted, and
+the engine's `pow(1/2.2)` encode. The ground colour alone already renders alike (13 against 15). #131 already plans the
+material and the light mapping; this report adds the colour conversion, the exact sRGB encode and a black specular on
+the hemispheric light (`PBRMaterial` also adds one: 145 against 102 at roughness 0.3) to its scope.
+
+### fix(three): an adopted hemisphere light follows its parent one frame late
+
+The Three.js adapter re-orients a hemisphere adopted by a group from the group's world matrix, read with
+`parent.updateWorldMatrix(true, false)` before `renderer.render()` (`src/runtime/renderers/three-adapter.ts`, `render`).
+That call does not recompute a group whose `matrixAutoUpdate` is off (`three/src/core/Object3D.js:1237`): its world
+matrix is only updated inside `render()`, after the light has been aimed. So the light uses the previous frame's
+direction. Measured: a hemisphere under a group turned 180° about X lights the ground side 0 on the first frame and 13
+from the second; Babylon.js gives 15 at once (`conformance.spec.ts`, "known difference: the Three.js adapter re-orients
+an adopted hemisphere one frame late"). Under an anchor that moves every frame the sky lags the marker by a frame. Fix:
+force the parent's update before aiming the light (`parent.updateWorldMatrix(true, false, true)`: 0.186 takes a
+`force` argument, `Object3D.js:1225`), and remove `test.fail`.
 
 ## What this report could not tell
 
 - Real GPUs: every tolerance holds for SwiftShader on Chromium 1248.
-- The icosahedron's rotation between the engines, UVs on shapes other than the plane and the sphere, point-light
-  shadows, environment intensity above 1, the neutral environments against each other, mipmaps and filtering.
+- UVs on shapes other than the plane and the sphere, point-light shadows, environment intensity above 2, the neutral
+  environments against each other, mipmaps and filtering.
 - The cause of Babylon's extra fog in the browser.
 - Performance of any of these.
