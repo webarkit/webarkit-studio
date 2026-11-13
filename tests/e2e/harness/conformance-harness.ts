@@ -42,7 +42,7 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
 
 /** Looking down −Z from the origin, 90° field of view, near 0.1: the animation harness's projection. */
 export const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0];
@@ -126,9 +126,12 @@ export interface SceneDesc {
 
 const DEG = Math.PI / 180;
 
-/** sRGB hex to Babylon's linear Color3, as Three.js's ColorManagement converts a hex string. */
+/**
+ * sRGB hex to Babylon's linear Color3 with the exact sRGB curve, as Three.js's ColorManagement converts a hex string.
+ * Color3.toLinearSpace() without `true` uses pow(x, 2.2), which leaves a dark colour a few levels off.
+ */
 function linearColor3(hex: string): Color3 {
-  return Color3.FromHexString(hex).toLinearSpace();
+  return Color3.FromHexString(hex).toLinearSpace(true);
 }
 
 /** A tiny Radiance (.hdr) file, flat scanlines, from a function of the direction's longitude and latitude (u, v in 0..1). */
@@ -199,6 +202,8 @@ export interface Harness {
   engine: Engine;
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
   build(desc: SceneDesc): Promise<void>;
+  /** The adapter's own scene.primitive box and scene.light lights, as the studio builds them today. */
+  buildWithAdapter(desc: { size: number; color: string; position: V3; lights: LightSpec[] }): Promise<void>;
   render(): void;
   /** Framebuffer RGBA averaged over a w × h block, top-left origin, straight after a render. */
   region(x: number, y: number, w: number, h: number): number[];
@@ -221,7 +226,15 @@ export interface Harness {
  */
 let threeRenderer: THREE.WebGLRenderer | null = null;
 
-async function open(engine: Engine, size: number): Promise<Harness> {
+export interface OpenOptions {
+  /**
+   * Babylon.js only: the engine's useExactSrgbConversions (abstractEngine.pure.js:1187), off in the adapter today, so
+   * Babylon encodes its output with pow(x, 1/2.2) instead of the sRGB curve (helperFunctions.js, toGammaSpace).
+   */
+  exactSrgb?: boolean;
+}
+
+async function open(engine: Engine, size: number, options: OpenOptions = {}): Promise<Harness> {
   textures.set('quadrants', { canvas: quadrantCanvas() });
   textures.set('video', { video: await videoOf('#c08040') });
 
@@ -229,14 +242,19 @@ async function open(engine: Engine, size: number): Promise<Harness> {
   document.body.appendChild(renderer.canvas);
   renderer.canvas.style.cssText = `position:absolute;left:0;top:0;width:${size}px;height:${size}px`;
   renderer.setSize(size, size);
-  let handle: SceneHandle = renderer.createScene({ defaultLights: false });
+  const handle: SceneHandle = renderer.createScene({ defaultLights: false });
   const gl = (renderer.canvas.getContext('webgl2') ?? renderer.canvas.getContext('webgl')) as WebGL2RenderingContext;
 
   let built: Array<THREE.Object3D | TransformNode> = [];
   let extras: Array<{ dispose(): void }> = [];
   let objects: Array<THREE.Mesh | AbstractMesh> = [];
-  let probe: SceneObject = handle.createGroup();
+  let adapterObjects: SceneObject[] = [];
+  const probe: SceneObject = handle.createGroup();
   handle.addRoot(probe);
+  if (engine === 'babylon' && options.exactSrgb) {
+    // Typed read-only; a plain property the engine reads whenever it compiles shader defines (thinEngine.pure.js:1665).
+    ((probe.native as TransformNode).getScene().getEngine() as unknown as { useExactSrgbConversions: boolean }).useExactSrgbConversions = true;
+  }
 
   const threeScene = () => {
     let o = probe.native as THREE.Object3D;
@@ -627,6 +645,8 @@ async function open(engine: Engine, size: number): Promise<Harness> {
   }
 
   function clear() {
+    for (const o of adapterObjects) handle.release(o);
+    adapterObjects = [];
     for (const n of built) (n as { dispose?(): void }).dispose?.();
     if (engine === 'three') for (const n of built) (n as THREE.Object3D).removeFromParent();
     for (const e of extras) e.dispose();
@@ -648,6 +668,25 @@ async function open(engine: Engine, size: number): Promise<Harness> {
       clear();
       if (engine === 'three') await buildThree(desc);
       else await buildBabylon(desc);
+    },
+    async buildWithAdapter(desc) {
+      clear();
+      const box = handle.createPrimitive({ shape: 'box', size: desc.size, color: desc.color });
+      handle.setPosition(box, ...desc.position);
+      handle.addRoot(box);
+      adapterObjects.push(box);
+      for (const l of desc.lights) {
+        const light = handle.createLight(l);
+        handle.addRoot(light);
+        adapterObjects.push(light);
+      }
+      if (engine === 'babylon') {
+        const scene = babylonScene();
+        for (let i = 0; i < 200 && !scene.isReady(); i++) {
+          handle.render(PROJECTION);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
     },
     render() {
       handle.render(PROJECTION);
