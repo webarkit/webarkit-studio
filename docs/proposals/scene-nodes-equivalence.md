@@ -145,8 +145,8 @@ grey, a saturated albedo and a coloured light, and at 20–1000 mm for the point
 | Ambient, white, 1 | 74 | 51 | the same, "… ambient …" |
 | Directional, white, 1 | 72 | 56 | the same, "… directional …" |
 | Hemisphere under a group turned 180° about X: the **ground colour** alone, second frame | 13 | 15 | e2e "the ground colour alone: the two adapters agree today (13 and 15)" |
-| The same, first frame after the hemisphere is adopted | 0 | 15 | e2e "pinned: the first frame after a hemisphere is adopted …", `test.fail` "known difference: the Three.js adapter re-orients an adopted hemisphere one frame late" |
-| A hemisphere whose own group, or the anchor above its group, turns: the frame of the change | 0 (13 the next frame) | 15 | e2e "pinned: a hemisphere in its own group that turns / in a group inside an anchor that turns, the frame after the change", `test.fail` "known difference: the Three.js adapter re-orients a hemisphere in … one frame late" |
+| The same, first frame after the hemisphere is adopted | 0 (13 since #145) | 15 | e2e "pinned: the first frame after a hemisphere is adopted …", `test.fail` "known difference: the Three.js adapter re-orients an adopted hemisphere one frame late" (since #145: "the Three.js adapter re-orients an adopted hemisphere on its first frame (#145)", passing) |
+| A hemisphere whose own group, or the anchor above its group, turns: the frame of the change | 0 (13 the next frame; 13 since #145) | 15 | e2e "pinned: a hemisphere in its own group that turns / in a group inside an anchor that turns, the frame after the change", `test.fail` "known difference: the Three.js adapter re-orients a hemisphere in … one frame late" (since #145: "… on the frame of the change (#145)", passing) |
 
 Red channel of a `#808080` box whose front face looks at the camera (+Z); Babylon on `StandardMaterial`
 (`specularColor` 0.2) with every light × 0.4, colours unconverted, `pow(1/2.2)` encode. Both adapters point a
@@ -317,6 +317,9 @@ material and the light mapping; this report adds the colour conversion, the exac
 the hemispheric light (`PBRMaterial` also adds one: 145 against 102 at roughness 0.3) to its scope.
 
 ### fix(three): an adopted hemisphere light follows its parent one frame late
+
+**Fixed by #145** with fix (b) below: the Three.js adapter gives 13 on the frame of the change in all three cases. The
+measurements below are kept as they were.
 
 The Three.js adapter aims a hemisphere adopted by a group from the group's world matrix, read with
 `parent.updateWorldMatrix(true, false)` before `renderer.render()` (`src/runtime/renderers/three-adapter.ts`, `render`).

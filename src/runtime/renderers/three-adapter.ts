@@ -235,7 +235,15 @@ function createThreeScene(
       for (const mixer of mixers) mixer.update(justStarted.has(mixer) ? 0 : delta);
       justStarted.clear();
       applyArProjection(camera, projection); // shared with three.renderScript (#37)
+      // An adopted hemisphere is aimed from its parent's world matrix, which renderer.render() only recomputes after this
+      // loop. setMatrix flags no world matrix, and updateWorldMatrix(true, …) forces no ancestor, so a group that turned,
+      // or an anchor above it, would aim the sky one frame late (#145). The scene's own updateMatrix() flags it, so this
+      // recomputes the whole tree, as render() does. Only with an adopted hemisphere, at the cost of one more pass over
+      // the tree per frame.
+      if (adoptedHemis.size > 0) scene.updateMatrixWorld();
       for (const [hemi, parent] of adoptedHemis) {
+        // A parent outside the scene is not reached by the call above: for it this keeps the previous behaviour (a matrix
+        // set by setMatrix is not forced).
         parent.updateWorldMatrix(true, false);
         hemi.position.copy(scratch.copy(SKY).transformDirection(parent.matrixWorld));
         let visible = true;

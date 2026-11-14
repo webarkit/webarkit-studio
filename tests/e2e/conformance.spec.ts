@@ -6,7 +6,8 @@
 // - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
 //   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
 // - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
-//   light kinds, and stays a table of its own because #131, #144 and #145 cite its test.fail titles.
+//   light kinds, and stays a table of its own because #131 and #144 cite its test.fail titles. It also checks that an
+//   adopted hemisphere is aimed on the frame its parent turns (#145; the directions: tests/unit/conformance/hemisphere.test.ts).
 // - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
 //   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
 // - Node cases (no WebGL): tests/unit/conformance/. Animations keep their own table on both engines:
@@ -333,9 +334,8 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
     // parent, so the sky points away and the front face sees only the ground (0x444444 on Three.js, 0.3 on Babylon.js).
     groundOnly: { lights: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }], lightsMatrix: RX180 },
   };
-  // groundOnly is read on the second frame: on the first, the Three.js adapter still points the adopted hemisphere along
-  // +Z (its direction comes from parent.updateWorldMatrix(true, false), which does not force a group whose
-  // matrixAutoUpdate is off: three/src/core/Object3D.js:1237). See "known difference: … one frame late" below.
+  // groundOnly is read on the second frame; the first frame after the hemisphere is adopted, and the frame right after
+  // its parent turns, are checked below (#145).
   type Name = keyof typeof cases;
   const pinned: Record<Name, { three: number; babylon: number }> = {
     hemisphereSpecular: { three: 0, babylon: 20 },
@@ -383,14 +383,14 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
     expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
   });
 
-  test('pinned: the first frame after a hemisphere is adopted, Three.js 0 (still the old direction), Babylon.js 15', async ({ page }) => {
+  test('pinned: the first frame after a hemisphere is adopted, the ground already on both (Three.js 13, Babylon.js 15)', async ({ page }) => {
     const r = await measure(page, {}, 1);
-    expect(r.three.groundOnly).toBe(0);
-    expect(Math.abs(r.babylon.groundOnly - 15)).toBeLessThanOrEqual(1);
+    expect(Math.abs(r.three.groundOnly - pinned.groundOnly.three), `three ${r.three.groundOnly}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(r.babylon.groundOnly - pinned.groundOnly.babylon), `babylon ${r.babylon.groundOnly}`).toBeLessThanOrEqual(1);
   });
 
-  test('known difference: the Three.js adapter re-orients an adopted hemisphere one frame late', async ({ page }) => {
-    test.fail(true, 'three-adapter.ts reads the parent with updateWorldMatrix(true, false) before render(), which does not update a group whose matrixAutoUpdate is off');
+  // #145: the Three.js adapter recomputes the world matrices before it aims the adopted hemispheres.
+  test('the Three.js adapter re-orients an adopted hemisphere on its first frame (#145)', async ({ page }) => {
     const r = await measure(page, {}, 1);
     expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
   });
@@ -409,12 +409,11 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
         expect(r[engine].settled, `${engine} settled`).toBe(0); // sky towards the box: no ground
         expect(r[engine].secondFrame, `${engine} second frame`).toBeGreaterThan(8); // turned: the ground shows
       }
-      expect(Math.abs(r.babylon.afterChange - r.babylon.secondFrame), 'Babylon.js on the frame itself').toBeLessThanOrEqual(1);
-      expect(r.three.afterChange, 'Three.js still the old direction').toBe(0);
+      for (const engine of ENGINES)
+        expect(Math.abs(r[engine].afterChange - r[engine].secondFrame), `${engine} on the frame itself`).toBeLessThanOrEqual(1);
     });
 
-    test(`known difference: the Three.js adapter re-orients a hemisphere in ${shape} one frame late`, async ({ page }) => {
-      test.fail(true, 'three-adapter.ts aims an adopted hemisphere from a parent world matrix not yet recomputed for this frame');
+    test(`the Three.js adapter re-orients a hemisphere in ${shape} on the frame of the change (#145)`, async ({ page }) => {
       const r = await afterChange(page, nested);
       expect(Math.abs(r.three.afterChange - r.babylon.afterChange)).toBeLessThanOrEqual(SAME);
     });

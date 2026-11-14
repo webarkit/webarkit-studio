@@ -6,6 +6,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Fixed
+
+- A hemisphere light in a group, or under the marker's anchor, follows its parent on the same frame on
+  Three.js (#145): it lagged one frame behind, so on a moving marker its sky pointed where the marker had
+  been. Babylon.js was not affected.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
