@@ -109,8 +109,9 @@ key by key; a renamed key looks like one removal plus one addition.
 - Where the engines differ, the adapter translates as the verification report gives it
   (`docs/proposals/scene-nodes-equivalence.md`, its matrix and "What each Phase 4 issue must translate"). A translation
   the report does not give is measured on both engines with a conformance case (§7), not taken from memory.
-- A Babylon.js feature that needs an engine extension imports it for its side effects (`VideoTexture`:
-  `engine.dynamicTexture` and `engine.videoTexture`).
+- A Babylon.js feature that needs an engine extension imports it for its side effects. `VideoTexture` needs
+  `@babylonjs/core/Engines/Extensions/engine.dynamicTexture` and
+  `@babylonjs/core/Engines/Extensions/engine.videoTexture`, both imported for their side effects.
 
 ## Commands
 
