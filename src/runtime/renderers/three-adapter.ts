@@ -14,6 +14,8 @@ import {
   type SceneObject,
   lightKind,
 } from './adapter';
+import { disposeObject3D } from './three-dispose';
+import { applyArProjection } from './three-ar';
 
 /**
  * A core shape as a Three.js geometry, in marker space (#132; the report's "Geometry"): Three.js builds the sphere,
@@ -45,8 +47,6 @@ export interface ThreeGeometryState {
   geometry: THREE.BufferGeometry;
   meshes: Set<THREE.Mesh>;
 }
-import { disposeObject3D } from './three-dispose';
-import { applyArProjection } from './three-ar';
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);

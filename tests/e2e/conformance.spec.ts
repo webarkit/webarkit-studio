@@ -16,6 +16,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
+import { nonZeroScale, transformMatrix } from '../../src/core/math';
 
 const ENGINES = ['three', 'babylon'] as const;
 type Engine = (typeof ENGINES)[number];
@@ -712,6 +713,34 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
           { row: 56, is: 'edges' },
           { row: 64, is: 'edges' },
           { row: 72, is: 'edges' },
+        ],
+      }),
+    ),
+    // #132: a mesh scaled to 0 on an axis is flat on both engines. scene.mesh writes each scale component at least
+    // MIN_SCALE in magnitude (nonZeroScale): a 0 would make a singular matrix, which three's Matrix4.decompose turns
+    // into scale 1 and no rotation, so Three.js would draw the full box where Babylon.js flattens it.
+    ...(
+      [
+        ['[1, 1, 0]: flat, facing the camera', [1, 1, 0], 'drawn'],
+        ['[0, 1, 1]: flat, a plane the camera sees from the side', [0, 1, 1], 'drawn'],
+        ['[0, 0, 0]: nothing seen', [0, 0, 0], 'empty'],
+      ] as const
+    ).map(
+      ([what, scale, seen]): Case => ({
+        name: `a mesh scaled ${what}, as scene.mesh writes it (#132)`,
+        ops: [
+          { op: 'createGeometry', id: 'g', spec: { shape: 'box', width: 30, depth: 30, height: 30 } },
+          { op: 'createMesh', id: 'm', geometry: 'g' },
+          { op: 'setMatrix', id: 'm', matrix: transformMatrix({ position: [-25, 0, -80], rotation: [0, 0, 0], scale: scale.map(nonZeroScale) as V3 }) },
+          { op: 'addRoot', id: 'm' },
+          ...box('b', 30, [30, 0, -80]),
+          { op: 'addRoot', id: 'b' },
+        ],
+        // The flattened box's region: its face at 64 + 64 · −25 / 80 = 44 px, or, edge-on, the plane at x = −25 mm.
+        regions: { m: [42, 62, 3, 3], b: [94, 62, 4, 4] },
+        rules: [
+          { region: 'm', is: seen },
+          { region: 'b', is: 'drawn' },
         ],
       }),
     ),

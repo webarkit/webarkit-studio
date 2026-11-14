@@ -60,6 +60,12 @@ describe('scene.mesh: resting on the marker', () => {
     expect(matrices.at(-1)).toEqual(at([0, 0, 120], [0, 0, 0], [1, 1, 3]));
   });
 
+  it('keeps each scale component at least MIN_SCALE in magnitude, with its sign: a 0 never makes a singular matrix', () => {
+    const { scene, matrices } = fakeScene();
+    mesh(meshParams({ scale: [0, -0, -0.0000001], rest: false }), ctx).init!({ scene, geometry: cube(80) });
+    expect(matrices.at(-1)).toEqual(at([0, 0, 0], [0, 0, 0], [1e-6, 1e-6, -1e-6]));
+  });
+
   it('does not rest with Rest off: the geometry stays on its origin', () => {
     const { scene, matrices } = fakeScene();
     mesh(meshParams({ rest: false, position: [0, 0, 5] }), ctx).init!({ scene, geometry: cube(80) });

@@ -5,6 +5,7 @@
  * the marker on the XY plane, +Z up; rotations in degrees, applied X, then Y, then Z (Euler 'XYZ').
  */
 import { geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
+import { nonZeroScale } from '../../core/math';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -120,24 +121,27 @@ const decimal = (v: number) => String(Math.round(v * 1e6) / 1e6 + 0);
  * src/runtime/renderers/three-adapter.ts), in marker space. tests/unit/codegen-geometry.test.ts evaluates each one
  * against three and compares its bounds with the core's.
  */
-export function threeGeometryCode(spec: GeometrySpec): string {
+export function threeGeometryCode(spec: GeometrySpec): { code: string; note?: string } {
   const s = normalizeGeometry(spec);
   const d = decimal;
   switch (s.shape) {
     case 'box':
-      return `new THREE.BoxGeometry(${d(s.width)}, ${d(s.depth)}, ${d(s.height)}) // width X, depth Y, height Z`;
+      return { code: `new THREE.BoxGeometry(${d(s.width)}, ${d(s.depth)}, ${d(s.height)})`, note: 'width X, depth Y, height Z' };
     case 'sphere':
-      return `new THREE.SphereGeometry(${d(s.radius)}, ${s.detail}, ${s.detail / 2}).rotateX(Math.PI / 2) // poles on Z`;
+      return { code: `new THREE.SphereGeometry(${d(s.radius)}, ${s.detail}, ${s.detail / 2}).rotateX(Math.PI / 2)`, note: 'poles on Z' };
     case 'cylinder':
-      return `new THREE.CylinderGeometry(${d(s.radiusTop)}, ${d(s.radiusBottom)}, ${d(s.height)}, ${s.detail}).rotateX(Math.PI / 2) // along Z, the top at +Z`;
+      return { code: `new THREE.CylinderGeometry(${d(s.radiusTop)}, ${d(s.radiusBottom)}, ${d(s.height)}, ${s.detail}).rotateX(Math.PI / 2)`, note: 'along Z, the top at +Z' };
     case 'plane':
-      return `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.height)}) // on the marker, facing +Z`;
+      return { code: `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.height)})`, note: 'on the marker, facing +Z' };
     case 'torus':
-      return `new THREE.TorusGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${s.detail}) // the ring in XY`;
+      return { code: `new THREE.TorusGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${s.detail})`, note: 'the ring in XY' };
     case 'torusKnot':
-      return `new THREE.TorusKnotGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${TORUS_KNOT_TUBE_SEGMENTS}, ${s.p}, ${s.q})`;
+      return { code: `new THREE.TorusKnotGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${TORUS_KNOT_TUBE_SEGMENTS}, ${s.p}, ${s.q})` };
     case 'capsule':
-      return `new THREE.CapsuleGeometry(${d(s.radius)}, ${d(s.height - 2 * s.radius)}, ${s.detail / 4}, ${s.detail}).rotateX(Math.PI / 2) // along Z: the middle section is the height less the caps`;
+      return {
+        code: `new THREE.CapsuleGeometry(${d(s.radius)}, ${d(s.height - 2 * s.radius)}, ${s.detail / 4}, ${s.detail}).rotateX(Math.PI / 2)`,
+        note: 'along Z: the middle section is the height less the caps',
+      };
   }
 }
 
@@ -149,9 +153,10 @@ const geometry =
     const g = ctx.name();
     const spec = geometrySpec(shape, ctx.params);
     const bounds = geometryBounds(spec);
+    const { code, note } = threeGeometryCode(spec);
     return {
       imports: [THREE_IMPORT],
-      setup: `const ${g} = ${threeGeometryCode(spec)};`,
+      setup: `const ${g} = ${code};${note ? ` // ${note}` : ''}`,
       outputs: { geometry: g, bottom: String(bounds.min[2]), top: String(bounds.max[2]) },
     };
   };
@@ -163,7 +168,8 @@ const mesh: CodeEmitter = (ctx) => {
   paramsOnly(ctx, 'position', 'rotation', 'scale', 'color');
   const m = name();
   const from = ctx.from('geometry') ?? {};
-  const scale = Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as [number, number, number]) : [1, 1, 1];
+  // As scene.mesh: each component at least MIN_SCALE in magnitude, with its sign.
+  const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
   // As scene.mesh rests (restLift): the geometry's bottom, scaled along Z, before the rotation.
   const lift = params.rest ? restLift({ min: [0, 0, Number(from.bottom)], max: [0, 0, Number(from.top)] }, scale[2]) : 0;
   const [x, y, z] = vec3(params.position);

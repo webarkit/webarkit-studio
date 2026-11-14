@@ -8,7 +8,7 @@ const NEXT = { timeout: 30_000 };
 
 type Doc = { name?: string; nodes: Array<{ id: string; type: string; params: Record<string, unknown>; position?: unknown }>; edges: Array<{ id: string; from: { node: string; port: string }; to: { node: string; port: string } }> };
 const readGraph = (name: string) => JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8')) as Doc;
-const SCENE = ['renderer', 'scene', 'keylight', 'filllight', 'arcamera', 'view', 'anchor_pinball', 'prim_pinball'];
+const SCENE = ['renderer', 'scene', 'keylight', 'filllight', 'arcamera', 'view', 'anchor_pinball', 'prim_pinball', 'prim_pinball_geometry'];
 
 /** The still-photo demo (its marker always found), its scene pipeline replaced by one three.renderScript. */
 function photoGraph(script?: string): Doc {

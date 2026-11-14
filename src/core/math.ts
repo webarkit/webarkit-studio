@@ -24,6 +24,11 @@ export interface Transform {
   scale: number | Vec3;
 }
 
+/** The smallest scale magnitude scene.mesh keeps (#132): a scale of 0 makes a singular matrix. */
+export const MIN_SCALE = 1e-6;
+/** A scale component at least MIN_SCALE in magnitude, with its sign (0 gives MIN_SCALE). */
+export const nonZeroScale = (s: number): number => (Math.abs(s) < MIN_SCALE ? (s < 0 ? -MIN_SCALE : MIN_SCALE) : s);
+
 /** Column-major T · Rx · Ry · Rz · S. */
 export function transformMatrix({ position: [x, y, z], rotation, scale }: Transform): number[] {
   const [a, b, c] = rotation.map((deg) => deg * DEG);

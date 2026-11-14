@@ -246,7 +246,7 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
     label: 'Matrix4',
     description:
       'A transform matrix from a position (mm), a rotation (degrees, X then Y then Z) and a uniform scale: T · R · S, the ' +
-      'convention models and primitives are placed with. Connected inputs override the params.',
+      'convention models and meshes are placed with. Connected inputs override the params.',
     inputs: { position: vec3In('Position'), rotation: vec3In('Rotation (°)'), scale: { type: 'number', label: 'Scale', optional: true } },
     outputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
     params: {
@@ -688,7 +688,7 @@ export const CORE_NODES: NodeDefinition[] = [
     outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
     params: {
       radius: { kind: 'number', label: 'Radius (mm)', default: 40, min: 0, max: 1000, step: 1, live: true },
-      detail: { kind: 'number', label: 'Detail', default: 32, min: 4, max: 256, step: 4, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 8, max: 256, step: 4, live: true },
     },
   },
   {
@@ -945,7 +945,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'RGBA Color',
     category: 'color',
     provider: 'core',
-    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
+    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Mesh transparent.',
     inputs: {
       r: { type: 'number', label: 'R', optional: true },
       g: { type: 'number', label: 'G', optional: true },
@@ -1089,7 +1089,7 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'scene',
     provider: 'Three.js',
     description:
-      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Primitive. ' +
+      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Mesh. ' +
       'Define onInit({ THREE, group, inputs }) to create meshes, materials and lights in group (marker space: mm, +Z up), ' +
       'onFrame({ THREE, group, time, delta, inputs }) to animate, and onDispose() to release what onInit made. The header ' +
       'declares value inputs (in name socket d=…) and dropdowns (enum), as Script\'s does; it has no out lines. Needs the ' +
@@ -1316,7 +1316,7 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'action',
     provider: 'core',
     description:
-      'Shows or hides a model or a primitive. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
+      'Shows or hides a model or a mesh. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
       'In one frame, Hide wins over Show, and Show over Toggle.',
     inputs: {
       target: { type: 'sceneObject', label: 'Target' },

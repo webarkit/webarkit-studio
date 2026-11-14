@@ -5,7 +5,7 @@
 import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/color';
 import type { ParamValue } from '../../core/graph';
 import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
-import { markerOffset } from '../../core/math';
+import { markerOffset, nonZeroScale } from '../../core/math';
 import { transformMatrix, type LightSpec } from '../renderers/adapter';
 import type {
   CameraValue,
@@ -169,7 +169,13 @@ export const mesh: NodeFactory = (params) => {
   /** The vector inputs while they carry a vector: they override the params. */
   const driven: Record<'position' | 'rotation' | 'scale', [number, number, number] | null> = { position: null, rotation: null, scale: null };
   const colour = drivenColor(params);
-  const scaleOf = () => driven.scale ?? vec3OrNull(params.scale) ?? [1, 1, 1];
+  // A scale of 0 makes a singular matrix, which the adapters read differently (three's Matrix4.decompose returns scale 1
+  // and no rotation for it; Babylon.js flattens): each component is kept at least MIN_SCALE in magnitude, with its sign,
+  // so a flattened mesh is flat on both (scene.gltf keeps its scale above 1e-6 the same way).
+  const scaleOf = (): [number, number, number] => {
+    const s = driven.scale ?? vec3OrNull(params.scale) ?? [1, 1, 1];
+    return [nonZeroScale(s[0]), nonZeroScale(s[1]), nonZeroScale(s[2])];
+  };
   const applyTransform = () => {
     if (!scene || !object) return;
     const [x, y, z] = driven.position ?? vec3(params.position);

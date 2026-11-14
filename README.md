@@ -448,7 +448,7 @@ uses), and on nothing of the studio:
 
 The first version writes the nodes of "pinball · Three.js" (camera, the jsartoolkitNFT camera
 parameters, dataset, settings and controller, the One Euro filter, Select Marker, Three.js renderer,
-scene, AR camera, light, primitive, anchor, AR view, Inspector and Tracking stats) and glTF models. A
+scene, AR camera, light, mesh and geometry, anchor, AR view, Inspector and Tracking stats) and glTF models. A
 graph with any other node (math, logic, actions, scripts, `page.*`, `ui.*`, Babylon.js…) is refused,
 with the list of those nodes: export a Standalone app for it. The controller's Threaded and Auto
 builds are refused too, as they need a cross-origin isolated page. Plugins write their own nodes'
@@ -755,7 +755,7 @@ Planned split once the format stabilises (npm workspaces):
 | `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
 | `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
 | `action.playAnimation` | ✅ ⚡ | target, play?, pause?, stop? (events) → (a clip of a glTF model; *loop*, *speed*) |
-| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a primitive) |
+| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a mesh) |
 | `action.playSound` | ✅ ⚡ | play?, stop? (events) → (a sound file; *volume*, *loop*) |
 | `action.openUrl` | ✅ ⚡ | show?, hide? (events) → (a link on the AR view; http and https only; *label*) |
 | `action.dispatchEvent` | ✅ | trigger? (event) → (a named event to the page: DOM or postMessage; see "Talking to the page") |

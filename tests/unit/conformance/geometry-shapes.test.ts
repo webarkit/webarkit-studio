@@ -102,6 +102,29 @@ describe.each(Object.keys(ENGINES) as Engine[])('%s: createGeometry builds the c
     withScene(engine, (scene) => expectBounds(boundsOf(positions(scene.createGeometry(spec), engine)), geometryBounds(spec), engine));
   });
 
+  test.each([
+    { shape: 'sphere', radius: 15, detail: 8 },
+    { shape: 'sphere', radius: 15, detail: 32 },
+    { shape: 'cylinder', radiusTop: 10, radiusBottom: 10, height: 20, detail: 24 },
+    { shape: 'capsule', radius: 5, height: 30, detail: 16 },
+  ] as GeometrySpec[])('detail is the segments around Z, on both engines: $shape $detail', (spec) => {
+    withScene(engine, (scene) => {
+      const p = positions(scene.createGeometry(spec), engine);
+      // The distinct angles about Z of the vertices on one ring at the shape's widest radius, the seam counted once.
+      let widest = 0;
+      for (let i = 0; i < p.length; i += 3) widest = Math.max(widest, Math.hypot(p[i], p[i + 1]));
+      let ringZ: number | null = null;
+      const angles = new Set<number>();
+      for (let i = 0; i < p.length; i += 3) {
+        if (Math.abs(Math.hypot(p[i], p[i + 1]) - widest) > 1e-4) continue;
+        ringZ ??= p[i + 2];
+        if (Math.abs(p[i + 2] - ringZ) > 1e-4) continue;
+        angles.add(Math.round((((Math.atan2(p[i + 1], p[i]) * 180) / Math.PI + 360) % 360) * 1000) % 360000);
+      }
+      expect(angles.size).toBe((spec as { detail: number }).detail);
+    });
+  });
+
   test("a cone's tip is at +Z, its base at −Z", () => {
     withScene(engine, (scene) => {
       const p = positions(scene.createGeometry({ shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 }), engine);

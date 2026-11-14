@@ -124,7 +124,8 @@ export function normalizeGeometry(spec: GeometrySpec): GeometrySpec {
     case 'box':
       return { shape: 'box', width: size(spec.width, 1), depth: size(spec.depth, 1), height: size(spec.height, 1) };
     case 'sphere':
-      return { shape: 'sphere', radius: size(spec.radius, 1), detail: segments(spec.detail, 32, 4, 4, 256) };
+      // At least 8: Babylon.js builds it with detail / 2 − 2 segments, and reads 0 as its default.
+      return { shape: 'sphere', radius: size(spec.radius, 1), detail: segments(spec.detail, 32, 4, 8, 256) };
     case 'cylinder': {
       const top = typeof spec.radiusTop === 'number' && Number.isFinite(spec.radiusTop) && spec.radiusTop <= 0 ? 0 : size(spec.radiusTop, 1);
       return { shape: 'cylinder', radiusTop: top, radiusBottom: size(spec.radiusBottom, 1), height: size(spec.height, 1), detail: segments(spec.detail, 32, 4, 4, 256) };

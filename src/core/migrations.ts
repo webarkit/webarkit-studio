@@ -95,8 +95,8 @@ const V5_PRIMITIVE_GEOMETRY: Record<string, (size: number) => { type: string; pa
 /**
  * v5 → v6, in place: the primitive node becomes the scene.mesh, keeping its id, editor position and wires (scene,
  * position, color, object), and a geometry node of its shape is added beside it, wired from the same scene and into
- * the mesh. An unknown shape is the default box, and a size that is not a positive number the default 80, as the
- * v5 runtime read them.
+ * the mesh. An unknown shape is the default box (what the v5 adapters built for one), and a size that is not a
+ * positive number the default 80 (where the v5 runtime would have built a flipped or empty shape).
  */
 function primitiveToMesh(doc: RawGraph, edit: GraphEditor, n: RawNode): void {
   const params = n.params ?? {};
@@ -112,7 +112,7 @@ function primitiveToMesh(doc: RawGraph, edit: GraphEditor, n: RawNode): void {
   n.params = { ...kept, scale: [1, 1, 1], rest: true };
 
   const id = edit.addNode({ type: geometry.type, params: geometry.params, id: `${n.id}_geometry`, ...(n.position && { position: { x: n.position.x - 240, y: n.position.y } }) });
-  if (sceneWire) edit.addEdge(sceneWire.from, { node: id, port: 'scene' });
+  if (sceneWire) edit.addEdge({ ...sceneWire.from }, { node: id, port: 'scene' });
   edit.addEdge({ node: id, port: 'geometry' }, { node: n.id, port: 'geometry' });
 }
 

@@ -79,7 +79,8 @@ export function babylonVertexData(given: GeometrySpec): VertexData {
     case 'box':
       return CreateBoxVertexData({ width: spec.width, height: spec.depth, depth: spec.height });
     case 'sphere':
-      return turned(CreateSphereVertexData({ diameter: 2 * spec.radius, segments: spec.detail }), Math.PI / 2);
+      // Babylon.js puts 2 × (segments + 2) segments around its axis (sphereBuilder.pure.js): detail around Z, as on Three.js.
+      return turned(CreateSphereVertexData({ diameter: 2 * spec.radius, segments: spec.detail / 2 - 2 }), Math.PI / 2);
     case 'cylinder':
       return turned(
         CreateCylinderVertexData({ height: spec.height, diameterTop: 2 * spec.radiusTop, diameterBottom: 2 * spec.radiusBottom, tessellation: spec.detail }),

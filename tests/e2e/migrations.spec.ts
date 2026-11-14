@@ -121,7 +121,7 @@ for (const [name, graph, upgraded] of [
 
 test('a load never autosaves part of a graph: a reload during one must not reopen a piece of it', async ({ page }) => {
   await freshStudio(page);
-  const demo = JSON.parse(readFileSync('public/graphs/pinball-babylon.json', 'utf8')) as typeof V5;
+  const demo = JSON.parse(readFileSync('public/graphs/pinball-babylon.json', 'utf8')) as typeof CURRENT;
   // Records the size of every autosave, from before the page's own code runs.
   await page.addInitScript((key) => {
     const writes: Array<[number, number]> = [];
@@ -137,15 +137,15 @@ test('a load never autosaves part of a graph: a reload during one must not reope
   }, AUTOSAVE_KEY);
   const writes = () => page.evaluate(() => (window as unknown as { writes: Array<[number, number]> }).writes);
 
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(V5)] as const);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(CURRENT)] as const);
   await page.reload();
   await startupDone(page);
-  await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
-  expect(await writes()).toEqual([[V5.nodes.length, V5.edges.length]]);
+  await expect(page.locator('.studio-node')).toHaveCount(CURRENT.nodes.length);
+  expect(await writes()).toEqual([[CURRENT.nodes.length, CURRENT.edges.length]]);
 
   await pickDemo(page, 'pinball-babylon');
   expect(await writes()).toEqual([
-    [V5.nodes.length, V5.edges.length],
+    [CURRENT.nodes.length, CURRENT.edges.length],
     [demo.nodes.length, demo.edges.length],
   ]);
 });
@@ -169,7 +169,7 @@ for (const kind of ['json', 'project'] as const) {
   test(`an unfinished graph imported from a ${kind} file opens with every node and wire, and Run and export report the input (#86)`, async ({ page }) => {
     await freshStudio(page);
     // The first wire is gone: its required input is left unconnected.
-    const unfinished = { ...V5, edges: V5.edges.slice(1) };
+    const unfinished = { ...CURRENT, edges: CURRENT.edges.slice(1) };
     if (kind === 'json') {
       await importGraph(page, unfinished);
     } else {
@@ -177,7 +177,7 @@ for (const kind of ['json', 'project'] as const) {
       await page.setInputFiles('#file-import', { name: 'unfinished.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
     }
     const log = page.locator('#log');
-    await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
+    await expect(page.locator('.studio-node')).toHaveCount(CURRENT.nodes.length);
     await expect(page.locator('svg.connection path')).toHaveCount(unfinished.edges.length);
     await expect(log).not.toContainText('import failed');
 
@@ -194,7 +194,7 @@ for (const kind of ['json', 'project'] as const) {
 test('a file with a graph that is broken, not just unfinished, is still refused', async ({ page }) => {
   await freshStudio(page);
   const nodes = await page.locator('.studio-node').count();
-  await importGraph(page, { ...V5, nodes: [...V5.nodes, { id: 'x', type: 'nope.node', params: {} }] });
+  await importGraph(page, { ...CURRENT, nodes: [...CURRENT.nodes, { id: 'x', type: 'nope.node', params: {} }] });
   await expect(page.locator('#log')).toContainText('unknown type "nope.node"');
   await expect(page.locator('.studio-node')).toHaveCount(nodes);
 });
