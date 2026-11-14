@@ -74,6 +74,46 @@ export const MIGRATIONS: readonly GraphMigration[] = [
   },
 ];
 
+/** v5 → v6 (#132). */
+export const V5_TO_V6: GraphMigration = {
+  from: 5,
+  to: 6,
+  note: 'scene.primitive becomes a geometry.* node wired into a scene.mesh (#132)',
+  migrate(doc, edit) {
+    for (const n of doc.nodes.filter((x) => x.type === 'scene.primitive')) primitiveToMesh(doc, edit, n);
+  },
+};
+
+/** The geometry scene.primitive built for each shape at v5, as the adapters made it then (frozen). */
+const V5_PRIMITIVE_GEOMETRY: Record<string, (size: number) => { type: string; params: Record<string, unknown> }> = {
+  box: (s) => ({ type: 'geometry.box', params: { width: s, depth: s, height: s } }),
+  sphere: (s) => ({ type: 'geometry.sphere', params: { radius: s / 2, detail: 32 } }),
+  torusKnot: (s) => ({ type: 'geometry.torusKnot', params: { radius: s / 3, tube: s / 10, p: 2, q: 3, detail: 100 } }),
+};
+
+/**
+ * v5 → v6, in place: the primitive node becomes the scene.mesh, keeping its id, editor position and wires (scene,
+ * position, color, object), and a geometry node of its shape is added beside it, wired from the same scene and into
+ * the mesh. An unknown shape is the default box, and a size that is not a positive number the default 80, as the
+ * v5 runtime read them.
+ */
+function primitiveToMesh(doc: RawGraph, edit: GraphEditor, n: RawNode): void {
+  const params = n.params ?? {};
+  const shape = typeof params.shape === 'string' && Object.hasOwn(V5_PRIMITIVE_GEOMETRY, params.shape) ? params.shape : 'box';
+  const size = typeof params.size === 'number' && Number.isFinite(params.size) && params.size > 0 ? params.size : 80;
+  const geometry = V5_PRIMITIVE_GEOMETRY[shape](size);
+  const sceneWire = doc.edges.find((e) => e.to.node === n.id && e.to.port === 'scene');
+
+  n.type = 'scene.mesh';
+  const kept: Record<string, unknown> = {};
+  for (const key of ['color', 'spin', 'position', 'rotation']) if (Object.hasOwn(params, key)) Object.defineProperty(kept, key, { value: params[key], enumerable: true, writable: true, configurable: true });
+  n.params = { ...kept, scale: [1, 1, 1], rest: true };
+
+  const id = edit.addNode({ type: geometry.type, params: geometry.params, id: `${n.id}_geometry`, ...(n.position && { position: { x: n.position.x - 240, y: n.position.y } }) });
+  if (sceneWire) edit.addEdge(sceneWire.from, { node: id, port: 'scene' });
+  edit.addEdge({ node: id, port: 'geometry' }, { node: n.id, port: 'geometry' });
+}
+
 function editorFor(doc: RawGraph): GraphEditor {
   // Every id seen in this run, removed ones too, so an id never comes back as something else.
   const used = new Set<string>([...doc.nodes.map((n) => n.id), ...doc.edges.map((e) => e.id)]);

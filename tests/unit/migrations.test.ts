@@ -271,9 +271,9 @@ describe('the real migrations', () => {
     for (const m of MIGRATIONS) expect(m.note).toBeTruthy();
   });
 
-  it('upgrade the v0.1.0 pinball-three graph: only `version` and `plugins` change', () => {
+  it('upgrade the v0.1.0 pinball-three graph to v5: only `version` and `plugins` change', () => {
     expect(v4.version).toBe(4);
-    const { doc: out, from, applied } = migrateGraph(v4);
+    const { doc: out, from, applied } = migrateGraph(v4, { target: 5 });
     // Frozen on purpose, not compared with today's demo, which moves on.
     expect(out).toEqual({ ...v4, version: 5, plugins: [{ id: 'jsartoolkitNFT', version: '0.1.0' }] });
     expect(from).toBe(4);
