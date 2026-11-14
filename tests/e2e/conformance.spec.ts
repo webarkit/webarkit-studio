@@ -1,10 +1,20 @@
-// Renderer conformance in the browser (#129; #130 adds its cases): one table per item, run on both real adapters through
-// tests/e2e/harness/conformance-harness.ts. Pixel tolerances are stated per table; the report
-// (docs/proposals/scene-nodes-equivalence.md) explains each and names the Chromium revision they were measured on.
+// Renderer conformance in the browser (#129; #130 makes it the suite every common scene node adds to): tables of cases,
+// each run on both real adapters through tests/e2e/harness/conformance-harness.ts. Pixel tolerances are stated per
+// table; the report (docs/proposals/scene-nodes-equivalence.md) explains each and names the Chromium revision they were
+// measured on (1248).
+//
+// - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
+//   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
+// - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
+//   light kinds, and stays a table of its own because #131, #144 and #145 cite its test.fail titles.
+// - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
+//   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
+// - Node cases (no WebGL): tests/unit/conformance/. Animations keep their own table on both engines:
+//   tests/e2e/animations.spec.ts. Light kinds outside the catalog: tests/unit/light-kind.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
-import type { Harness, SceneDesc } from './harness/conformance-harness';
+import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
 
 const ENGINES = ['three', 'babylon'] as const;
 type Engine = (typeof ENGINES)[number];
@@ -416,6 +426,297 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
       const r = await measure(page);
       expect(Math.abs(r.babylon[name] - r.three[name])).toBeLessThanOrEqual(SAME);
     });
+  }
+});
+
+test.describe('conformance: SceneHandle (the adapters as the studio drives them)', () => {
+  // One entry per behaviour: an ordered list of SceneHandle calls (AdapterOp), the regions to read, and the rules both
+  // engines must meet. Run on the adapters as they are: Babylon.js without exact sRGB (onBoth(…, false)), since that is
+  // what the studio renders. 128 px, the harness's 90° projection: a point (x, y, z) shows at pixel
+  // 64 + 64·x/−z, 64 − 64·y/−z.
+  //
+  // A rule reads the frame after the last operation, or, with `frame`, the frame a `render` operation captured under
+  // that name (`{ op: 'render', capture: 'hidden' }`), so a case can check a state it later leaves.
+  //
+  // A difference the adapters have today is `known`: its rules become a test marked test.fail with the issue that fixes
+  // it, and a passing test pins what each engine renders, so the failing one fails for that reason and no other.
+  //
+  // The scene has no default lights: an unlit primitive is black on both engines, so a `same` rule on it compares
+  // coverage (alpha) only, not colour, while the lit colours differ (#131).
+
+  type Region = [number, number, number, number];
+  type Rule = (
+    /** Per engine: alpha ≥ 250 (something drawn) or ≤ 2 (nothing). A frame with `empty` needs a `drawn` (checked). */
+    | { region: string; is: 'drawn' | 'empty' }
+    /** Per engine: alpha within SAME of `value`. */
+    | { region: string; is: 'alpha'; value: number }
+    /** Across engines: RGBA within SAME. */
+    | { region: string; is: 'same' }
+    /** Across engines: alpha within SAME. */
+    | { region: string; is: 'sameAlpha' }
+    /**
+     * Across engines: every transition along the row between lit (alpha > 128) and unlit, the same number on both and
+     * each within EDGE px; something drawn on both. A hole is two transitions, so a filled shape with the same outline
+     * fails.
+     */
+    | { row: number; is: 'edges' }
+    /** Per engine: the object's world bounds, within the report's 1e-4 mm. */
+    | { bounds: string; min: V3; max: V3 }
+  ) & {
+    /** The frame the rule reads: a `render` operation's `capture`; the final frame when omitted. */
+    frame?: string;
+  };
+  interface Case {
+    name: string;
+    ops: AdapterOp[];
+    regions?: Record<string, Region>;
+    rules: Rule[];
+    known?: {
+      issue: string;
+      why: string;
+      /** The rules that fail today; the others stay in the passing test. */
+      rules: Rule[];
+      /** RGBA each engine renders today, per region, within 1 level. */
+      pinned: Record<Engine, Record<string, number[]>>;
+    };
+  }
+  /** The report's ±2 px at 256 px for an edge (the spot cone), at this suite's 128 px. */
+  const EDGE = 1;
+  const GEOMETRY = 1e-4;
+
+  const box = (id: string, size: number, at: V3, color = '#808080'): AdapterOp[] => [
+    { op: 'createPrimitive', id, spec: { shape: 'box', size, color } },
+    { op: 'setPosition', id, position: at },
+  ];
+  /** Rotated 90° about Z, translated 80 mm down −Z (column-major). */
+  const RZ90_AT_80 = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, -80, 1];
+
+  const CASES: Case[] = [
+    ...(['box', 'sphere', 'torusKnot'] as const).map(
+      (shape): Case => ({
+        name: `createPrimitive ${shape}, unlit: the same silhouette`,
+        ops: [{ op: 'createPrimitive', id: 'p', spec: { shape, size: 40, color: '#808080' } }, { op: 'setPosition', id: 'p', position: [0, 0, -80] }, { op: 'addRoot', id: 'p' }],
+        // The torus knot has a hole about its axis (2 px here): its rows carry the check, not its centre. Each row of
+        // it crosses the tube several times (4 to 6 transitions), so a filled shape with the same outline fails.
+        regions: shape === 'torusKnot' ? {} : { centre: [62, 62, 4, 4] },
+        rules: [
+          ...(shape === 'torusKnot' ? [] : [{ region: 'centre', is: 'drawn' } as const, { region: 'centre', is: 'same' } as const]),
+          { row: 64, is: 'edges' },
+          { row: 56, is: 'edges' },
+          { row: 72, is: 'edges' },
+        ],
+      }),
+    ),
+    {
+      name: 'setVisible false: the object is not drawn, its neighbour is',
+      ops: [...box('a', 30, [-30, 0, -80]), { op: 'addRoot', id: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }, { op: 'setVisible', id: 'a', visible: false }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: 'setVisible false on a group hides its child',
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'addRoot', id: 'g' }, ...box('a', 30, [-30, 0, -80]), { op: 'addChild', parent: 'g', child: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }, { op: 'setVisible', id: 'g', visible: false }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: 'setVisible true on the group, a frame later: its child shows again',
+      ops: [
+        { op: 'createGroup', id: 'g' },
+        { op: 'addRoot', id: 'g' },
+        ...box('a', 30, [-30, 0, -80]),
+        { op: 'addChild', parent: 'g', child: 'a' },
+        ...box('b', 30, [30, 0, -80]),
+        { op: 'addRoot', id: 'b' },
+        { op: 'setVisible', id: 'g', visible: false },
+        { op: 'render', capture: 'hidden' },
+        { op: 'setVisible', id: 'g', visible: true },
+      ],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [
+        // The group was hidden in the frame between: the child shows again, it was not always shown.
+        { frame: 'hidden', region: 'a', is: 'empty' },
+        { frame: 'hidden', region: 'b', is: 'drawn' },
+        { region: 'a', is: 'drawn' },
+        { region: 'b', is: 'drawn' },
+        { region: 'a', is: 'same' },
+      ],
+    },
+    {
+      name: 'an object hidden before it is added to a group stays hidden (SceneHandle.addChild)',
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'addRoot', id: 'g' }, ...box('a', 30, [-30, 0, -80]), { op: 'setVisible', id: 'a', visible: false }, { op: 'addChild', parent: 'g', child: 'a' }, ...box('b', 30, [30, 0, -80]), { op: 'addRoot', id: 'b' }],
+      regions: { a: [30, 62, 4, 4], b: [94, 62, 4, 4] },
+      rules: [{ region: 'a', is: 'empty' }, { region: 'b', is: 'drawn' }],
+    },
+    {
+      name: "a child under its group's matrix (turned 90° about Z, moved): the same place and bounds",
+      ops: [{ op: 'createGroup', id: 'g' }, { op: 'setMatrix', id: 'g', matrix: RZ90_AT_80 }, { op: 'addRoot', id: 'g' }, ...box('a', 20, [20, 0, 0]), { op: 'addChild', parent: 'g', child: 'a' }],
+      // The child at x 20 in the group shows at y 20 once turned: above the centre, not to its right.
+      regions: { turned: [62, 44, 4, 4], unturned: [80, 62, 4, 4] },
+      rules: [{ region: 'turned', is: 'drawn' }, { region: 'unturned', is: 'empty' }, { region: 'turned', is: 'same' }, { bounds: 'a', min: [-10, 10, -90], max: [10, 30, -70] }],
+    },
+    {
+      name: 'setColor with alpha 0.5, then 1: opaque again',
+      ops: [
+        ...box('a', 40, [0, 0, -80]),
+        { op: 'addRoot', id: 'a' },
+        // An opaque neighbour: the half-transparent frame is drawn, so its alpha cannot be a blank one.
+        ...box('b', 30, [40, 0, -80]),
+        { op: 'addRoot', id: 'b' },
+        { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 0.5] },
+        { op: 'render', capture: 'half' },
+        { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 1] },
+      ],
+      regions: { centre: [60, 60, 8, 8], b: [104, 62, 4, 4] },
+      rules: [
+        // Alpha 0.5 took effect in the frame between: half opacity on both, then opaque again.
+        { frame: 'half', region: 'b', is: 'drawn' },
+        { frame: 'half', region: 'centre', is: 'alpha', value: 128 },
+        { frame: 'half', region: 'centre', is: 'sameAlpha' },
+        { region: 'centre', is: 'drawn' },
+        { region: 'centre', is: 'same' },
+      ],
+    },
+    {
+      name: 'setColor with alpha 0.5 under a directional light: the same coverage',
+      ops: [
+        { op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } },
+        { op: 'addRoot', id: 'sun' },
+        ...box('a', 40, [0, 0, -80]),
+        { op: 'addRoot', id: 'a' },
+        { op: 'setColor', id: 'a', color: [0.75, 0.5, 0.25, 0.5] },
+        // An opaque neighbour: the frame is drawn, so a half-transparent alpha cannot be a blank one.
+        ...box('b', 30, [40, 0, -80]),
+        { op: 'addRoot', id: 'b' },
+      ],
+      regions: { centre: [60, 60, 8, 8], b: [104, 62, 4, 4] },
+      rules: [{ region: 'b', is: 'drawn' }, { region: 'centre', is: 'sameAlpha' }],
+      known: {
+        issue: '#131',
+        why: 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4 and colours unconverted: the lit colour differs; #131 fixes it',
+        rules: [{ region: 'centre', is: 'same' }],
+        // Premultiplied in the framebuffer on both: colour × alpha, alpha 128.
+        pinned: { three: { centre: [55, 36, 18, 128] }, babylon: { centre: [39.875, 27.875, 15.875, 128] } },
+      },
+    },
+  ];
+
+  const FINAL = 'final';
+  const frameOf = (r: Rule) => r.frame ?? FINAL;
+  interface Shot {
+    regions: Record<string, number[]>;
+    rows: Record<number, number[]>;
+    bounds: Record<string, { min: V3; max: V3 }>;
+  }
+  /** One engine's frames, by name: FINAL and each capture. */
+  type Shots = Record<string, Shot>;
+  const measure = (page: Page, c: Case) => {
+    // What each frame reads: every region; the rows and bounds its rules name.
+    const needs: Record<string, { rows: number[]; ids: string[] }> = {};
+    for (const r of [...c.rules, ...(c.known?.rules ?? [])]) {
+      const n = (needs[frameOf(r)] ??= { rows: [], ids: [] });
+      if ('row' in r) n.rows.push(r.row);
+      if ('bounds' in r) n.ids.push(r.bounds);
+    }
+    return onBoth(
+      page,
+      128,
+      () =>
+        page.evaluate(
+          async ([ops, regions, needs, final]) => {
+            const H = (window as never as { H: Harness }).H;
+            const out: Record<string, Shot> = {};
+            const read = (frame: string) => {
+              const shot: Shot = { regions: {}, rows: {}, bounds: {} };
+              for (const [k, [x, y, w, h]] of Object.entries(regions)) shot.regions[k] = H.region(x, y, w, h);
+              for (const y of needs[frame]?.rows ?? []) shot.rows[y] = H.alphaRow(y);
+              for (const id of needs[frame]?.ids ?? []) shot.bounds[id] = H.adapterBounds(id);
+              out[frame] = shot;
+            };
+            await H.buildAdapterScene(ops, read);
+            H.render();
+            read(final);
+            return out;
+          },
+          [c.ops, c.regions ?? {}, needs, FINAL] as const,
+        ),
+      false,
+    );
+  };
+
+  /** Where the row turns lit (alpha > 128) or unlit: the first pixel after the change, the row's length if it ends lit. */
+  const transitionsOf = (row: number[]) => {
+    const out: number[] = [];
+    for (let i = 0; i <= row.length; i++) if ((i < row.length && row[i] > 128) !== (i > 0 && row[i - 1] > 128)) out.push(i);
+    return out;
+  };
+  function check(all: Record<Engine, Shots>, rule: Rule) {
+    const frame = frameOf(rule);
+    const r = { three: all.three[frame], babylon: all.babylon[frame] };
+    for (const engine of ENGINES) expect(r[engine], `${engine}: frame "${frame}" was read`).toBeDefined();
+    const at = frame === FINAL ? '' : ` (frame "${frame}")`;
+    if ('row' in rule) {
+      const t = transitionsOf(r.three.rows[rule.row]);
+      const b = transitionsOf(r.babylon.rows[rule.row]);
+      const msg = `row ${rule.row}${at} transitions: three ${t} / babylon ${b}`;
+      expect(t.length, `${msg}: something drawn on Three.js`).toBeGreaterThan(0);
+      expect(b.length, `${msg}: something drawn on Babylon.js`).toBeGreaterThan(0);
+      expect(b.length, msg).toBe(t.length);
+      expect(Math.max(...t.map((x, i) => Math.abs(x - b[i]))), msg).toBeLessThanOrEqual(EDGE);
+    } else if ('bounds' in rule) {
+      for (const engine of ENGINES) {
+        const got = r[engine].bounds[rule.bounds];
+        for (let i = 0; i < 3; i++) {
+          expect(Math.abs(got.min[i] - rule.min[i]), `${engine} ${rule.bounds} min[${i}] ${got.min[i]}`).toBeLessThanOrEqual(GEOMETRY);
+          expect(Math.abs(got.max[i] - rule.max[i]), `${engine} ${rule.bounds} max[${i}] ${got.max[i]}`).toBeLessThanOrEqual(GEOMETRY);
+        }
+      }
+    } else {
+      const t = r.three.regions[rule.region];
+      const b = r.babylon.regions[rule.region];
+      if (rule.is === 'drawn' || rule.is === 'empty' || rule.is === 'alpha') {
+        const value = rule.is === 'alpha' ? rule.value : 0;
+        for (const engine of ENGINES) {
+          const a = r[engine].regions[rule.region][3];
+          const msg = `${engine} ${rule.region}${at} alpha ${a}`;
+          if (rule.is === 'drawn') expect(a, msg).toBeGreaterThanOrEqual(250);
+          else if (rule.is === 'empty') expect(a, msg).toBeLessThanOrEqual(2);
+          else expect(Math.abs(a - value), `${msg}, expected ${value}`).toBeLessThanOrEqual(SAME);
+        }
+      } else if (rule.is === 'sameAlpha') expect(Math.abs(b[3] - t[3]), `${rule.region}${at} alpha: ${t[3]} / ${b[3]}`).toBeLessThanOrEqual(SAME);
+      else expect(Math.max(maxDiff(b, t), Math.abs(b[3] - t[3])), `${rule.region}${at}: ${t} / ${b}`).toBeLessThanOrEqual(SAME);
+    }
+  }
+
+  for (const c of CASES) {
+    // Every frame a case reads must see something drawn, or a blank frame (alpha 0 on both) would pass its `same`,
+    // `sameAlpha` and `empty` rules. A capture no rule reads, or a rule on a frame never captured, is a mistake too.
+    const captures = c.ops.flatMap((o) => (o.op === 'render' && o.capture !== undefined ? [o.capture] : []));
+    if (new Set(captures).size !== captures.length || captures.includes(FINAL)) throw new Error(`case "${c.name}": captures must be unique and not "${FINAL}"`);
+    for (const frame of [FINAL, ...captures]) {
+      const kinds = new Set<string>(c.rules.filter((r) => frameOf(r) === frame).map((r) => ('row' in r ? 'edges' : 'bounds' in r ? 'bounds' : r.is)));
+      if (!['drawn', 'edges', 'bounds'].some((k) => kinds.has(k))) throw new Error(`case "${c.name}", frame "${frame}": no drawn, edges or bounds rule`);
+      if (kinds.has('empty') && !kinds.has('drawn')) throw new Error(`case "${c.name}", frame "${frame}": an empty rule needs a drawn one in the same frame`);
+    }
+    for (const r of [...c.rules, ...(c.known?.rules ?? [])])
+      if (frameOf(r) !== FINAL && !captures.includes(frameOf(r))) throw new Error(`case "${c.name}": no render captures frame "${frameOf(r)}"`);
+    test(c.known ? `pinned: ${c.name}` : c.name, async ({ page }) => {
+      const r = await measure(page, c);
+      console.log('scene handle', c.name, JSON.stringify(r.three), JSON.stringify(r.babylon));
+      for (const rule of c.rules) check(r, rule);
+      if (c.known)
+        for (const engine of ENGINES)
+          for (const [k, v] of Object.entries(c.known.pinned[engine]))
+            expect(Math.max(...r[engine][FINAL].regions[k].map((x, i) => Math.abs(x - v[i]))), `${engine} ${k} ${r[engine][FINAL].regions[k]}`).toBeLessThanOrEqual(1);
+    });
+    if (c.known) {
+      const known = c.known;
+      test(`known difference (${known.issue}): ${c.name}`, async ({ page }) => {
+        test.fail(true, known.why);
+        const r = await measure(page, c);
+        for (const rule of known.rules) check(r, rule);
+      });
+    }
   }
 });
 

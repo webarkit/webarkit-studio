@@ -91,6 +91,10 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 7. Tests and docs
 
 - New or changed node logic that does not need a browser has a unit test (`tests/unit/`).
+- A new common scene node (`scene.*`, and the geometry nodes #132 adds) or a new `SceneHandle` method has at least one
+  case in the conformance suite on both engines (`tests/e2e/conformance.spec.ts`, `tests/unit/conformance/`; #130). A
+  difference between the engines is translated by the adapters, or makes the node `three.*` / `babylon.*`, or, until
+  the issue that translates it is fixed, is a `known` case marked `test.fail` with that issue.
 - A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
   and validates it against the real catalog and `GRAPH_VERSION` (#110).
 - The README node table lists new nodes; ⚡ marks live params.
