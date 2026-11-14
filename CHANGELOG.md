@@ -6,8 +6,20 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Added
+
+- Geometry nodes and the Mesh node (#132): Box, Sphere, Cylinder (a cone with a top radius of 0), Plane, Torus,
+  Torus Knot and Capsule, each with its own sizes in mm, every one live, in a new Geometry category; and Mesh, which
+  shows a geometry on the marker with its position, rotation, scale per axis, colour, spin and Rest on the marker
+  (inputs override the params, so a graph can drive an object's size). The same shape has the same size and
+  orientation on Three.js and Babylon.js. The source code export writes them.
+
 ### Changed
 
+- **Graph format v6** (#132): the Primitive node is replaced by a geometry node wired into a Mesh. Older graphs
+  upgrade when they are opened: each Primitive becomes a Mesh with the same id, wires and params, and a Box, Sphere
+  or Torus Knot of the same size. A torus knot now rests on the marker: it floated 18.78 mm above it (at size 80),
+  and comes down by that much. A box or sphere does not move.
 - Babylon.js scenes look different (#131): the Babylon.js renderer now draws primitives with a physically based
   material, as Three.js does, and maps lights and colours as Three.js reads them, so the same graph looks
   alike on both. Lights no longer need lower intensities on Babylon.js, and a hemisphere light no longer

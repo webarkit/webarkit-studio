@@ -24,7 +24,7 @@ function photoGraph(script?: string): Doc {
   wire('select_pinball', 'markerInfo', 'markerInfo');
   return doc;
 }
-/** The default script with the knot standing still, to compare with a Primitive that does not spin. */
+/** The default script with the knot standing still, lifted by half its size, to compare with a still Mesh placed so. */
 const stillScript = (): string => {
   return [
     '/*\nin  size  number  d=80 min=10 max=300\n*/',
@@ -89,11 +89,12 @@ test('pinball-render-script: the knot follows the marker, and hides when it is l
   expect(errors).toEqual([]);
 });
 
-test('on the still photo, the knot lands where the Scene / Anchor / AR View pipeline puts a Primitive knot', async ({ page }) => {
+test('on the still photo, the knot lands where the Scene / Anchor / AR View pipeline puts a Mesh knot', async ({ page }) => {
   test.setTimeout(120_000);
-  // The standard pipeline: a torus knot Primitive of size 80, not spinning.
+  // The standard pipeline: the demo's torus knot Mesh, not spinning, placed as the script places its knot: lifted by
+  // half its size (80), not resting on its bounds (#132).
   const standard = readGraph('pinball-image');
-  standard.nodes.find((n) => n.id === 'prim_pinball')!.params.spin = false;
+  Object.assign(standard.nodes.find((n) => n.id === 'prim_pinball')!.params, { spin: false, rest: false, position: [0, 0, 40] });
   await openStudio(page);
   await importGraph(page, standard);
   await page.click('#btn-run');

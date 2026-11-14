@@ -45,7 +45,8 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { GeometryObject, LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { GeometrySpec } from '../../../src/core/geometry';
 import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
 /** Looking down −Z from the origin, 90° field of view, near 0.1: the animation harness's projection. */
@@ -143,6 +144,10 @@ export interface SceneDesc {
  */
 export type AdapterOp =
   | { op: 'createPrimitive'; id: string; spec: PrimitiveSpec }
+  /** #132: a geometry (its own id space: it is not a scene object), a live change of it, and a mesh of it. */
+  | { op: 'createGeometry'; id: string; spec: GeometrySpec }
+  | { op: 'setGeometry'; id: string; spec: GeometrySpec }
+  | { op: 'createMesh'; id: string; geometry: string }
   /** A glTF 2.0 JSON document (buffers as data: URIs), loaded through SceneHandle.loadModel as a .gltf file. */
   | { op: 'loadModel'; id: string; gltf: object }
   | { op: 'createGroup'; id: string }
@@ -241,7 +246,7 @@ export interface Harness {
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
   build(desc: SceneDesc): Promise<void>;
   /**
-   * The adapter's own scene.primitive box and scene.light lights, as the studio builds them today. lightsMatrix: the
+   * The adapter's own mesh (a box, as tests/helpers/primitive.ts builds it) and scene.light lights, as the studio builds them. lightsMatrix: the
    * lights go under a group with this column-major matrix (an adopted hemisphere follows its parent). Babylon.js only:
    * babylonSpecularBlack sets each light's specular to black after the adapter made it.
    */
@@ -313,6 +318,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   let adapterObjects: SceneObject[] = [];
   /** The objects of buildAdapterScene, by id. */
   const named = new Map<string, SceneObject>();
+  /** The geometries of buildAdapterScene, by id (#132). */
+  const geometries = new Map<string, GeometryObject>();
   /** Renders until Babylon.js's shaders are ready; throws after 2 s, so a blank frame is never measured. */
   async function babylonReady() {
     if (engine !== 'babylon') return;
@@ -830,6 +837,12 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
     async buildAdapterScene(ops, onCapture) {
       clear();
       named.clear();
+      geometries.clear();
+      const geometryNamed = (id: string) => {
+        const g = geometries.get(id);
+        if (!g) throw new Error(`no geometry "${id}"`);
+        return g;
+      };
       const get = (id: string) => {
         const o = named.get(id);
         if (!o) throw new Error(`no object "${id}" (create it before using it)`);
@@ -844,6 +857,16 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
         switch (step.op) {
           case 'createPrimitive':
             create(step.id, createPrimitive(handle, step.spec));
+            break;
+          case 'createGeometry':
+            if (geometries.has(step.id)) throw new Error(`geometry "${step.id}" created twice`);
+            geometries.set(step.id, handle.createGeometry(step.spec));
+            break;
+          case 'setGeometry':
+            handle.setGeometry(geometryNamed(step.id), step.spec);
+            break;
+          case 'createMesh':
+            create(step.id, handle.createMesh(geometryNamed(step.geometry)));
             break;
           case 'loadModel': {
             const data = new TextEncoder().encode(JSON.stringify(step.gltf));

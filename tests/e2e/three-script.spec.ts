@@ -1,4 +1,4 @@
-// three.script (#36): a three.js script builds part of the scene, on a Marker Anchor like a Primitive.
+// three.script (#36): a three.js script builds part of the scene, on a Marker Anchor like a Mesh.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { exportApp, loadDemo, nodeStatus, openStudio, run, serveDir } from './helpers';
@@ -11,10 +11,13 @@ const babylon = (doc: Doc) => {
   Object.assign(doc.nodes.find((n) => n.type === 'three.renderer')!, { type: 'babylon.renderer', params: {} });
   return doc;
 };
-/** The still-photo demo (its marker always found) with the demo's script in place of its Primitive. */
+/** The still-photo demo (its marker always found) with the demo's script in place of its Mesh (and its geometry). */
 function photoGraph(script?: string): Doc {
   const doc = readGraph('pinball-image');
   const scenery = readGraph('pinball-three-script').nodes.find((n) => n.id === 'scenery')!;
+  // The mesh's geometry goes: a script has no geometry input.
+  doc.nodes = doc.nodes.filter((n) => n.id !== 'prim_pinball_geometry');
+  doc.edges = doc.edges.filter((e) => e.from.node !== 'prim_pinball_geometry' && e.to.node !== 'prim_pinball_geometry');
   Object.assign(doc.nodes.find((n) => n.id === 'prim_pinball')!, { id: 'scenery', type: 'three.script', params: { ...scenery.params, ...(script && { script }) } });
   for (const e of doc.edges) {
     if (e.from.node === 'prim_pinball') e.from.node = 'scenery';
