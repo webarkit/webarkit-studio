@@ -33,13 +33,27 @@ async function magenta(page: Page): Promise<{ share: number; x: number; y: numbe
   }, png);
 }
 
-/** The knot's centroid while the marker is found: the largest shares over a few seconds, averaged. */
+/** Samples of the knot seen that whileFound() averages. */
+const FOUND_SAMPLES = 5;
+
+/**
+ * The knot's centroid while the marker is found: the mean of FOUND_SAMPLES samples where it is seen. They are
+ * collected until there are enough, over as many findings as it takes, not over a fixed window: the fake camera hides
+ * the marker 2 s in every 6, a finding can be cut short, and under load one screenshot can take seconds, so a window
+ * could fall entirely in a lost phase and average nothing (#127).
+ */
 async function whileFound(page: Page) {
-  await expect.poll(async () => (await magenta(page)).share, NEXT).toBeGreaterThan(0.002);
-  const seen: Array<{ share: number; x: number; y: number }> = [];
-  const end = Date.now() + 3000;
-  while (Date.now() < end) seen.push(await magenta(page));
-  const found = seen.filter((s) => s.share > 0.002);
+  const found: Array<{ share: number; x: number; y: number }> = [];
+  await expect
+    .poll(
+      async () => {
+        const s = await magenta(page);
+        if (s.share > 0.002) found.push(s);
+        return found.length;
+      },
+      { timeout: 60_000, message: `the knot seen in ${FOUND_SAMPLES} samples within 60 s` },
+    )
+    .toBeGreaterThanOrEqual(FOUND_SAMPLES);
   const mean = (k: 'share' | 'x' | 'y') => found.reduce((a, s) => a + s[k], 0) / found.length;
   return { share: mean('share'), x: mean('x'), y: mean('y') };
 }
