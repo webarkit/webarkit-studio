@@ -139,6 +139,12 @@ grey, a saturated albedo and a coloured light, and at 20–1000 mm for the point
 
 ### The current adapters (pinned, `scene.light` on `scene.primitive`)
 
+**Since #131** Babylon.js renders 0, 73, 72 and 12 in the first four rows (`PBRMaterial`, the light mapping below,
+colours in linear, exact sRGB, a hemispheric light's specular black): within same of Three.js. The four `test.fail`
+cases are now "hemisphereSpecular / ambient / directional / groundOnly renders alike on both adapters (#131)",
+passing, with "setColor with alpha 0.5 under a directional light: the same coverage" in the SceneHandle table. The
+values below are kept as they were measured.
+
 | Case | Three.js | Babylon.js today | Test |
 |---|---|---|---|
 | Hemisphere, black sky, the box facing the sky: the **hemisphere's specular** | 0 | 20 (0 with the light's specular black) | e2e "pinned: what each adapter renders today", "the hemisphere's 20 on Babylon.js is its specular …", `test.fail` "known difference (#131): hemisphereSpecular …" |
@@ -236,7 +242,7 @@ The harness builds with each engine's own classes, while the cases the issue lis
 `test.fail` cases here are the known differences to keep marked until they are fixed: three by #131, the opacity
 and the hemisphere's one-frame lag (three cases) by the draft issues below (done by #144 and #145).
 
-**#131, PBR on Babylon.js.** Translate: `PBRMaterial`; colours `Color3.FromHexString(hex).toLinearSpace(true)`; the
+**#131, PBR on Babylon.js** (done). Translate: `PBRMaterial`; colours `Color3.FromHexString(hex).toLinearSpace(true)`; the
 engine created with `useExactSrgbConversions: true` and premultiplied alpha (see the defect below; done by #144); light k = 1 for
 directional, 1/π for hemisphere and ambient, replacing `BABYLON_INTENSITY`; **a black specular on the hemispheric
 light**, on `StandardMaterial` today and on `PBRMaterial` too (both add a specular term Three.js has not); the
@@ -309,6 +315,8 @@ agree). Fix: create the engine with premultiplied alpha (or straight output from
 from "known difference: a half-transparent object looks the same over the camera on both adapters".
 
 ### fix(babylon): lights and colours do not match Three.js (covered by #131)
+
+**Fixed by #131**, with every translation below. The measurements are kept as they were.
 
 Pinned today (`conformance.spec.ts`, "conformance: lights in the current adapters"): ambient 51 against 74,
 directional 56 against 72, and a hemisphere with a black sky 20 against 0. That last value is the hemispheric light's

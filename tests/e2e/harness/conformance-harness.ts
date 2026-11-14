@@ -286,8 +286,9 @@ let threeRenderer: THREE.WebGLRenderer | null = null;
 
 export interface OpenOptions {
   /**
-   * Babylon.js only: the engine's useExactSrgbConversions (abstractEngine.pure.js:1187), off in the adapter today, so
-   * Babylon encodes its output with pow(x, 1/2.2) instead of the sRGB curve (helperFunctions.js, toGammaSpace).
+   * Babylon.js only: the engine's useExactSrgbConversions (abstractEngine.pure.js:1187) forced on or off. Left out, the
+   * adapter's own: on since #131. Off, Babylon encodes its output with pow(x, 1/2.2) instead of the sRGB curve
+   * (helperFunctions.js, toGammaSpace).
    */
   exactSrgb?: boolean;
 }
@@ -321,9 +322,9 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   }
   const probe: SceneObject = handle.createGroup();
   handle.addRoot(probe);
-  if (engine === 'babylon' && options.exactSrgb) {
+  if (engine === 'babylon' && options.exactSrgb !== undefined) {
     // Typed read-only; a plain property the engine reads whenever it compiles shader defines (thinEngine.pure.js:1665).
-    ((probe.native as TransformNode).getScene().getEngine() as unknown as { useExactSrgbConversions: boolean }).useExactSrgbConversions = true;
+    ((probe.native as TransformNode).getScene().getEngine() as unknown as { useExactSrgbConversions: boolean }).useExactSrgbConversions = options.exactSrgb;
   }
 
   const threeScene = () => {

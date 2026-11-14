@@ -6,6 +6,16 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Changed
+
+- Babylon.js scenes look different (#131): the Babylon.js renderer now draws primitives with a physically based
+  material, as Three.js does, and maps lights and colours as Three.js reads them, so the same graph looks
+  alike on both. Lights no longer need lower intensities on Babylon.js, and a hemisphere light no longer
+  adds a highlight. glTF models change too: under a directional light they are about 2.5 times brighter
+  than before on Babylon.js, as on Three.js, so intensities tuned for a model on Babylon.js may need
+  retuning. The Babylon.js renderer's default lights (Default lights on the Scene node) are now Three.js's: a hemisphere
+  at 2.5 and a directional light at 1.5.
+
 ### Fixed
 
 - A hemisphere light in a group, or under the marker's anchor, follows its parent on the same frame on
