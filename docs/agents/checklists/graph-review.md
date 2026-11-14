@@ -1,12 +1,13 @@
 # Graph review checklist
 
 Use this checklist for a diff that touches the graph format, the node catalog, the
-registry, node implementations or the demo graphs:
+registry, node implementations, the renderer adapters or the demo graphs:
 
 - `src/core/`
 - `src/nodes/catalog.ts`
 - `src/runtime/registry.ts`
 - `src/runtime/nodes/`
+- `src/runtime/renderers/`
 - `src/plugin-api/`, `src/plugins/` and the plugins' catalogs and manifests (`plugins/jsartoolkit-nft/catalog.ts`, `plugins/jsartoolkit-nft/index.ts`)
 - `public/graphs/`
 
@@ -99,6 +100,19 @@ key by key; a renamed key looks like one removal plus one addition.
   and validates it against the real catalog and `GRAPH_VERSION` (#110).
 - The README node table lists new nodes; ⚡ marks live params.
 
+## 8. Renderer adapters
+
+- `SceneHandle` (`src/runtime/renderers/adapter.ts`) means the same on both adapters (`three-adapter.ts`,
+  `babylon-adapter.ts`), on plain values with no engine types: a method added or changed on one is added or changed on
+  the other, down to its units, its defaults and the state it leaves (AGENTS.md, "Both renderer adapters keep the same
+  semantics").
+- Where the engines differ, the adapter translates as the verification report gives it
+  (`docs/proposals/scene-nodes-equivalence.md`, its matrix and "What each Phase 4 issue must translate"). A translation
+  the report does not give is measured on both engines with a conformance case (§7), not taken from memory.
+- A Babylon.js feature that needs an engine extension imports it for its side effects. `VideoTexture` needs
+  `@babylonjs/core/Engines/Extensions/engine.dynamicTexture` and
+  `@babylonjs/core/Engines/Extensions/engine.videoTexture`, both imported for their side effects.
+
 ## Commands
 
 Run and report each:
@@ -106,6 +120,8 @@ Run and report each:
 - `npm run typecheck`
 - `npm test`
 - `npm run build` when the catalog, the registry or `public/graphs/` changed
+- `npm run test:e2e -- tests/e2e/conformance.spec.ts` when `src/runtime/renderers/` changed (several minutes: run it in
+  the background)
 
 ## Report
 
