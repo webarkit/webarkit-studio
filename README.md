@@ -32,7 +32,7 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 `source.videoFile` plays a recorded video the same way; if you fetched the
 assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
-`math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
+`math.vector3` wired into the Mesh's Position, and fades it with `color.rgba` on its Color;
 "pinball · one formula" moves it the same way with a single `math.expression`
 (`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
 `onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
@@ -370,7 +370,7 @@ marks it (`runsCode`), never by its name.
 ### three.js Script
 
 **three.js Script** (`three.script`) builds part of the scene with three.js.
-Wire its *Object* into a Marker Anchor's *Children*, like a Primitive: the
+Wire its *Object* into a Marker Anchor's *Children*, like a Mesh: the
 studio keeps the camera, the marker pose, found / lost visibility and the
 export, and the script only creates and animates content. "pinball · a three.js
 script builds the scene" is a knot and a ring of spheres made that way.
@@ -566,7 +566,7 @@ Key decisions:
    implements the same render contract with lit-html.
 6. **Renderer → Scene → objects.** A renderer node (`three.renderer`,
    `babylon.renderer`) is only the engine and its canvas. A **Scene** node,
-   connected to it, is where Primitive, Light and Marker Anchor create their
+   connected to it, is where Mesh, Geometry, Light and Marker Anchor create their
    objects (Babylon.js requires a scene at creation time). AR View draws a
    scene through an **AR Camera** fed by the tracker projection. Switching
    engine = rewiring one node. Each engine is loaded with a dynamic import.
@@ -596,7 +596,7 @@ Key decisions:
 
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
-use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
+use functional namespaces (`scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`,
 `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`).
 **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
@@ -700,7 +700,14 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
+| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; connected inputs override the params) |
+| `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |
+| `geometry.sphere` | ✅ ⚡ | scene → geometry (radius, detail; poles on Z) |
+| `geometry.cylinder` | ✅ ⚡ | scene → geometry (top and bottom radius, height, detail; along Z; a top radius of 0 is a cone) |
+| `geometry.plane` | ✅ ⚡ | scene → geometry (width X, height Y; on the marker, facing +Z) |
+| `geometry.torus` | ✅ ⚡ | scene → geometry (radius, tube, detail; the ring in XY) |
+| `geometry.torusKnot` | ✅ ⚡ | scene → geometry (radius, tube, p, q, detail) |
+| `geometry.capsule` | ✅ ⚡ | scene → geometry (radius, total height, detail; along Z) |
 | `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
 | `three.renderScript` | ✅ ⚡ | video, pose, found, projection, markerInfo, the inputs its script's header declares → — (a three.js script with its own renderer, scene and camera over the video; asks before running a script from someone else; see "three.js Render Script") |
 | `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |

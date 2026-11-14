@@ -9,6 +9,7 @@ import type * as THREE from 'three';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
+import { createPrimitive } from '../../helpers/primitive';
 import { transformMatrix, type Transform } from '../../../src/core/math';
 
 const { FakeRenderer } = vi.hoisted(() => ({
@@ -76,7 +77,7 @@ describe('transform conformance: a child world matrix is the product of the stud
         const adapter = create();
         const scene = adapter.createScene({ defaultLights: false });
         const parent = scene.createGroup();
-        const child = scene.createPrimitive({ shape: 'box', size: 10, color: '#ffffff' });
+        const child = createPrimitive(scene, { shape: 'box', size: 10, color: '#ffffff' });
         scene.addRoot(parent);
         scene.addChild(parent, child);
         const mp = transformMatrix(c.parent);

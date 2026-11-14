@@ -38,7 +38,7 @@ const html = '<script type="module" src="./assets/player.js"></script><link rel=
 
 const doc = (types: Array<[string, Record<string, string>?]>): GraphDocument => ({
   format: 'webarkit-studio/graph',
-  version: 5,
+  version: 6,
   nodes: types.map(([type, params], i) => ({ id: `n${i}`, type, params: params ?? {} })),
   edges: [],
 });

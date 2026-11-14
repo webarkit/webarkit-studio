@@ -15,6 +15,7 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import type { LightSpec, RendererAdapter, SceneHandle } from '../../../src/runtime/renderers/adapter';
+import { createPrimitive } from '../../helpers/primitive';
 
 const { FakeRenderer } = vi.hoisted(() => ({
   FakeRenderer: class {
@@ -128,7 +129,7 @@ describe("a primitive's material is the same on both adapters (#131)", () => {
     { name: 'created #808080, then setColor [0.75, 0.5, 0.25, 0.5]', color: '#808080', set: [0.75, 0.5, 0.25, 0.5] },
   ])('$name', ({ color, set }) => {
     const r = both((scene, engine) => {
-      const box = scene.createPrimitive({ shape: 'box', size: 40, color });
+      const box = createPrimitive(scene, { shape: 'box', size: 40, color });
       scene.addRoot(box);
       if (set) scene.setColor(box, set);
       return read(box.native, engine);
@@ -142,7 +143,7 @@ describe("a primitive's material is the same on both adapters (#131)", () => {
 
   test('Babylon.js adds no specular or radiance over alpha (Three.js has neither)', () => {
     const { babylon } = both((scene, engine) => {
-      const box = scene.createPrimitive({ shape: 'box', size: 40, color: '#808080' });
+      const box = createPrimitive(scene, { shape: 'box', size: 40, color: '#808080' });
       if (engine === 'three') return null;
       const m = (box.native as AbstractMesh).material as PBRMaterial;
       return { specular: m.useSpecularOverAlpha, radiance: m.useRadianceOverAlpha };

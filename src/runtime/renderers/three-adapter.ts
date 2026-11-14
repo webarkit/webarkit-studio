@@ -1,18 +1,50 @@
 import * as THREE from 'three';
+import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
 import {
   assertOwned,
   checkAnimationSpeed,
   gltfClipNames,
   Y_UP_TO_Z_UP,
   type AnimationOptions,
+  type GeometryObject,
   type LightSpec,
   type ModelSpec,
-  type PrimitiveSpec,
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
   lightKind,
 } from './adapter';
+
+/**
+ * A core shape as a Three.js geometry, in marker space (#132; the report's "Geometry"): Three.js builds the sphere,
+ * cylinder and capsule along +Y, turned +90° about X onto +Z here; a box's height is the core's Z; the plane, torus and
+ * torus knot already lie in XY. The capsule's middle section is the total height less its two caps.
+ */
+export function threeGeometry(given: GeometrySpec): THREE.BufferGeometry {
+  const spec = normalizeGeometry(given);
+  switch (spec.shape) {
+    case 'box':
+      return new THREE.BoxGeometry(spec.width, spec.depth, spec.height);
+    case 'sphere':
+      return new THREE.SphereGeometry(spec.radius, spec.detail, spec.detail / 2).rotateX(Math.PI / 2);
+    case 'cylinder':
+      return new THREE.CylinderGeometry(spec.radiusTop, spec.radiusBottom, spec.height, spec.detail).rotateX(Math.PI / 2);
+    case 'plane':
+      return new THREE.PlaneGeometry(spec.width, spec.height);
+    case 'torus':
+      return new THREE.TorusGeometry(spec.radius, spec.tube, spec.detail, spec.detail);
+    case 'torusKnot':
+      return new THREE.TorusKnotGeometry(spec.radius, spec.tube, spec.detail, TORUS_KNOT_TUBE_SEGMENTS, spec.p, spec.q);
+    case 'capsule':
+      return new THREE.CapsuleGeometry(spec.radius, spec.height - 2 * spec.radius, spec.detail / 4, spec.detail).rotateX(Math.PI / 2);
+  }
+}
+
+/** A geometry handle's own state: the geometry its meshes use now, and those meshes (setGeometry swaps it on each). */
+export interface ThreeGeometryState {
+  geometry: THREE.BufferGeometry;
+  meshes: Set<THREE.Mesh>;
+}
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
 
@@ -62,6 +94,7 @@ function createThreeScene(
   const adoptedHemis = new Map<THREE.HemisphereLight, THREE.Object3D>();
   const scratch = new THREE.Vector3();
   const obj = (o: SceneObject) => (assertOwned(handle, o), o.native as THREE.Object3D);
+  const geometryState = (g: GeometryObject) => (assertOwned(handle, g), g.native as ThreeGeometryState);
   const modelClips = new WeakMap<THREE.Object3D, ModelClips>();
   const mixers = new Set<THREE.AnimationMixer>();
   /** Mixers with a clip started since the last render: it starts at its beginning, not with the time before it existed. */
@@ -74,17 +107,29 @@ function createThreeScene(
   const handle: SceneHandle = {
     renderer: adapter,
 
-    createPrimitive(spec: PrimitiveSpec) {
-      const s = spec.size;
-      const geometry =
-        spec.shape === 'sphere'
-          ? new THREE.SphereGeometry(s / 2, 32, 16)
-          : spec.shape === 'torusKnot'
-            ? new THREE.TorusKnotGeometry(s / 3, s / 10, 100, 16)
-            : new THREE.BoxGeometry(s, s, s);
-      const material = new THREE.MeshStandardMaterial({ color: spec.color });
-      disposables.add(geometry).add(material);
-      return wrap(new THREE.Mesh(geometry, material));
+    createGeometry(spec) {
+      const state: ThreeGeometryState = { geometry: threeGeometry(spec), meshes: new Set() };
+      disposables.add(state.geometry);
+      return { scene: handle, native: state, kind: 'geometry' };
+    },
+    setGeometry(g, spec) {
+      const state = geometryState(g);
+      const old = state.geometry;
+      // A fresh geometry on each mesh, then the old one disposed: its GPU buffers are freed (WebGLGeometries listens
+      // for its dispose event), and each mesh's bounding sphere is computed again from the new vertices.
+      state.geometry = threeGeometry(spec);
+      disposables.add(state.geometry);
+      for (const mesh of state.meshes) mesh.geometry = state.geometry;
+      disposables.delete(old);
+      old.dispose();
+    },
+    createMesh(g) {
+      const state = geometryState(g);
+      const material = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0, roughness: 1 });
+      disposables.add(material);
+      const mesh = new THREE.Mesh(state.geometry, material);
+      state.meshes.add(mesh);
+      return wrap(mesh);
     },
     async loadModel(spec: ModelSpec) {
       // Loaded on demand: graphs without glTF models do not download the loader.

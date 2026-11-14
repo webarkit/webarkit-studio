@@ -74,6 +74,32 @@ export interface Bounds {
   max: Vec3;
 }
 
+/** The shape of each geometry.* node type (#132). */
+export const GEOMETRY_TYPES: Readonly<Record<string, GeometryShape>> = Object.freeze({
+  'geometry.box': 'box',
+  'geometry.sphere': 'sphere',
+  'geometry.cylinder': 'cylinder',
+  'geometry.plane': 'plane',
+  'geometry.torus': 'torus',
+  'geometry.torusKnot': 'torusKnot',
+  'geometry.capsule': 'capsule',
+});
+
+/** The normalized spec of a geometry.* node from its params: the runtime and the source code export read the same. */
+export function geometrySpec(shape: GeometryShape, p: Record<string, unknown>): GeometrySpec {
+  const n = (key: string) => Number(p[key]);
+  const specs: Record<GeometryShape, () => GeometrySpec> = {
+    box: () => ({ shape: 'box', width: n('width'), depth: n('depth'), height: n('height') }),
+    sphere: () => ({ shape: 'sphere', radius: n('radius'), detail: n('detail') }),
+    cylinder: () => ({ shape: 'cylinder', radiusTop: n('radiusTop'), radiusBottom: n('radiusBottom'), height: n('height'), detail: n('detail') }),
+    plane: () => ({ shape: 'plane', width: n('width'), height: n('height') }),
+    torus: () => ({ shape: 'torus', radius: n('radius'), tube: n('tube'), detail: n('detail') }),
+    torusKnot: () => ({ shape: 'torusKnot', radius: n('radius'), tube: n('tube'), p: n('p'), q: n('q'), detail: n('detail') }),
+    capsule: () => ({ shape: 'capsule', radius: n('radius'), height: n('height'), detail: n('detail') }),
+  };
+  return normalizeGeometry(specs[shape]());
+}
+
 /** The smallest size the core passes on (mm): Babylon.js's builders read 0 as "use the default". */
 export const MIN_SIZE = 0.001;
 /** Segments around a torus knot's tube, on both engines. */

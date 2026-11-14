@@ -82,9 +82,9 @@ describe('tracking_run', () => {
     const [current, upgraded] = [await run({ ...graph, plugins: _plugins }), await run({ ...graph, version: 4 })];
     expect(current.value.markers[0].foundFrames).toBeGreaterThan(0);
     expect(untimed(upgraded.value)).toEqual(untimed(current.value));
-    expect(upgraded.value.log[0]).toBe('↑ upgraded from v4 to v5');
+    expect(upgraded.value.log[0]).toBe('↑ upgraded from v4 to v6');
     const refused = await call(client, 'tracking_run', { graph: { ...graph, version: 3 }, frames: FRAMES, summaryOnly: true });
-    expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 5') });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 6') });
   });
 
   it('writes repo-relative dataset paths and a replayable source for a photo that fills the frame', async () => {

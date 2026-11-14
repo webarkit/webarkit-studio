@@ -22,9 +22,17 @@ import '@babylonjs/core/Materials/standardMaterial';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Node as BabylonNode } from '@babylonjs/core/node';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
-import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
-import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
-import { CreateTorusKnot } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
+import { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { Geometry } from '@babylonjs/core/Meshes/geometry';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
+import { CreateBoxVertexData } from '@babylonjs/core/Meshes/Builders/boxBuilder';
+import { CreateSphereVertexData } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
+import { CreateCylinderVertexData } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
+import { CreatePlaneVertexData } from '@babylonjs/core/Meshes/Builders/planeBuilder';
+import { CreateTorusVertexData } from '@babylonjs/core/Meshes/Builders/torusBuilder';
+import { CreateTorusKnotVertexData } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
+import { CreateCapsuleVertexData } from '@babylonjs/core/Meshes/Builders/capsuleBuilder';
+import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
 import {
@@ -34,8 +42,8 @@ import {
   Y_UP_TO_Z_UP,
   type AnimationOptions,
   type LightSpec,
+  type GeometryObject,
   type ModelSpec,
-  type PrimitiveSpec,
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
@@ -57,6 +65,46 @@ const linearHex = (hex: string) => Color3.FromHexString(hex).toLinearSpace(true)
 const linearRgb = (r: number, g: number, b: number) => new Color3(r, g, b).toLinearSpace(true);
 /** Three.js's HemisphereLight ground colour in the Three.js adapter. */
 const HEMISPHERE_GROUND = '#444444';
+
+/**
+ * A core shape as Babylon.js vertex data, in marker space (#132; the report's "Geometry"): radii become diameters;
+ * Babylon.js builds the sphere, cylinder and capsule along +Y, turned +90° about X onto +Z, and the torus in XZ, turned
+ * −90° about X into XY; the plane is built BACKSIDE, its normal then +Z as on Three.js; the torus knot's segments along
+ * the knot are Babylon.js's radialSegments, so its vertices are Three.js's. A box's height is the core's Z.
+ */
+export function babylonVertexData(given: GeometrySpec): VertexData {
+  const spec = normalizeGeometry(given);
+  const turned = (data: VertexData, radians: number) => (data.transform(Matrix.RotationX(radians)), data);
+  switch (spec.shape) {
+    case 'box':
+      return CreateBoxVertexData({ width: spec.width, height: spec.depth, depth: spec.height });
+    case 'sphere':
+      return turned(CreateSphereVertexData({ diameter: 2 * spec.radius, segments: spec.detail }), Math.PI / 2);
+    case 'cylinder':
+      return turned(
+        CreateCylinderVertexData({ height: spec.height, diameterTop: 2 * spec.radiusTop, diameterBottom: 2 * spec.radiusBottom, tessellation: spec.detail }),
+        Math.PI / 2,
+      );
+    case 'plane':
+      return CreatePlaneVertexData({ width: spec.width, height: spec.height, sideOrientation: VertexData.BACKSIDE });
+    case 'torus':
+      return turned(CreateTorusVertexData({ diameter: 2 * spec.radius, thickness: 2 * spec.tube, tessellation: spec.detail }), -Math.PI / 2);
+    case 'torusKnot':
+      return CreateTorusKnotVertexData({
+        radius: spec.radius,
+        tube: spec.tube,
+        radialSegments: spec.detail,
+        tubularSegments: TORUS_KNOT_TUBE_SEGMENTS,
+        p: spec.p,
+        q: spec.q,
+      });
+    case 'capsule':
+      return turned(
+        CreateCapsuleVertexData({ radius: spec.radius, height: spec.height, tessellation: spec.detail, capSubdivisions: spec.detail / 4, subdivisions: 1 }),
+        Math.PI / 2,
+      );
+  }
+}
 
 /** A model's clips, by the index of `names`, and the one it holds. */
 interface ModelClips {
@@ -121,6 +169,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     return { scene: handle, native };
   };
   const node = (o: SceneObject) => (assertOwned(handle, o), o.native as BabylonNode);
+  const geometryOf = (g: GeometryObject) => (assertOwned(handle, g), g.native as Geometry);
   const transform = (o: SceneObject) => node(o) as TransformNode;
   /** Wired to the scene or to a parent, and made invisible: an object shows when it is the first and not the second. */
   const wired = new WeakSet<BabylonNode>();
@@ -142,19 +191,25 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const handle: SceneHandle = {
     renderer: adapter,
 
-    createPrimitive(spec: PrimitiveSpec) {
-      const s = spec.size;
-      const mesh =
-        spec.shape === 'sphere'
-          ? CreateSphere('sphere', { diameter: s, segments: 32 }, scene)
-          : spec.shape === 'torusKnot'
-            ? CreateTorusKnot('torusKnot', { radius: s / 3, tube: s / 10, radialSegments: 100, tubularSegments: 16 }, scene)
-            : CreateBox('box', { size: s }, scene);
+    createGeometry(spec) {
+      // Updatable: setGeometry replaces the vertex data, whose length a live param can change.
+      const geometry = new Geometry(`geometry-${spec.shape}`, scene, babylonVertexData(spec), true);
+      return { scene: handle, native: geometry, kind: 'geometry' };
+    },
+    setGeometry(g, spec) {
+      // Each vertex buffer replaced through setVerticesBuffer, which rebuilds every sharing mesh's bounding info and
+      // submeshes (geometry.js): culling follows the new vertices.
+      geometryOf(g).setAllVerticesData(babylonVertexData(spec), true);
+    },
+    createMesh(g) {
+      const geometry = geometryOf(g);
+      const mesh = new Mesh(`mesh-${geometry.id}`, scene);
+      geometry.applyToMesh(mesh);
       // Three.js's MeshStandardMaterial in the Three.js adapter: metalness 0, roughness 1 (Babylon's are null, its
       // engine's own defaults apply unless set), emissive black. No specular or radiance over alpha: on Three.js a
       // highlight does not make a half-transparent mesh more opaque.
-      const material = new PBRMaterial(`${spec.shape}-material`, scene);
-      material.albedoColor = linearHex(spec.color);
+      const material = new PBRMaterial(`${mesh.name}-material`, scene);
+      material.albedoColor = linearHex('#ffffff');
       material.metallic = 0;
       material.roughness = 1;
       material.useSpecularOverAlpha = false;

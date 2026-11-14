@@ -7,7 +7,7 @@ import type { GraphDocument } from '../../src/core/graph';
 
 const graph: GraphDocument = {
   format: 'webarkit-studio/graph',
-  version: 5,
+  version: 6,
   name: 'My project',
   nodes: [{ id: 'g', type: 'scene.gltf', params: { url: assetRef('m1', 'duck model.glb') } }],
   edges: [],

@@ -114,9 +114,12 @@ scene.add(keylight); // camera space, until an anchor takes it
 const filllight = new THREE.AmbientLight("#ffffff", 0.6);
 scene.add(filllight); // camera space, until an anchor takes it
 
-// prim_pinball (scene.primitive)
-const prim_pinball = new THREE.Mesh(new THREE.TorusKnotGeometry(80 / 3, 80 / 10, 100, 16), new THREE.MeshStandardMaterial({ color: "#ff0055" }));
-prim_pinball.position.set(0, 0, 0 + 80 / 2); // resting on the marker: lifted by half its size
+// prim_pinball_geometry (geometry.torusKnot)
+const prim_pinball_geometry = new THREE.TorusKnotGeometry(26.666667, 8, 100, 16, 2, 3);
+
+// prim_pinball (scene.mesh)
+const prim_pinball = new THREE.Mesh(prim_pinball_geometry, new THREE.MeshStandardMaterial({ color: "#ff0055", metalness: 0, roughness: 1 }));
+prim_pinball.position.set(0, 0, 21.223274); // resting on the marker: lifted by 21.223274 mm, its geometry's bottom
 prim_pinball.rotation.set(0, 0, 0, 'XYZ');
 
 // anchor_pinball (scene.anchor)
@@ -201,7 +204,7 @@ function frame(time) {
     ].join('\n');
   }
 
-  // prim_pinball (scene.primitive)
+  // prim_pinball (scene.mesh)
   prim_pinball.rotation.z += delta * 0.0005; // spins about its own Z axis
 
   // anchor_pinball (scene.anchor)

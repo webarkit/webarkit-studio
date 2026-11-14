@@ -1,6 +1,6 @@
 {
   "format": "webarkit-studio/graph",
-  "version": 5,
+  "version": 6,
   "name": "Pinball NFT · math on a model: a bobbing, turning cube (Three.js)",
   "plugins": [
     {

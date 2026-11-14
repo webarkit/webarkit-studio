@@ -1,6 +1,6 @@
 {
  "format": "webarkit-studio/graph",
- "version": 5,
+ "version": 6,
  "name": "Pinball NFT \u00b7 image, no camera",
  "plugins": [
   {
@@ -192,15 +192,34 @@
   },
   {
    "id": "prim_pinball",
-   "type": "scene.primitive",
+   "type": "scene.mesh",
    "params": {
-    "shape": "torusKnot",
-    "size": 80,
     "color": "#ff0055",
-    "spin": true
+    "spin": true,
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "rest": true
    },
    "position": {
     "x": 960,
+    "y": 535
+   }
+  },
+  {
+   "id": "prim_pinball_geometry",
+   "type": "geometry.torusKnot",
+   "params": {
+    "radius": 26.666666666666668,
+    "tube": 8,
+    "p": 2,
+    "q": 3,
+    "detail": 100
+   },
+   "position": {
+    "x": 720,
     "y": 535
    }
   }
@@ -457,6 +476,28 @@
    "to": {
     "node": "view",
     "port": "video"
+   }
+  },
+  {
+   "id": "migrated_edge",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "prim_pinball_geometry",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "migrated_edge_2",
+   "from": {
+    "node": "prim_pinball_geometry",
+    "port": "geometry"
+   },
+   "to": {
+    "node": "prim_pinball",
+    "port": "geometry"
    }
   }
  ]

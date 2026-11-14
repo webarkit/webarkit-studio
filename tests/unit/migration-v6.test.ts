@@ -27,9 +27,15 @@ describe('v5 → v6: scene.primitive becomes a geometry wired into a scene.mesh 
     expect(out.version).toBe(6);
   });
 
-  it('keeps the position and rotation params, and places the geometry left of the mesh in the editor', () => {
+  it("keeps the position and rotation params, writes out v5's colour and spin defaults, and places the geometry left of the mesh", () => {
     const out = step(doc(5, [prim({ shape: 'box', size: 10, position: [1, 2, 3], rotation: [4, 5, 6] }, { x: 500, y: 100 })]));
-    expect(out.nodes[0]).toEqual({ id: 'p', type: 'scene.mesh', params: { position: [1, 2, 3], rotation: [4, 5, 6], scale: [1, 1, 1], rest: true }, position: { x: 500, y: 100 } });
+    // scene.mesh's own defaults differ (no spin): a v5 primitive without these params spun, in #ff0055.
+    expect(out.nodes[0]).toEqual({
+      id: 'p',
+      type: 'scene.mesh',
+      params: { color: '#ff0055', spin: true, position: [1, 2, 3], rotation: [4, 5, 6], scale: [1, 1, 1], rest: true },
+      position: { x: 500, y: 100 },
+    });
     expect(out.nodes[1].position).toEqual({ x: 260, y: 100 });
   });
 
@@ -65,7 +71,7 @@ describe('v5 → v6: scene.primitive becomes a geometry wired into a scene.mesh 
   it('writes a param named __proto__ as data, never as the prototype', () => {
     const params = JSON.parse('{"shape":"box","size":10,"__proto__":{"polluted":true},"color":"#fff"}');
     const out = step(doc(5, [prim(params)]));
-    expect(out.nodes[0].params).toEqual({ color: '#fff', scale: [1, 1, 1], rest: true });
+    expect(out.nodes[0].params).toEqual({ color: '#fff', spin: true, scale: [1, 1, 1], rest: true });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

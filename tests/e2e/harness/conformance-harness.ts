@@ -45,7 +45,8 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { LightSpec, PrimitiveSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
 /** Looking down −Z from the origin, 90° field of view, near 0.1: the animation harness's projection. */
 export const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0];
@@ -757,7 +758,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
     },
     async buildWithAdapter(desc) {
       clear();
-      const box = handle.createPrimitive({ shape: 'box', size: desc.size, color: desc.color });
+      const box = createPrimitive(handle, { shape: 'box', size: desc.size, color: desc.color });
       handle.setPosition(box, ...desc.position);
       handle.addRoot(box);
       adapterObjects.push(box);
@@ -786,7 +787,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
     },
     async hemisphereAfterChange(nested) {
       clear();
-      const box = handle.createPrimitive({ shape: 'box', size: 40, color: '#808080' });
+      const box = createPrimitive(handle, { shape: 'box', size: 40, color: '#808080' });
       handle.setPosition(box, 0, 0, -60);
       handle.addRoot(box);
       const outer = handle.createGroup();
@@ -842,7 +843,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       for (const step of ops) {
         switch (step.op) {
           case 'createPrimitive':
-            create(step.id, handle.createPrimitive(step.spec));
+            create(step.id, createPrimitive(handle, step.spec));
             break;
           case 'loadModel': {
             const data = new TextEncoder().encode(JSON.stringify(step.gltf));

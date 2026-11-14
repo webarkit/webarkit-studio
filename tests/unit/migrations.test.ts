@@ -273,7 +273,7 @@ describe('the real migrations', () => {
 
   it('upgrade the v0.1.0 pinball-three graph to v5: only `version` and `plugins` change', () => {
     expect(v4.version).toBe(4);
-    const { doc: out, from, applied } = migrateGraph(v4, { target: 5 });
+    const { doc: out, from, applied } = migrateGraph(v4, { migrations: MIGRATIONS.slice(0, 1), target: 5 });
     // Frozen on purpose, not compared with today's demo, which moves on.
     expect(out).toEqual({ ...v4, version: 5, plugins: [{ id: 'jsartoolkitNFT', version: '0.1.0' }] });
     expect(from).toBe(4);
@@ -335,7 +335,7 @@ describe('loadGraphDocument', () => {
   });
 
   it('says why it refuses a v3 and a v99 document', () => {
-    expect(failure(() => loadGraphDocument(doc(3))).problems[0]).toMatch(/version 3.*versions 4 to 5/);
+    expect(failure(() => loadGraphDocument(doc(3))).problems[0]).toMatch(/version 3.*versions 4 to 6/);
     expect(failure(() => loadGraphDocument(doc(99))).problems[0]).toMatch(/version 99.*made by a newer studio/);
   });
 
@@ -356,19 +356,20 @@ describe('loadUnfinishedGraphDocument', () => {
   const unfinished = (graph: typeof v5) => ({ ...structuredClone(graph), edges: graph.edges.slice(1) });
 
   it.each([
-    ['v4', v4],
-    ['v5', v5],
-  ])('takes an unfinished %s graph, whole, which loadGraphDocument refuses', (_name, graph) => {
+    // v4 → v6 adds its primitive's geometry node and that node's two wires (#132).
+    ['v4', v4, 1, 2],
+    ['current', v5, 0, 0],
+  ])('takes an unfinished %s graph, whole, which loadGraphDocument refuses', (_name, graph, addedNodes, addedEdges) => {
     const open = unfinished(graph);
     expect(failure(() => loadGraphDocument(open)).problems.join()).toMatch(/is not connected/);
     const { doc: out } = loadUnfinishedGraphDocument(open);
     expect(out.version).toBe(GRAPH_VERSION);
-    expect(out.nodes).toHaveLength(graph.nodes.length);
-    expect(out.edges).toHaveLength(open.edges.length);
+    expect(out.nodes).toHaveLength(graph.nodes.length + addedNodes);
+    expect(out.edges).toHaveLength(open.edges.length + addedEdges);
   });
 
   it('says what it upgraded', () => {
-    expect(loadUnfinishedGraphDocument(unfinished(v4))).toMatchObject({ from: 4, applied: [{ from: 4, to: 5 }] });
+    expect(loadUnfinishedGraphDocument(unfinished(v4))).toMatchObject({ from: 4, applied: [{ from: 4, to: 5 }, { from: 5, to: 6 }] });
   });
 
   it('leaves validateGraph strict by default', () => {
@@ -389,7 +390,7 @@ describe('loadUnfinishedGraphDocument', () => {
       ['a wire to a missing node', (g: typeof v5) => void (g.edges[0].to.node = 'nobody'), /references a missing node/],
       ['two nodes with one id', (g: typeof v5) => void (g.nodes[1].id = g.nodes[0].id), /duplicate node id/],
       ['a plugin that is not loaded', (g: typeof v5) => void g.plugins.push({ id: 'nowhere', version: '1.0.0' }), /requires plugin nowhere/],
-      ['a bad vector param', (g: typeof v5) => void (g.nodes.find((n: { type: string }) => n.type === 'scene.primitive').params.position = [1]), /must be 3 numbers/],
+      ['a bad vector param', (g: typeof v5) => void (g.nodes.find((n: { type: string }) => n.type === 'scene.mesh').params.position = [1]), /must be 3 numbers/],
     ])('%s', (_name, change, message) => {
       const problems = broken(change);
       expect(problems).toMatch(message);
@@ -435,7 +436,7 @@ describe('GraphRuntime', () => {
   });
 
   it('says why it refuses one it cannot read', () => {
-    expect(() => new GraphRuntime(doc(3), options)).toThrow(/versions 4 to 5/);
+    expect(() => new GraphRuntime(doc(3), options)).toThrow(/versions 4 to 6/);
   });
 });
 
@@ -460,7 +461,7 @@ describe('graph_edit', () => {
   it('says why it refuses one it cannot read', async () => {
     const client = await connectStudio();
     try {
-      expect(await call(client, 'graph_edit', { graph: doc(3), ops: [] })).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 5') });
+      expect(await call(client, 'graph_edit', { graph: doc(3), ops: [] })).toMatchObject({ ok: false, error: expect.stringContaining('versions 4 to 6') });
     } finally {
       await client.close();
     }
@@ -479,7 +480,7 @@ describe('graph_validate', () => {
   });
 
   it('returns the reason for a v3 or a v99 document as a problem, not an error', () => {
-    expect(checkGraph(doc(3))).toMatchObject({ valid: false, problems: [expect.stringMatching(/versions 4 to 5/)] });
+    expect(checkGraph(doc(3))).toMatchObject({ valid: false, problems: [expect.stringMatching(/versions 4 to 6/)] });
     expect(checkGraph(doc(99))).toMatchObject({ valid: false, problems: [expect.stringMatching(/newer studio/)] });
   });
 });

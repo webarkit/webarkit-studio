@@ -60,6 +60,16 @@ export interface GraphMigration {
   migrate(doc: RawGraph, edit: GraphEditor): void;
 }
 
+/** v5 → v6 (#132). */
+export const V5_TO_V6: GraphMigration = {
+  from: 5,
+  to: 6,
+  note: 'scene.primitive becomes a geometry.* node wired into a scene.mesh (#132)',
+  migrate(doc, edit) {
+    for (const n of doc.nodes.filter((x) => x.type === 'scene.primitive')) primitiveToMesh(doc, edit, n);
+  },
+};
+
 /** Every step, oldest first, up to GRAPH_VERSION. Versions before the first are prototype formats, which stay rejected. */
 export const MIGRATIONS: readonly GraphMigration[] = [
   {
@@ -72,17 +82,8 @@ export const MIGRATIONS: readonly GraphMigration[] = [
       }
     },
   },
+  V5_TO_V6,
 ];
-
-/** v5 → v6 (#132). */
-export const V5_TO_V6: GraphMigration = {
-  from: 5,
-  to: 6,
-  note: 'scene.primitive becomes a geometry.* node wired into a scene.mesh (#132)',
-  migrate(doc, edit) {
-    for (const n of doc.nodes.filter((x) => x.type === 'scene.primitive')) primitiveToMesh(doc, edit, n);
-  },
-};
 
 /** The geometry scene.primitive built for each shape at v5, as the adapters made it then (frozen). */
 const V5_PRIMITIVE_GEOMETRY: Record<string, (size: number) => { type: string; params: Record<string, unknown> }> = {
@@ -105,7 +106,8 @@ function primitiveToMesh(doc: RawGraph, edit: GraphEditor, n: RawNode): void {
   const sceneWire = doc.edges.find((e) => e.to.node === n.id && e.to.port === 'scene');
 
   n.type = 'scene.mesh';
-  const kept: Record<string, unknown> = {};
+  // v5's defaults, written out: scene.mesh's own defaults differ (it does not spin unless asked).
+  const kept: Record<string, unknown> = { color: '#ff0055', spin: true };
   for (const key of ['color', 'spin', 'position', 'rotation']) if (Object.hasOwn(params, key)) Object.defineProperty(kept, key, { value: params[key], enumerable: true, writable: true, configurable: true });
   n.params = { ...kept, scale: [1, 1, 1], rest: true };
 

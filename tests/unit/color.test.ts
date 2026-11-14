@@ -186,8 +186,8 @@ describe('colour catalog', () => {
     expect(RESERVED_NAMESPACES).toContain('color');
   });
 
-  it('Primitive and Light take a colour input that overrides their colour param', () => {
-    for (const type of ['scene.primitive', 'scene.light']) {
+  it('Mesh and Light take a colour input that overrides their colour param', () => {
+    for (const type of ['scene.mesh', 'scene.light']) {
       expect(NODE_CATALOG[type].inputs.color, type).toMatchObject({ type: 'color', optional: true });
       expect(NODE_CATALOG[type].params.color.live, type).toBe(true);
     }

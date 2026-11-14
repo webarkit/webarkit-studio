@@ -556,7 +556,7 @@ describe('the catalog and the registry', () => {
   it('a branch with its condition unwired is a valid graph', () => {
     const doc = {
       format: 'webarkit-studio/graph',
-      version: 5,
+      version: 6,
       name: 't',
       plugins: [],
       nodes: [

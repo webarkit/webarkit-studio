@@ -7,7 +7,7 @@ import type { NodeFactory } from './types';
 import { cameraSource, imageSource, videoFileSource } from './nodes/sources';
 import { oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
-import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
+import { anchor, arCamera, geometryNode, gltf, light, mesh, sceneNode } from './nodes/scene';
 import { arView } from './nodes/ar-view';
 import {
   add,
@@ -58,7 +58,14 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'scene.scene': sceneNode,
   'scene.arCamera': arCamera,
   'scene.light': light,
-  'scene.primitive': primitive,
+  'scene.mesh': mesh,
+  'geometry.box': geometryNode('box'),
+  'geometry.sphere': geometryNode('sphere'),
+  'geometry.cylinder': geometryNode('cylinder'),
+  'geometry.plane': geometryNode('plane'),
+  'geometry.torus': geometryNode('torus'),
+  'geometry.torusKnot': geometryNode('torusKnot'),
+  'geometry.capsule': geometryNode('capsule'),
   'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,
