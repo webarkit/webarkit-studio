@@ -153,8 +153,11 @@ export type AdapterOp =
   /** [r, g, b, a], sRGB 0–1. */
   | { op: 'setColor'; id: string; color: number[] }
   | { op: 'setIntensity'; id: string; intensity: number }
-  /** A frame drawn between two operations (what is read back is always the frame after the last one). */
-  | { op: 'render' };
+  /**
+   * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
+   * a case can check it; otherwise what is read back is the frame after the last operation.
+   */
+  | { op: 'render'; capture?: string };
 
 const DEG = Math.PI / 180;
 
@@ -251,7 +254,7 @@ export interface Harness {
    * Runs the operations on the adapter's scene (replacing the previous one), through SceneHandle only, then renders
    * until Babylon.js's shaders are ready; throws if they are not after 2 s, so a blank frame is never measured.
    */
-  buildAdapterScene(ops: AdapterOp[]): Promise<void>;
+  buildAdapterScene(ops: AdapterOp[], onCapture?: (frame: string) => void): Promise<void>;
   /**
    * World-space bounds of a mesh made by buildAdapterScene, by its id: the mesh alone, without children (Three.js's
    * Box3.setFromObject would include them, Babylon.js's bounding info does not), so give it a mesh with none.
@@ -820,7 +823,7 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       const secondFrame = red();
       return { settled, afterChange, secondFrame };
     },
-    async buildAdapterScene(ops) {
+    async buildAdapterScene(ops, onCapture) {
       clear();
       named.clear();
       const get = (id: string) => {
@@ -869,6 +872,10 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.
             await babylonReady();
             handle.render(PROJECTION);
+            if (step.capture !== undefined) {
+              last = readAll();
+              onCapture?.(step.capture);
+            }
             break;
           default:
             throw new Error(`unknown operation ${JSON.stringify(step)}`);
