@@ -171,7 +171,17 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         pluginExtension: spec.binary ? '.glb' : '.gltf',
         rootUrl: spec.url.slice(0, spec.url.lastIndexOf('/') + 1),
         // Nothing starts on its own: playAnimation() starts a clip, as on Three.js.
-        pluginOptions: { gltf: { animationStartMode: 0 /* GLTFLoaderAnimationStartMode.NONE */ } },
+        // transparencyAsCoverage: the loader then turns specular and radiance over alpha off on each material
+        // (pbrMaterialLoadingAdapter.js), as on the adapter's primitives: on Three.js a highlight does not make a
+        // half-transparent material more opaque (#153; by default alpha went from 128 to 168 at a highlight). Only
+        // blended materials read those flags. An OpenPBR material (KHR_materials_openpbr, or useOpenPBR) ignores the
+        // option (openpbrMaterialLoadingAdapter.js): such a model would still grow more opaque under a highlight.
+        pluginOptions: {
+          gltf: {
+            animationStartMode: 0 /* GLTFLoaderAnimationStartMode.NONE */,
+            transparencyAsCoverage: true,
+          },
+        },
       });
       container.addAllToScene();
       // The scene is right-handed, so the loader adds no handedness conversion: only glTF's Y-up remains.

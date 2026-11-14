@@ -83,6 +83,49 @@ const toLinear = (c: number) => {
   const s = c / 255;
   return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
 };
+/**
+ * A glTF 2.0 JSON document (#153): a square of side 2 × `half` mm, one half-transparent PBR material (alphaMode BLEND), its
+ * buffer a data: URI, so no binary asset. The square lies in glTF's XZ plane, facing glTF +Y, which the adapters turn
+ * into marker +Z (Y_UP_TO_Z_UP): it faces the camera. Wound counter-clockwise seen from +Y.
+ */
+function transparentSquareGltf(half: number, baseColor: [number, number, number, number], roughness: number): object {
+  const positions = new Float32Array([-half, 0, half, half, 0, half, half, 0, -half, -half, 0, -half]);
+  const normals = new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]);
+  const indices = new Uint16Array([0, 1, 2, 0, 2, 3, 0, 0]); // two padding indices: 4-byte aligned, not read
+  const bytes = Buffer.concat([Buffer.from(positions.buffer), Buffer.from(normals.buffer), Buffer.from(indices.buffer)]);
+  return {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: baseColor, metallicFactor: 0, roughnessFactor: roughness }, alphaMode: 'BLEND' }],
+    buffers: [{ byteLength: bytes.length, uri: `data:application/octet-stream;base64,${bytes.toString('base64')}` }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 48 },
+      { buffer: 0, byteOffset: 48, byteLength: 48 },
+      { buffer: 0, byteOffset: 96, byteLength: 12 },
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 4, type: 'VEC3', min: [-half, 0, -half], max: [half, 0, half] },
+      { bufferView: 1, componentType: 5126, count: 4, type: 'VEC3' },
+      { bufferView: 2, componentType: 5123, count: 6, type: 'SCALAR' },
+    ],
+  };
+}
+
+/** The #153 scene: the square (30 mm half side, 80 mm away) under a directional light, an opaque box beside it. */
+const GLTF_HIGHLIGHT_OPS: AdapterOp[] = [
+  { op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } },
+  { op: 'addRoot', id: 'sun' },
+  { op: 'loadModel', id: 'm', gltf: transparentSquareGltf(30, [0.75, 0.5, 0.25, 0.5], 0.3) },
+  { op: 'setPosition', id: 'm', position: [0, 0, -80] },
+  { op: 'addRoot', id: 'm' },
+  { op: 'createPrimitive', id: 'b', spec: { shape: 'box', size: 20, color: '#808080' } },
+  { op: 'setPosition', id: 'b', position: [50, 0, -80] },
+  { op: 'addRoot', id: 'b' },
+];
+
 /** The clipping rule: a sample is only evidence if every channel lies in 30..225. */
 const unclipped = (v: number[]) => v.slice(0, 3).every((c) => c >= 30 && c <= 225);
 
@@ -644,6 +687,30 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ]),
       }),
     ),
+    // #153: a half-transparent glTF material (alpha 0.5, roughness 0.3) under a directional light. Its highlight peaks
+    // near pixel (77, 83), where the view ray reflects toward the light (0.2, −0.3, 1): `hl` samples it, and a 5 × 5
+    // grid samples the rest of the square (pixels 40..88). A highlight must not raise the framebuffer's alpha. Without
+    // the fix, Babylon.js gave 168 at the peak (the screenshot test below checks the highlight is there).
+    {
+      name: 'a half-transparent glTF material under a directional light: alpha 0.5 everywhere, highlight included (#153)',
+      ops: GLTF_HIGHLIGHT_OPS,
+      regions: {
+        b: [104, 62, 4, 4],
+        hl: [76, 82, 2, 2],
+        ...Object.fromEntries([44, 54, 64, 74, 84].flatMap((x) => [44, 54, 64, 74, 84].map((y) => [`g${x}_${y}`, [x - 1, y - 1, 2, 2] as Region]))),
+      },
+      rules: [
+        { region: 'b', is: 'drawn' },
+        { region: 'hl', is: 'alpha', value: 128 },
+        { region: 'hl', is: 'sameAlpha' },
+        ...[44, 54, 64, 74, 84].flatMap((x) =>
+          [44, 54, 64, 74, 84].flatMap((y): Rule[] => [
+            { region: `g${x}_${y}`, is: 'alpha', value: 128 },
+            { region: `g${x}_${y}`, is: 'sameAlpha' },
+          ]),
+        ),
+      ],
+    },
   ];
 
   const FINAL = 'final';
@@ -913,6 +980,62 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
   test('a half-transparent object looks the same over the camera on both adapters (#144)', async ({ page }) => {
     const r = await measure(page);
     expect(maxDiff(r.babylon.screen, r.three.screen)).toBeLessThanOrEqual(SAME);
+  });
+
+  // #153: a half-transparent glTF material under a directional light (GLTF_HIGHLIGHT_OPS), over the page: its
+  // highlight, near pixel (77, 83), and a region away from it. Framebuffer alpha and the page's composite, both engines.
+  test('a half-transparent glTF material over the camera: the same at its highlight on both adapters (#153)', async ({ page }) => {
+    const spots = { highlight: [75, 81, 4, 4], away: [44, 44, 4, 4] } as const;
+    const out = {} as Record<Engine, Record<string, { framebuffer: number[]; screen: number[] }>>;
+    for (const engine of ENGINES) {
+      await open(page, engine, 128);
+      const framebuffer = await page.evaluate(
+        async ([ops, spots]) => {
+          const H = (window as never as { H: Harness }).H;
+          await H.buildAdapterScene(ops);
+          H.render();
+          return Object.fromEntries(Object.entries(spots).map(([k, [x, y, w, h]]) => [k, H.region(x, y, w, h)]));
+        },
+        [GLTF_HIGHLIGHT_OPS, spots] as const,
+      );
+      await page.evaluate((bg) => {
+        const back = document.createElement('div');
+        back.style.cssText = `position:absolute;left:0;top:0;width:128px;height:128px;background:rgb(${bg.join(',')})`;
+        document.body.prepend(back);
+        document.querySelector('canvas')!.style.zIndex = '1';
+      }, BG);
+      await page.evaluate(() => (window as never as { H: Harness }).H.render());
+      out[engine] = {};
+      for (const [k, [x, y, w, h]] of Object.entries(spots)) {
+        const png = await page.screenshot({ clip: { x, y, width: w, height: h } });
+        const screen = await page.evaluate(
+          async ([b64, n]) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${b64}`;
+            await img.decode();
+            const c = document.createElement('canvas');
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext('2d')!;
+            g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, img.width, img.height).data;
+            const sum = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) for (let q = 0; q < 3; q++) sum[q] += d[i + q];
+            return sum.map((v) => v / n);
+          },
+          [png.toString('base64'), w * h] as const,
+        );
+        out[engine][k] = { framebuffer: framebuffer[k], screen };
+      }
+    }
+    console.log('gltf opacity', JSON.stringify(out));
+    // A control: the highlight is there, brighter than the square away from it, on both engines; a case without one
+    // would pass whatever the over-alpha flags do.
+    for (const engine of ENGINES) expect(out[engine].highlight.framebuffer[0] - out[engine].away.framebuffer[0], `${engine} highlight brighter`).toBeGreaterThan(20);
+    for (const k of Object.keys(spots)) {
+      for (const engine of ENGINES) expect(Math.abs(out[engine][k].framebuffer[3] - 128), `${engine} ${k} alpha ${out[engine][k].framebuffer}`).toBeLessThanOrEqual(SAME);
+      expect(maxDiff(out.babylon[k].screen, out.three[k].screen), `${k} screen: three ${rgb(out.three[k].screen)} / babylon ${rgb(out.babylon[k].screen)}`).toBeLessThanOrEqual(SAME);
+    }
   });
 });
 

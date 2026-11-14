@@ -142,6 +142,8 @@ export interface SceneDesc {
  */
 export type AdapterOp =
   | { op: 'createPrimitive'; id: string; spec: PrimitiveSpec }
+  /** A glTF 2.0 JSON document (buffers as data: URIs), loaded through SceneHandle.loadModel as a .gltf file. */
+  | { op: 'loadModel'; id: string; gltf: object }
   | { op: 'createGroup'; id: string }
   | { op: 'createLight'; id: string; spec: LightSpec }
   | { op: 'addRoot'; id: string }
@@ -842,6 +844,11 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           case 'createPrimitive':
             create(step.id, handle.createPrimitive(step.spec));
             break;
+          case 'loadModel': {
+            const data = new TextEncoder().encode(JSON.stringify(step.gltf));
+            create(step.id, await handle.loadModel({ data: data.buffer as ArrayBuffer, url: 'conformance/model.gltf', binary: false }));
+            break;
+          }
           case 'createGroup':
             create(step.id, handle.createGroup());
             break;
