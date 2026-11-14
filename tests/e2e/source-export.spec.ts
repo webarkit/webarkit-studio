@@ -103,7 +103,9 @@ test('pinball-three as source code: built and served, it tracks, shows the knot 
 });
 
 test('the generated app puts the knot where the studio does (projection, centre offset, lift)', async ({ page, browser }) => {
-  test.setTimeout(180_000);
+  // Two whileFound() polls of up to 60 s each, plus the export, the synchronous build and two page loads (about 40 s
+  // here, more under load): 240 s, so a poll that fails reports its own message, not the test's timeout.
+  test.setTimeout(240_000);
   // The knot still, in both: its spin would move the centroid between the two captures.
   const doc = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as Doc;
   doc.nodes.find((n) => n.id === 'prim_pinball')!.params.spin = false;
