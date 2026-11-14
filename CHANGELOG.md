@@ -11,6 +11,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - A hemisphere light in a group, or under the marker's anchor, follows its parent on the same frame on
   Three.js (#145): it lagged one frame behind, so on a moving marker its sky pointed where the marker had
   been. Babylon.js was not affected.
+- A half-transparent object on Babylon.js looks as it does on Three.js over the camera (#144): its colour
+  was multiplied by its opacity twice, so it looked darker (80, 96, 112 instead of 128, 128, 128 for an
+  orange at 0.5 over a blue).
 
 ## [0.3.0] - 2026-11-12
 

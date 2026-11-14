@@ -6,7 +6,7 @@
 // - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
 //   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
 // - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
-//   light kinds, and stays a table of its own because #131 and #144 cite its test.fail titles. It also checks that an
+//   light kinds, and stays a table of its own because #131 cites its test.fail titles. It also checks that an
 //   adopted hemisphere is aimed on the frame its parent turns (#145; the directions: tests/unit/conformance/hemisphere.test.ts).
 // - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
 //   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
@@ -111,7 +111,7 @@ test.describe('conformance: calibration', () => {
     expect(three.premultipliedAlpha).toBe(true);
     expect(three.toneMappingExposure).toBe(1);
     expect(three.clearAlpha).toBe(0);
-    expect(babylon.premultipliedAlpha).toBe(false);
+    expect(babylon.premultipliedAlpha).toBe(true); // #144: its framebuffer holds colour × alpha, as Three.js's does
     expect(babylon.contrast).toBe(1);
     expect(babylon.clearColor).toEqual([0, 0, 0, 0]);
   });
@@ -806,14 +806,15 @@ test.describe('conformance: materials (MeshStandardMaterial against PBRMaterial,
 });
 
 test.describe('conformance: opacity over the camera (framebuffer RGBA, then the page)', () => {
-  // The canvas is composited over the camera video: Three.js's context is premultiplied, the Babylon.js adapter's is not
-  // (babylon-adapter.ts:76). A half-transparent unlit plane of #c08040 over a clear canvas, then over a #4080c0 element.
+  // The canvas is composited over the camera video. Both engines' framebuffers hold colour × alpha, and both contexts
+  // are premultiplied (the Babylon.js adapter's since #144; before, the page multiplied by alpha a second time). A
+  // half-transparent unlit plane of #c08040 over a clear canvas, then over a #4080c0 element.
   const BG = [0x40, 0x80, 0xc0];
   const desc: SceneDesc = { size: 128, objects: [{ ...FILL, material: { kind: 'basic', color: '#c08040', opacity: 0.5 } }], lights: [] };
-  /** The page's composite of a framebuffer pixel, per the context's premultipliedAlpha. */
-  const composite = (px: number[], premultiplied: boolean) => {
+  /** The page's composite of a framebuffer pixel from a premultiplied context (both, checked by the calibration). */
+  const composite = (px: number[]) => {
     const a = px[3] / 255;
-    return [0, 1, 2].map((k) => (premultiplied ? px[k] : px[k] * a) + BG[k] * (1 - a));
+    return [0, 1, 2].map((k) => px[k] + BG[k] * (1 - a));
   };
 
   async function screenshotCentre(page: Page) {
@@ -846,7 +847,7 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
     for (const engine of ENGINES) {
       await open(page, engine, 128, true);
       const framebuffer = (await shoot(page, desc, { c: CENTRE })).c;
-      const computed = composite(framebuffer, engine === 'three');
+      const computed = composite(framebuffer);
       const screen = await screenshotCentre(page);
       out[engine] = { framebuffer, computed, screen };
     }
@@ -860,12 +861,11 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
       expect(r[engine].framebuffer[3], engine).toBeCloseTo(128, -1);
       expect(maxDiff(r[engine].screen, r[engine].computed), `${engine} screen ${rgb(r[engine].screen)} computed ${r[engine].computed}`).toBeLessThanOrEqual(SAME);
     }
-    // Three.js: 0.5 · #c08040 + 0.5 · #4080c0 in sRGB values, as the page blends.
-    expect(maxDiff(r.three.screen, [128, 128, 128])).toBeLessThanOrEqual(SAME);
+    // 0.5 · #c08040 + 0.5 · #4080c0 in sRGB values, as the page blends.
+    for (const engine of ENGINES) expect(maxDiff(r[engine].screen, [128, 128, 128]), `${engine} ${rgb(r[engine].screen)}`).toBeLessThanOrEqual(SAME);
   });
 
-  test('known difference: a half-transparent object looks the same over the camera on both adapters', async ({ page }) => {
-    test.fail(true, 'the Babylon.js adapter creates its context with premultipliedAlpha: false, and its framebuffer holds colour × alpha: the page multiplies by alpha again');
+  test('a half-transparent object looks the same over the camera on both adapters (#144)', async ({ page }) => {
     const r = await measure(page);
     expect(maxDiff(r.babylon.screen, r.three.screen)).toBeLessThanOrEqual(SAME);
   });

@@ -73,7 +73,10 @@ const secondsPerFrame = (group: AnimationGroup) => 1 / (group.targetedAnimations
 
 export function createBabylonAdapter(opts: { antialias: boolean }): RendererAdapter {
   const canvas = document.createElement('canvas');
-  const engine = new Engine(canvas, opts.antialias, { alpha: true, premultipliedAlpha: false }, true);
+  // The framebuffer holds colour × alpha, as Three.js's does, so the page must composite it as premultiplied: with
+  // premultipliedAlpha false it multiplied by alpha a second time, and a half-transparent object looked darker over the
+  // camera than on Three.js (#144). True is Babylon.js's default; it is written out here for that reason.
+  const engine = new Engine(canvas, opts.antialias, { alpha: true, premultipliedAlpha: true }, true);
 
   const adapter: RendererAdapter = {
     kind: 'Babylon.js',

@@ -118,7 +118,7 @@ re-measured. Metalness 1 without an environment is **not** black here: the direc
 | Base colour, metalness, roughness (one set of params) | Equivalent with a translation, within **look** | Colour in linear (above); light k = 1 (below) | the grid |
 | `side` front / back / double | Equivalent with a translation | Babylon: front = `backFaceCulling`; back = `backFaceCulling` with `cullBackFaces = false`; double = no culling | e2e "side: back and double show a plane facing away on both" |
 | Double side, a back face lit | Equivalent with a translation | Babylon `PBRMaterial.twoSidedLighting = true`; without it the back face is black (0 against 107) | e2e "double side: a back face lit from behind …" |
-| Opacity | Not equivalent in the current adapters (a defect, below); equivalent with a translation | Both write the same framebuffer pixel (96, 64, 32, 128 for `#c08040` at 0.5). Over the page, Three.js gives 128, 128, 128 over `#4080c0`, Babylon 80, 96, 112: the Babylon context is created with `premultipliedAlpha: false` (`babylon-adapter.ts:76`), so the page multiplies by alpha a second time. The screenshot agrees with the computed composite on both engines (within 1 level). Translation: create the Babylon engine with premultiplied alpha | e2e "pinned: the framebuffer, the computed composite and the screenshot agree, per engine"; `test.fail` "known difference: a half-transparent object looks the same …" |
+| Opacity | Not equivalent in the current adapters (a defect, below); equivalent with a translation (equivalent since #144) | Both write the same framebuffer pixel (96, 64, 32, 128 for `#c08040` at 0.5). Over the page, Three.js gives 128, 128, 128 over `#4080c0`, Babylon 80, 96, 112 (128, 128, 128 since #144): the Babylon context is created with `premultipliedAlpha: false` (`babylon-adapter.ts:76`), so the page multiplies by alpha a second time. The screenshot agrees with the computed composite on both engines (within 1 level). Translation: create the Babylon engine with premultiplied alpha | e2e "pinned: the framebuffer, the computed composite and the screenshot agree, per engine"; `test.fail` "known difference: a half-transparent object looks the same …" (since #144: "a half-transparent object looks the same over the camera on both adapters (#144)", passing, Babylon.js 128, 128, 128) |
 
 ### Lights (`scene.light`, browser)
 
@@ -224,7 +224,7 @@ extra fog and accepts the off-axis residual above.
 
 Test: `renderer-options.test.ts`. Calibration (e2e "both renderers: state that decides colours …"): Three.js output
 `srgb`, no tone mapping, exposure 1, premultiplied context; Babylon image processing on, tone mapping off, exposure 1,
-contrast 1, context not premultiplied, clear colour transparent.
+contrast 1, context not premultiplied (premultiplied since #144), clear colour transparent.
 
 ## What each Phase 4 issue must translate
 
@@ -234,10 +234,10 @@ contrast 1, context not premultiplied, clear colour transparent.
 The harness builds with each engine's own classes, while the cases the issue lists (primitives, the three light kinds,
 `setColor` with alpha, `setVisible`) go through `SceneHandle`: add `buildWithAdapter`-style cases for them. The seven
 `test.fail` cases here are the known differences to keep marked until they are fixed: three by #131, the opacity
-and the hemisphere's one-frame lag (three cases) by the draft issues below.
+and the hemisphere's one-frame lag (three cases) by the draft issues below (done by #144 and #145).
 
 **#131, PBR on Babylon.js.** Translate: `PBRMaterial`; colours `Color3.FromHexString(hex).toLinearSpace(true)`; the
-engine created with `useExactSrgbConversions: true` and premultiplied alpha (see the defect below); light k = 1 for
+engine created with `useExactSrgbConversions: true` and premultiplied alpha (see the defect below; done by #144); light k = 1 for
 directional, 1/π for hemisphere and ambient, replacing `BABYLON_INTENSITY`; **a black specular on the hemispheric
 light**, on `StandardMaterial` today and on `PBRMaterial` too (both add a specular term Three.js has not); the
 hemisphere ground colour converted like every colour (0x444444 as sRGB → linear, which gives the same 54 on both on
@@ -256,7 +256,7 @@ tessellations and seams differ), nor the same `detail` meaning across engines wi
 the table; unlit `PBRMaterial.unlit`; textures sRGB on both; wrap and repeat by name; video textures with Babylon's
 two side-effect imports; sphere UVs `uOffset 0.5`, `vScale −1` on Babylon (other shapes to measure). Tolerance: same
 for unlit, emissive, textures; look for lit PBR. Must not promise identical highlights (above), nor opacity over the
-camera until the premultiplied-alpha defect is fixed.
+camera until the premultiplied-alpha defect is fixed (done by #144).
 
 **#134, point and spot lights, shadows, catcher.** Translate: point `distance` → Babylon `range` with
 `FALLOFF_GLTF`; spot `angle` × 2, `innerAngle` = 2 × angle × (1 − penumbra), `exponent` 0, `FALLOFF_GLTF`; k = 1;
@@ -297,6 +297,9 @@ penumbra and point decay are candidates for engine-specific params if a common n
 Not fixed here; each is a `test.fail` case with a passing case that pins both engines' values.
 
 ### fix(babylon): a half-transparent object looks darker over the camera than on Three.js
+
+**Fixed by #144:** the Babylon.js engine is created with `premultipliedAlpha: true`, and gives 128, 128, 128 over the
+page, as Three.js does. The measurements below are kept as they were.
 
 The Babylon.js adapter creates its engine with `premultipliedAlpha: false` (`src/runtime/renderers/babylon-adapter.ts:76`),
 while its framebuffer holds colour × alpha, as Three.js's does. The page then multiplies by alpha a second time: a
