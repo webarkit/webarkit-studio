@@ -123,7 +123,7 @@ In Claude Code, the `new-node` skill (`.claude/skills/new-node/`) walks through 
 
 Before committing, review the diff against the matching checklist:
 
-- [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets. For changes to `src/core/`, `src/nodes/`, `src/plugin-api/`, `src/plugins/`, `src/runtime/registry.ts`, `src/runtime/nodes/`, a plugin's catalog and manifest, and `public/graphs/`.
+- [`docs/agents/checklists/graph-review.md`](docs/agents/checklists/graph-review.md): format changes, catalog / registry consistency, naming, live params, sockets, renderer adapters. For changes to `src/core/`, `src/nodes/`, `src/plugin-api/`, `src/plugins/`, `src/runtime/registry.ts`, `src/runtime/nodes/`, `src/runtime/renderers/`, a plugin's catalog and manifest, and `public/graphs/`.
 - [`docs/agents/checklists/tracking-review.md`](docs/agents/checklists/tracking-review.md): where tracking logic lives, found / lost semantics, lens and projection, units, use of the jsartoolkitNFT facade (#5). For changes to `src/runtime/trackers/`, `plugins/`, the tracker nodes, `src/runtime/filters/` and `tests/integration/`.
 
 In Claude Code, the `graph-reviewer` and `tracking-reviewer` agents run them. In other tools, ask for a review of `git diff dev...HEAD` against the checklist.
