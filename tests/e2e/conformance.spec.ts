@@ -6,7 +6,7 @@
 // - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
 //   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
 // - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
-//   light kinds, and stays a table of its own because #131 cites its test.fail titles. It also checks that an
+//   light kinds on scene.primitive, with the values each engine renders (alike since #131). It also checks that an
 //   adopted hemisphere is aimed on the frame its parent turns (#145; the directions: tests/unit/conformance/hemisphere.test.ts).
 // - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
 //   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
@@ -38,8 +38,11 @@ test.beforeAll(async () => {
   bundle = out.outputFiles[0].text;
 });
 
-/** exactSrgb: Babylon.js with useExactSrgbConversions, the translation the report asks #131 for. */
-async function open(page: Page, engine: Engine, size = 128, exactSrgb = false) {
+/**
+ * exactSrgb: Babylon.js's useExactSrgbConversions forced on or off; left out, the adapter's own, which is on since #131
+ * (the translation the report asked for). The report's experiments of the approximate encode force it off.
+ */
+async function open(page: Page, engine: Engine, size = 128, exactSrgb?: boolean) {
   await page.setContent('<!doctype html><title>conformance</title><body style="margin:0">');
   await page.addScriptTag({ content: bundle });
   await page.evaluate(
@@ -64,7 +67,7 @@ async function shoot(page: Page, desc: SceneDesc, regions: Record<string, [numbe
   );
 }
 
-/** Both engines' results, each from `run(engine)` in a fresh page; Babylon.js with exact sRGB unless `exactSrgb` is false. */
+/** Both engines' results, each from `run(engine)` in a fresh page; Babylon.js with exact sRGB (the adapter's own since #131). */
 async function onBoth<T>(page: Page, size: number, run: (engine: Engine) => Promise<T>, exactSrgb = true): Promise<Record<Engine, T>> {
   const out = {} as Record<Engine, T>;
   for (const engine of ENGINES) {
@@ -125,8 +128,8 @@ test.describe('conformance: colour pipeline', () => {
     for (const engine of ENGINES) expect(maxDiff(r[engine].c, [128, 64, 192]), engine).toBeLessThanOrEqual(SAME);
   });
 
-  test('unlit: the hex colour given to Babylon.js unconverted (Color3.FromHexString, as the adapter does) comes out brighter', async ({ page }) => {
-    await open(page, 'babylon');
+  test('unlit: the hex colour given to Babylon.js unconverted (Color3.FromHexString, as the adapter did before #131) comes out brighter', async ({ page }) => {
+    await open(page, 'babylon', 128, false);
     const r = await shoot(page, { size: 128, objects: [{ ...FILL, material: { kind: 'basic', color: '#8040c0', rawHex: true } }], lights: [] }, { c: CENTRE });
     // Treated as linear and encoded to sRGB on output: 128 → 188, 64 → 137, 192 → 225.
     expect(maxDiff(r.c, [188, 137, 225])).toBeLessThanOrEqual(SAME);
@@ -320,28 +323,29 @@ test.describe('conformance: lights (Babylon.js on PBRMaterial, exact sRGB)', () 
 });
 
 test.describe('conformance: lights in the current adapters (scene.light on scene.primitive)', () => {
-  // Today: Three.js MeshStandardMaterial; Babylon.js StandardMaterial (specularColor 0.2, babylon-adapter.ts:135) with
-  // every light x BABYLON_INTENSITY 0.4. Red channel of a #808080 box whose front face looks at the camera (+Z). Both
-  // adapters point a hemisphere's sky along +Z (three-adapter.ts:20, babylon-adapter.ts:181), so with the sky black and
-  // the box facing it, the ground weighs nothing: what Babylon.js shows is its hemispheric light's specular (white by
-  // default; the adapter blacks it out for ambient only, :188), which Three.js's HemisphereLight does not have.
+  // Three.js MeshStandardMaterial; Babylon.js PBRMaterial with the report's light mapping since #131 (k = 1, 1/π for
+  // hemisphere and ambient; colours in linear; exact sRGB; a hemispheric light's specular black). Before #131 it was
+  // StandardMaterial with every light x 0.4, and these values differed (Babylon.js 20, 51, 56). Red channel of a #808080
+  // box whose front face looks at the camera (+Z). Both adapters point a hemisphere's sky along +Z, so with the sky
+  // black and the box facing it, the ground weighs nothing: a specular term on Babylon.js's hemispheric light, which
+  // Three.js's HemisphereLight does not have, would show there.
   const RX180 = [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1];
   const cases = {
     hemisphereSpecular: { lights: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }] },
     ambient: { lights: [{ kind: 'ambient', color: '#ffffff', intensity: 1 }] },
     directional: { lights: [{ kind: 'directional', color: '#ffffff', intensity: 1 }] },
     // The hemisphere under a group turned 180 degrees about X: the adapters re-orient an adopted hemisphere from its
-    // parent, so the sky points away and the front face sees only the ground (0x444444 on Three.js, 0.3 on Babylon.js).
+    // parent, so the sky points away and the front face sees only the ground (0x444444 on both, in linear).
     groundOnly: { lights: [{ kind: 'hemisphere', color: '#000000', intensity: 1 }], lightsMatrix: RX180 },
   };
   // groundOnly is read on the second frame; the first frame after the hemisphere is adopted, and the frame right after
   // its parent turns, are checked below (#145).
   type Name = keyof typeof cases;
   const pinned: Record<Name, { three: number; babylon: number }> = {
-    hemisphereSpecular: { three: 0, babylon: 20 },
-    ambient: { three: 74, babylon: 51 },
-    directional: { three: 72, babylon: 56 },
-    groundOnly: { three: 13, babylon: 15 },
+    hemisphereSpecular: { three: 0, babylon: 0 },
+    ambient: { three: 74, babylon: 73 },
+    directional: { three: 72, babylon: 72 },
+    groundOnly: { three: 13, babylon: 12 },
   };
   const measure = (page: Page, extra: object = {}, frames = 2) =>
     onBoth(
@@ -361,29 +365,30 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
           },
           [cases, extra, frames] as const,
         ),
-      false,
     );
 
-  test('pinned: what each adapter renders today', async ({ page }) => {
+  test('pinned: what each adapter renders', async ({ page }) => {
     const r = await measure(page);
+    console.log('lights', JSON.stringify(r));
     for (const name of Object.keys(pinned) as Name[]) {
       expect(Math.abs(r.three[name] - pinned[name].three), `three ${name} ${r.three[name]}`).toBeLessThanOrEqual(1);
       expect(Math.abs(r.babylon[name] - pinned[name].babylon), `babylon ${name} ${r.babylon[name]}`).toBeLessThanOrEqual(1);
     }
   });
 
-  test("the hemisphere's 20 on Babylon.js is its specular: black, it gives 0; the ground case does not change", async ({ page }) => {
-    const r = await measure(page, { babylonSpecularBlack: true });
-    expect(r.babylon.hemisphereSpecular).toBe(0);
-    expect(Math.abs(r.babylon.groundOnly - pinned.groundOnly.babylon)).toBeLessThanOrEqual(1);
+  test("the Babylon.js adapter's hemispheric light has no specular: forcing it black changes nothing (#131)", async ({ page }) => {
+    const r = await measure(page);
+    const black = await measure(page, { babylonSpecularBlack: true });
+    // babylonSpecularBlack blacks out every light's specular: the directional light keeps its own on both engines.
+    for (const name of ['hemisphereSpecular', 'ambient', 'groundOnly'] as const) expect(Math.abs(black.babylon[name] - r.babylon[name]), name).toBeLessThanOrEqual(1);
   });
 
-  test('the ground colour alone: the two adapters agree today (13 and 15)', async ({ page }) => {
+  test('the ground colour alone: the two adapters agree', async ({ page }) => {
     const r = await measure(page);
     expect(Math.abs(r.babylon.groundOnly - r.three.groundOnly)).toBeLessThanOrEqual(SAME);
   });
 
-  test('pinned: the first frame after a hemisphere is adopted, the ground already on both (Three.js 13, Babylon.js 15)', async ({ page }) => {
+  test('pinned: the first frame after a hemisphere is adopted, the ground already on both', async ({ page }) => {
     const r = await measure(page, {}, 1);
     expect(Math.abs(r.three.groundOnly - pinned.groundOnly.three), `three ${r.three.groundOnly}`).toBeLessThanOrEqual(1);
     expect(Math.abs(r.babylon.groundOnly - pinned.groundOnly.babylon), `babylon ${r.babylon.groundOnly}`).toBeLessThanOrEqual(1);
@@ -398,7 +403,7 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
   // The parent's matrix changes between two frames; the frame right after is read with one render. Direct: the hemisphere's
   // own group turns. Nested: an anchor turns, the group inside it does not.
   const afterChange = (page: Page, nested: boolean) =>
-    onBoth(page, 128, () => page.evaluate((n) => (window as never as { H: Harness }).H.hemisphereAfterChange(n), nested), false);
+    onBoth(page, 128, () => page.evaluate((n) => (window as never as { H: Harness }).H.hemisphereAfterChange(n), nested));
 
   for (const nested of [false, true]) {
     const shape = nested ? 'a group inside an anchor that turns' : 'its own group that turns';
@@ -419,9 +424,8 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
     });
   }
 
-  for (const name of ['hemisphereSpecular', 'ambient', 'directional'] as const) {
-    test(`known difference (#131): ${name} renders alike on both adapters`, async ({ page }) => {
-      test.fail(true, 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4, and a white specular on its hemispheric light: the pinned values differ; #131 fixes it');
+  for (const name of ['hemisphereSpecular', 'ambient', 'directional', 'groundOnly'] as const) {
+    test(`${name} renders alike on both adapters (#131)`, async ({ page }) => {
       const r = await measure(page);
       expect(Math.abs(r.babylon[name] - r.three[name])).toBeLessThanOrEqual(SAME);
     });
@@ -430,8 +434,8 @@ test.describe('conformance: lights in the current adapters (scene.light on scene
 
 test.describe('conformance: SceneHandle (the adapters as the studio drives them)', () => {
   // One entry per behaviour: an ordered list of SceneHandle calls (AdapterOp), the regions to read, and the rules both
-  // engines must meet. Run on the adapters as they are: Babylon.js without exact sRGB (onBoth(…, false)), since that is
-  // what the studio renders. 128 px, the harness's 90° projection: a point (x, y, z) shows at pixel
+  // engines must meet. Run on the adapters as they are, as the studio renders (Babylon.js with exact sRGB since #131).
+  // 128 px, the harness's 90° projection: a point (x, y, z) shows at pixel
   // 64 + 64·x/−z, 64 − 64·y/−z.
   //
   // A rule reads the frame after the last operation, or, with `frame`, the frame a `render` operation captured under
@@ -441,7 +445,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
   // it, and a passing test pins what each engine renders, so the failing one fails for that reason and no other.
   //
   // The scene has no default lights: an unlit primitive is black on both engines, so a `same` rule on it compares
-  // coverage (alpha) only, not colour, while the lit colours differ (#131).
+  // coverage (alpha) only; the cases with a light compare the lit colour (#131).
 
   type Region = [number, number, number, number];
   type Rule = (
@@ -589,15 +593,57 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { op: 'addRoot', id: 'b' },
       ],
       regions: { centre: [60, 60, 8, 8], b: [104, 62, 4, 4] },
-      rules: [{ region: 'b', is: 'drawn' }, { region: 'centre', is: 'sameAlpha' }],
-      known: {
-        issue: '#131',
-        why: 'Babylon.js StandardMaterial with BABYLON_INTENSITY 0.4 and colours unconverted: the lit colour differs; #131 fixes it',
-        rules: [{ region: 'centre', is: 'same' }],
-        // Premultiplied in the framebuffer on both: colour × alpha, alpha 128.
-        pinned: { three: { centre: [55, 36, 18, 128] }, babylon: { centre: [39.875, 27.875, 15.875, 128] } },
-      },
+      // Premultiplied in the framebuffer on both: colour × alpha, alpha 128. Before #131 the lit colour differed
+      // (Three.js 55, 36, 18 against Babylon.js 40, 28, 16).
+      rules: [{ region: 'b', is: 'drawn' }, { region: 'centre', is: 'sameAlpha' }, { region: 'b', is: 'same' }, { region: 'centre', is: 'same' }],
     },
+    // #131: a coloured primitive under each light kind, and a light's colour and intensity set live. A light's colour
+    // and the material's are sRGB on both (converted to linear on Babylon.js); Babylon.js takes k = 1 for a directional
+    // light, 1/π for hemisphere and ambient. The box faces the camera; a hemisphere's sky (+Z) faces the box.
+    ...(['directional', 'hemisphere', 'ambient'] as const).map(
+      (kind): Case => ({
+        name: `a coloured box under ${kind === 'ambient' ? 'an' : 'a'} ${kind} light: the same colour (#131)`,
+        ops: [{ op: 'createLight', id: 'l', spec: { kind, color: '#ffffff', intensity: 1 } }, { op: 'addRoot', id: 'l' }, ...box('a', 40, [0, 0, -80], '#c08040'), { op: 'addRoot', id: 'a' }],
+        regions: { centre: [60, 60, 8, 8] },
+        rules: [{ region: 'centre', is: 'drawn' }, { region: 'centre', is: 'same' }],
+      }),
+    ),
+    {
+      name: "setColor and setIntensity on a light: the box's colour follows on both (#131)",
+      ops: [
+        { op: 'createLight', id: 'l', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } },
+        { op: 'addRoot', id: 'l' },
+        ...box('a', 40, [0, 0, -80]),
+        { op: 'addRoot', id: 'a' },
+        { op: 'setColor', id: 'l', color: [1, 0.5, 0.25, 1] },
+        { op: 'setIntensity', id: 'l', intensity: 2 },
+      ],
+      regions: { centre: [60, 60, 8, 8] },
+      rules: [{ region: 'centre', is: 'drawn' }, { region: 'centre', is: 'same' }],
+    },
+    // #131: the pinball demos' scene (pinball-three, pinball-babylon): a torus knot under a directional light at 2.5 and
+    // an ambient one at 0.6, in each demo's colour. Its tube slopes away from the camera, so the regions (one pixel row
+    // each, inside the tube on rows 56, 64 and 72; the knot's transitions are in the createPrimitive case) see grazing
+    // angles the boxes do not.
+    ...(['#ff0055', '#3a8dff'] as const).map(
+      (color): Case => ({
+        name: `the pinball demos' torus knot (${color}) under their two lights: the same shading (#131)`,
+        ops: [
+          { op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 2.5 } },
+          { op: 'addRoot', id: 'sun' },
+          { op: 'createLight', id: 'amb', spec: { kind: 'ambient', color: '#ffffff', intensity: 0.6 } },
+          { op: 'addRoot', id: 'amb' },
+          { op: 'createPrimitive', id: 'k', spec: { shape: 'torusKnot', size: 40, color } },
+          { op: 'setPosition', id: 'k', position: [0, 0, -80] },
+          { op: 'addRoot', id: 'k' },
+        ],
+        regions: { r64a: [51, 64, 4, 1], r64b: [68, 64, 3, 1], r56: [65, 56, 6, 1], r72: [66, 72, 6, 1] },
+        rules: (['r64a', 'r64b', 'r56', 'r72'] as const).flatMap((region): Rule[] => [
+          { region, is: 'drawn' },
+          { region, is: 'same' },
+        ]),
+      }),
+    ),
   ];
 
   const FINAL = 'final';
@@ -639,7 +685,6 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
           },
           [c.ops, c.regions ?? {}, needs, FINAL] as const,
         ),
-      false,
     );
   };
 

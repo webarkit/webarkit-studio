@@ -15,7 +15,10 @@ import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { Light } from '@babylonjs/core/Lights/light';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';
+// For its side effect: it registers Scene.DefaultMaterialFactory, which scene.defaultMaterial needs for a mesh with no
+// material (scene.pure.js). Primitives no longer use StandardMaterial (#131), but that import used to register it.
+import '@babylonjs/core/Materials/standardMaterial';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Node as BabylonNode } from '@babylonjs/core/node';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
@@ -40,10 +43,20 @@ import {
 } from './adapter';
 
 /**
- * Light intensities are authored on the Three.js scale (the graph is
- * engine-agnostic); Babylon's StandardMaterial saturates much sooner.
+ * Light intensities are authored on the Three.js scale (the graph is engine-agnostic). On PBRMaterial, Babylon.js's
+ * directional light matches Three.js's at the same intensity, while its hemispheric light (hemisphere and ambient) adds
+ * mix(ground, sky, NdotL) with no division by π: k = 1/π (docs/proposals/scene-nodes-equivalence.md, "Lights", #131).
  */
-const BABYLON_INTENSITY = 0.4;
+const intensityScale = (kind: LightSpec['kind']) => (kind === 'directional' ? 1 : 1 / Math.PI);
+
+/**
+ * Colours are sRGB in the graph (`#rrggbb`, or 0–1). Three.js converts them to linear; Babylon.js takes Color3 values
+ * as linear, so they are converted here, with the exact curve (`toLinearSpace(true)`).
+ */
+const linearHex = (hex: string) => Color3.FromHexString(hex).toLinearSpace(true);
+const linearRgb = (r: number, g: number, b: number) => new Color3(r, g, b).toLinearSpace(true);
+/** Three.js's HemisphereLight ground colour in the Three.js adapter. */
+const HEMISPHERE_GROUND = '#444444';
 
 /** A model's clips, by the index of `names`, and the one it holds. */
 interface ModelClips {
@@ -76,7 +89,9 @@ export function createBabylonAdapter(opts: { antialias: boolean }): RendererAdap
   // The framebuffer holds colour × alpha, as Three.js's does, so the page must composite it as premultiplied: with
   // premultipliedAlpha false it multiplied by alpha a second time, and a half-transparent object looked darker over the
   // camera than on Three.js (#144). True is Babylon.js's default; it is written out here for that reason.
-  const engine = new Engine(canvas, opts.antialias, { alpha: true, premultipliedAlpha: true }, true);
+  // useExactSrgbConversions: the output is encoded with the sRGB curve, as Three.js does, not pow(x, 1/2.2), which is up
+  // to 4 levels brighter in the darks (#131).
+  const engine = new Engine(canvas, opts.antialias, { alpha: true, premultipliedAlpha: true, useExactSrgbConversions: true }, true);
 
   const adapter: RendererAdapter = {
     kind: 'Babylon.js',
@@ -118,6 +133,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const scratch = { s: new Vector3(), r: new Quaternion(), t: new Vector3() };
   /** Hemispheric lights standing in for ambient ones: their ground follows their colour. */
   const ambients = new WeakSet<Light>();
+  /** Each light's intensity scale (intensityScale), for setIntensity. */
+  const scales = new WeakMap<Light, number>();
   /** Hemispheric lights with a parent, and their direction in the parent's space. */
   const adoptedHemis = new Map<HemisphericLight, Vector3>();
   const modelClips = new WeakMap<BabylonNode, ModelClips>();
@@ -133,9 +150,15 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           : spec.shape === 'torusKnot'
             ? CreateTorusKnot('torusKnot', { radius: s / 3, tube: s / 10, radialSegments: 100, tubularSegments: 16 }, scene)
             : CreateBox('box', { size: s }, scene);
-      const material = new StandardMaterial(`${spec.shape}-material`, scene);
-      material.diffuseColor = Color3.FromHexString(spec.color);
-      material.specularColor = new Color3(0.2, 0.2, 0.2);
+      // Three.js's MeshStandardMaterial in the Three.js adapter: metalness 0, roughness 1 (Babylon's are null, its
+      // engine's own defaults apply unless set), emissive black. No specular or radiance over alpha: on Three.js a
+      // highlight does not make a half-transparent mesh more opaque.
+      const material = new PBRMaterial(`${spec.shape}-material`, scene);
+      material.albedoColor = linearHex(spec.color);
+      material.metallic = 0;
+      material.roughness = 1;
+      material.useSpecularOverAlpha = false;
+      material.useRadianceOverAlpha = false;
       mesh.material = material;
       return wrap(mesh);
     },
@@ -182,14 +205,16 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         spec.kind === 'directional'
           ? new DirectionalLight('directional', new Vector3(-0.2, 0.3, -1), scene)
           : new HemisphericLight(spec.kind, new Vector3(0, 0, 1), scene);
-      light.diffuse = Color3.FromHexString(spec.color);
-      light.intensity = spec.intensity * BABYLON_INTENSITY;
-      if (spec.kind === 'hemisphere') (light as HemisphericLight).groundColor = new Color3(0.3, 0.3, 0.3);
-      if (spec.kind === 'ambient') {
-        // Babylon has no ambient light: a hemisphere with equal sky / ground colour is equivalent.
-        (light as HemisphericLight).groundColor = Color3.FromHexString(spec.color);
+      light.diffuse = linearHex(spec.color);
+      light.specular = light.diffuse.clone();
+      scales.set(light, intensityScale(spec.kind));
+      light.intensity = spec.intensity * intensityScale(spec.kind);
+      if (light instanceof HemisphericLight) {
+        // Three.js's HemisphereLight and AmbientLight have no specular term; PBRMaterial adds one for a hemispheric light.
         light.specular = Color3.Black();
-        ambients.add(light);
+        // Babylon has no ambient light: a hemisphere with equal sky / ground colour is equivalent.
+        light.groundColor = spec.kind === 'ambient' ? light.diffuse.clone() : linearHex(HEMISPHERE_GROUND);
+        if (spec.kind === 'ambient') ambients.add(light);
       }
       return wrap(light);
     },
@@ -219,19 +244,25 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     },
     setColor(o, [r, g, b, a]) {
       const n = node(o);
-      // sRGB values, as Color3.FromHexString gives them for the params.
+      // sRGB values, as the params' hex colours are: converted to linear, as Three.js does.
       if (n instanceof Light) {
-        n.diffuse = new Color3(r, g, b);
+        n.diffuse = linearRgb(r, g, b);
+        // A hemispheric light keeps its black specular; a directional light's follows its colour.
+        if (!(n instanceof HemisphericLight)) n.specular = n.diffuse.clone();
         // An ambient light has one colour (sky = ground); a hemisphere keeps its fixed ground.
-        if (ambients.has(n)) (n as HemisphericLight).groundColor = new Color3(r, g, b);
+        if (ambients.has(n)) (n as HemisphericLight).groundColor = n.diffuse.clone();
         return;
       }
-      const material = (n as AbstractMesh).material as StandardMaterial | null;
-      if (!material) return;
-      material.diffuseColor = new Color3(r, g, b);
+      const material = (n as AbstractMesh).material;
+      if (!(material instanceof PBRMaterial)) return;
+      material.albedoColor = linearRgb(r, g, b);
       material.alpha = a; // below 1, Babylon draws the mesh in its transparent pass
     },
-    setIntensity: (o, i) => void ((node(o) as Light).intensity = i * BABYLON_INTENSITY),
+    setIntensity(o, i) {
+      const light = node(o) as Light;
+      // Every light comes from createLight, which records its scale: the fallback is never reached.
+      light.intensity = i * (scales.get(light) ?? 1);
+    },
 
     animations: (o) => [...(modelClips.get(node(o))?.names ?? [])],
     playAnimation(o, clip, { loop = true, speed = 1 }: AnimationOptions = {}) {
@@ -301,7 +332,9 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   };
 
   if (defaultLights) {
-    handle.addRoot(handle.createLight({ kind: 'hemisphere', color: '#ffffff', intensity: 3 }));
+    // The Three.js adapter's default lights.
+    handle.addRoot(handle.createLight({ kind: 'hemisphere', color: '#ffffff', intensity: 2.5 }));
+    handle.addRoot(handle.createLight({ kind: 'directional', color: '#ffffff', intensity: 1.5 }));
   }
   return handle;
 }

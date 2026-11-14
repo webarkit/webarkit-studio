@@ -623,7 +623,9 @@ there and lights the scene from the viewer. Wired to a Marker Anchor's
 marker). The adapters hide engine differences: Three.js derives a hemisphere
 light's direction from its world position, and Babylon.js ignores a
 hemispheric light's parent, so both are re-oriented from the parent each
-frame. Intensities use the Three.js scale; Babylon scales them down.
+frame. Intensities and colours use the Three.js scale: the Babylon.js adapter
+renders on `PBRMaterial`, as Three.js on `MeshStandardMaterial`, and maps
+them so the same graph looks alike on both.
 
 ### Execution model
 
