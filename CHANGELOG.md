@@ -24,6 +24,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - A half-transparent object on Babylon.js looks as it does on Three.js over the camera (#144): its colour
   was multiplied by its opacity twice, so it looked darker (80, 96, 112 instead of 128, 128, 128 for an
   orange at 0.5 over a blue).
+- A half-transparent glTF model on Babylon.js no longer grows more opaque where a light's highlight falls
+  on it (#153): its alpha there was 168 instead of 128, as on Three.js.
 
 ## [0.3.0] - 2026-11-12
 
