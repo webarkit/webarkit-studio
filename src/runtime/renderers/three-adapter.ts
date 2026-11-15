@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
+import { normalizeMaterial, normalizeTexture, type MaterialSide, type TextureSpec, type TextureWrap } from '../../core/material';
 import {
   assertOwned,
   checkAnimationSpeed,
@@ -8,6 +9,10 @@ import {
   type AnimationOptions,
   type GeometryObject,
   type LightSpec,
+  type MaterialObject,
+  type MaterialSetup,
+  type TextureObject,
+  type TextureSource,
   type ModelSpec,
   type RendererAdapter,
   type SceneHandle,
@@ -46,6 +51,26 @@ export function threeGeometry(given: GeometrySpec): THREE.BufferGeometry {
 export interface ThreeGeometryState {
   geometry: THREE.BufferGeometry;
   meshes: Set<THREE.Mesh>;
+}
+
+/**
+ * A material handle's own state (#133): the engine material its meshes draw with now (MeshStandardMaterial, or
+ * MeshBasicMaterial when unlit: setMaterial swaps it on each mesh), and those meshes.
+ */
+export interface ThreeMaterialState {
+  material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+  meshes: Set<THREE.Mesh>;
+}
+
+const SIDES: Record<MaterialSide, THREE.Side> = { front: THREE.FrontSide, back: THREE.BackSide, double: THREE.DoubleSide };
+const WRAPS: Record<TextureWrap, THREE.Wrapping> = { clamp: THREE.ClampToEdgeWrapping, repeat: THREE.RepeatWrapping, mirror: THREE.MirroredRepeatWrapping };
+
+/** Wrap and repeat, normalised. A wrap is a sampler setting, applied on the next upload. */
+function applyTexture(texture: THREE.Texture, given: TextureSpec) {
+  const spec = normalizeTexture(given);
+  texture.wrapS = texture.wrapT = WRAPS[spec.wrap];
+  texture.repeat.set(spec.repeatU, spec.repeatV);
+  texture.needsUpdate = true;
 }
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
@@ -99,6 +124,46 @@ function createThreeScene(
   const meshGeometry = new WeakMap<THREE.Object3D, ThreeGeometryState>();
   /** The geometries createGeometry made and keeps: a release never disposes one, the scene's teardown does. */
   const sharedGeometries = new WeakSet<THREE.BufferGeometry>();
+  /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
+  const ownMaterial = new WeakMap<THREE.Object3D, THREE.MeshStandardMaterial>();
+  /** Each mesh given a createMaterial material, and that material's state. */
+  const meshMaterial = new WeakMap<THREE.Object3D, ThreeMaterialState>();
+  const materialState = (m: MaterialObject) => (assertOwned(handle, m), m.native as ThreeMaterialState);
+  const textureOf = (t: TextureObject) => (assertOwned(handle, t), t.native as THREE.Texture);
+  /** The engine material of a setup: the class it needs (unlit or not), its values written in. */
+  const writeMaterial = (state: ThreeMaterialState | null, setup: MaterialSetup) => {
+    const spec = normalizeMaterial(setup);
+    const map = setup.map ? textureOf(setup.map) : null;
+    let material = state?.material;
+    if (!material || material instanceof THREE.MeshBasicMaterial !== spec.unlit) {
+      const old = material;
+      material = spec.unlit ? new THREE.MeshBasicMaterial() : new THREE.MeshStandardMaterial();
+      disposables.add(material);
+      if (state && old) {
+        state.material = material;
+        for (const mesh of state.meshes) mesh.material = material;
+        disposables.delete(old);
+        old.dispose(); // its map is the texture node's: a material's dispose() leaves its textures alone
+      }
+    }
+    // Colours are sRGB, converted to linear as the param colours are (#131).
+    material.color.setRGB(...spec.color, THREE.SRGBColorSpace);
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.metalness = spec.metalness;
+      material.roughness = spec.roughness;
+      material.emissive.setRGB(...spec.emissive, THREE.SRGBColorSpace);
+      material.emissiveIntensity = spec.emissiveIntensity;
+    }
+    material.map = map;
+    material.side = SIDES[spec.side];
+    const transparent = spec.opacity < 1;
+    material.transparent = transparent;
+    material.opacity = spec.opacity;
+    material.depthWrite = !transparent;
+    // A map, a side or transparency set or unset changes the shader's defines.
+    material.needsUpdate = true;
+    return material;
+  };
   const modelClips = new WeakMap<THREE.Object3D, ModelClips>();
   const mixers = new Set<THREE.AnimationMixer>();
   /** Mixers with a clip started since the last render: it starts at its beginning, not with the time before it existed. */
@@ -136,7 +201,48 @@ function createThreeScene(
       const mesh = new THREE.Mesh(state.geometry, material);
       state.meshes.add(mesh);
       meshGeometry.set(mesh, state);
+      ownMaterial.set(mesh, material);
       return wrap(mesh);
+    },
+    createMaterial(setup) {
+      const state: ThreeMaterialState = { material: null as never, meshes: new Set() };
+      state.material = writeMaterial(null, setup);
+      return { scene: handle, native: state, kind: 'material' };
+    },
+    setMaterial(m, setup) {
+      writeMaterial(materialState(m), setup);
+    },
+    async createTexture(source: TextureSource, spec) {
+      // Images with mipmaps and trilinear filtering, a video without (it changes every frame), as on Babylon.js.
+      const texture = source.kind === 'video' ? new THREE.VideoTexture(source.element) : new THREE.Texture(source.element);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      if (source.kind === 'video') {
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+      } else {
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+      }
+      texture.magFilter = THREE.LinearFilter;
+      applyTexture(texture, spec);
+      disposables.add(texture);
+      return { scene: handle, native: texture, kind: 'texture' };
+    },
+    setTexture(t, spec) {
+      applyTexture(textureOf(t), spec);
+    },
+    setMeshMaterial(o, m) {
+      const mesh = obj(o) as THREE.Mesh;
+      const next = m ? materialState(m) : null;
+      meshMaterial.get(mesh)?.meshes.delete(mesh);
+      meshMaterial.delete(mesh);
+      if (next) {
+        next.meshes.add(mesh);
+        meshMaterial.set(mesh, next);
+        mesh.material = next.material;
+      } else {
+        mesh.material = ownMaterial.get(mesh) ?? mesh.material;
+      }
     },
     async loadModel(spec: ModelSpec) {
       // Loaded on demand: graphs without glTF models do not download the loader.
@@ -184,6 +290,14 @@ function createThreeScene(
       root.traverse((x) => {
         meshGeometry.get(x)?.meshes.delete(x as THREE.Mesh);
         meshGeometry.delete(x);
+        // A mesh with a shared material (#133) leaves it and goes with its own: the shared one and its map stay, for the
+        // other meshes and the scene's teardown.
+        const shared = meshMaterial.get(x);
+        if (shared) {
+          shared.meshes.delete(x as THREE.Mesh);
+          meshMaterial.delete(x);
+          (x as THREE.Mesh).material = ownMaterial.get(x) ?? (x as THREE.Mesh).material;
+        }
       });
       // Its material goes; a geometry other meshes share stays, for the scene's teardown to free.
       disposeObject3D(root, (geometry) => sharedGeometries.has(geometry));
@@ -238,7 +352,8 @@ function createThreeScene(
         n.color.setRGB(r, g, b, THREE.SRGBColorSpace);
         return;
       }
-      const material = (n as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      // A mesh's own material, even while it draws with a shared one (#133).
+      const material = ownMaterial.get(n) ?? ((n as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined);
       if (!material?.color) return;
       material.color.setRGB(r, g, b, THREE.SRGBColorSpace);
       const transparent = a < 1;
