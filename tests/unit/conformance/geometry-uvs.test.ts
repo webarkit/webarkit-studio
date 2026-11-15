@@ -3,13 +3,14 @@
  * adapter's geometry (threeGeometry), the UV of the Babylon.js adapter's geometry (babylonVertexData) at the same
  * surface point is read, and the exact relation between the two is found: a sign or swap of u and v, plus an offset,
  * wrapped on an axis that goes round the shape. A texture shows the same on both engines where the relation is the
- * identity. This pins what each shape does today (docs/proposals/scene-nodes-equivalence.md, "UVs on other shapes"):
- * #162 builds Babylon.js's shapes from Three.js's generators, which makes every line `t = (u, v) + (0.0000, 0.0000)`.
+ * identity, on every shape since #162 built Babylon.js's shapes from Three.js's generators (before, only the plane's
+ * was: docs/proposals/scene-nodes-equivalence.md, "UVs on other shapes").
  */
 import { describe, expect, it } from 'vitest';
 import { threeGeometry } from '../../../src/runtime/renderers/three-adapter';
 import { babylonVertexData } from '../../../src/runtime/renderers/babylon-adapter';
 import type { GeometrySpec } from '../../../src/core/geometry';
+import { fromBabylon, measure } from './geometry-cases';
 
 type V3 = [number, number, number];
 interface Tri { p: [V3, V3, V3]; uv: [[number, number], [number, number], [number, number]] }
@@ -73,7 +74,7 @@ function fit(samples: Array<{ three: [number, number]; babylon: [number, number]
     const off = [0, 1].map((k) => { const ref = ds[0][k]; const m = ds.reduce((a, d) => a + wrapd(d[k] - ref, periodic[k]), 0) / ds.length; return ref + m; });
     const res = Math.max(...ds.map((d) => Math.max(...[0, 1].map((k) => Math.abs(wrapd(d[k] - off[k], periodic[k]))))));
     worst.push([res, name, off]);
-    if (res < 2e-3) out.push(`t = (${name}) + (${off.map((x) => (periodic[0] ? x : x).toFixed(4)).join(', ')})`);
+    if (res < 2e-3) out.push(`t = (${name}) + (${off.map((x) => (Math.abs(x) < 5e-5 ? 0 : x).toFixed(4)).join(', ')})`);
   }
   if (!out.length) {
     worst.sort((a, b) => a[0] - b[0]);
@@ -124,40 +125,24 @@ function relations(name: string, spec: GeometrySpec): Record<string, string> {
   return Object.fromEntries([...groups].map(([key, samples]) => [key, fit(samples, PERIODIC[name])[0]]));
 }
 
-describe('UVs on the core shapes: Babylon.js against Three.js (#133)', () => {
-  it('the plane: the same', () => {
-    expect(relations('plane', SHAPES.plane)).toEqual({ all: 't = (u, v) + (0.0000, 0.0000)' });
+describe('UVs on the core shapes: Babylon.js against Three.js (#133, #162)', () => {
+  // Both adapters build every shape with Three.js's generators (#162): each part of each shape (the box's faces, the
+  // cylinder's caps and side, the capsule's caps and middle) has Three.js's texture coordinates, at every point.
+  it.each(Object.keys(SHAPES))('%s: the same as Three.js', (name) => {
+    const r = relations(name, SHAPES[name]);
+    expect(Object.keys(r).length).toBeGreaterThan(0);
+    for (const [part, fit] of Object.entries(r)) expect(fit, `${name} ${part}`).toBe('t = (u, v) + (0.0000, 0.0000)');
   });
+});
 
-  it('pinned: the box, each face a sign or swap of u and v', () => {
-    expect(relations('box', SHAPES.box)).toEqual({
-      '+X': 't = (v, u) + (0.0000, -0.0000)',
-      '-X': 't = (v, u) + (0.0000, -0.0000)',
-      '+Y': 't = (-v, -u) + (1.0000, 1.0000)',
-      '-Y': 't = (v, u) + (0.0000, -0.0000)',
-      '+Z': 't = (u, -v) + (-0.0000, 1.0000)',
-      '-Z': 't = (-u, v) + (1.0000, -0.0000)',
-    });
-  });
-
-  it('pinned: the cylinder, its caps swapped, its side a quarter turn round', () => {
-    const r = relations('cylinder', SHAPES.cylinder);
-    expect(r.top).toBe('t = (v, u) + (-0.0000, -0.0000)');
-    expect(r.bottom).toBe('t = (v, -u) + (-0.0000, 1.0000)');
-    expect(r.side).toMatch(/^t = \(u, v\) \+ \(-0\.74\d\d, 0\.0000\)$/);
-  });
-
-  it.each(['sphere', 'torusKnot', 'capsule'] as const)('pinned: %s, no exact relation', (name) => {
-    for (const fit of Object.values(relations(name, SHAPES[name]))) expect(fit).toMatch(/^NO EXACT FIT/);
-  });
-
-  it('pinned: the torus, u mirrored a quarter turn on, v half a turn round the tube', () => {
-    expect(relations('torus', SHAPES.torus)).toEqual({ all: 't = (-u, v) + (0.2500, -0.5000)' });
-  });
-
-  // Known differences: #162 builds Babylon.js's shapes from Three.js's generators, and these pass then (remove `fails`
-  // and the pinned tests above).
-  it.fails.each(['box', 'sphere', 'cylinder', 'torus', 'torusKnot', 'capsule'] as const)('known difference (#162): %s, the same as Three.js', (name) => {
-    for (const fit of Object.values(relations(name, SHAPES[name]))) expect(fit).toBe('t = (u, v) + (0.0000, 0.0000)');
+describe("the Babylon.js adapter's shapes face the way Three.js's do (#162)", () => {
+  // Three.js's generators wind front faces counter-clockwise; a mesh in a right-handed Babylon.js scene takes clockwise
+  // ones as its front (sideOrientation 0), as Babylon.js's own builders wind them. The adapter swaps each triangle's
+  // corners: its triangles wind clockwise about the same normals, which stay Three.js's.
+  it.each(Object.keys(SHAPES))("%s: clockwise about its normals, the normals Three.js's", (name) => {
+    const babylon = babylonVertexData(SHAPES[name]);
+    expect(measure(fromBabylon(babylon)).windingAgreesWithNormals).toBe(0);
+    const three = threeGeometry(SHAPES[name]);
+    expect(Array.from(babylon.normals!)).toEqual(Array.from(three.getAttribute('normal').array));
   });
 });

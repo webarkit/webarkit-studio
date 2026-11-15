@@ -1087,20 +1087,19 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       regions: { L: [24, 44, 4, 4], R: [88, 44, 4, 4], L2: [44, 70, 4, 4], R2: [108, 70, 4, 4] },
       rules: [...liveRules(), { region: 'L2', is: 'matches', other: 'R2' }],
     },
-    // #133: a texture on the other shapes. Only the plane lies the same on both engines: Babylon.js's builders place
-    // their texture coordinates differently (tests/unit/conformance/geometry-uvs.test.ts). #162 builds Babylon.js's
-    // shapes from Three.js's generators, which makes them match: these cases then lose their `known`.
+    // #133: a texture on the other shapes, the same on both engines since #162 builds Babylon.js's shapes from
+    // Three.js's generators (before, only the plane matched: tests/unit/conformance/geometry-uvs.test.ts).
     ...(
       [
-        ['box', { shape: 'box', width: 60, depth: 60, height: 60 }, [0, 0, -120], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }, { three: { c: [128, 128, 128, 255], a: [255, 0, 0, 255], b: [255, 255, 255, 255] }, babylon: { c: [128, 128, 128, 255], a: [0, 0, 255, 255], b: [0, 255, 0, 255] } }],
-        ['sphere', { shape: 'sphere', radius: 45, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }, { three: { c: [173.75, 127.5, 115, 255], a: [0, 255, 0, 255], b: [255, 0, 0, 255] }, babylon: { c: [172.875, 127.5, 232.25, 255], a: [0, 0, 255, 255], b: [255, 255, 255, 255] } }],
-        ['cylinder, its top', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 20, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 76, 4, 4], b: [76, 50, 4, 4] }, { three: { c: [128, 128, 128, 255], a: [255, 255, 255, 255], b: [255, 0, 0, 255] }, babylon: { c: [128, 128, 128, 255], a: [255, 0, 0, 255], b: [255, 255, 255, 255] } }],
-        ['cylinder, its side', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 80, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [54, 50, 4, 4], b: [70, 74, 4, 4] }, { three: { c: [169.75, 168.5, 139.25, 255], a: [0, 255, 0, 255], b: [0, 0, 255, 255] }, babylon: { c: [139.25, 255, 139.25, 255], a: [0, 255, 0, 255], b: [255, 255, 255, 255] } }],
-        ['torus', { shape: 'torus', radius: 35, tube: 15, detail: 64 }, [0, 0, -110], null, { c: [84, 62, 4, 4], a: [40, 62, 4, 4], b: [62, 40, 4, 4] }, { three: { c: [154.6875, 154.6875, 255, 255], a: [154.75, 154.75, 255, 255], b: [0, 0, 255, 255] }, babylon: { c: [255, 0, 0, 255], a: [0, 255, 0, 255], b: [154.75, 154.6875, 0, 255] } }],
-        ['capsule, its side', { shape: 'capsule', radius: 30, height: 100, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [56, 46, 4, 4], b: [68, 78, 4, 4] }, { three: { c: [148.8125, 0, 148.8125, 255], a: [255, 0, 0, 255], b: [0, 0, 255, 255] }, babylon: { c: [163, 163, 255, 255], a: [174.75, 255, 174.75, 255], b: [255, 0, 0, 255] } }],
+        ['box', { shape: 'box', width: 60, depth: 60, height: 60 }, [0, 0, -120], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }],
+        ['sphere', { shape: 'sphere', radius: 45, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }],
+        ['cylinder, its top', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 20, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 76, 4, 4], b: [76, 50, 4, 4] }],
+        ['cylinder, its side', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 80, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [54, 50, 4, 4], b: [70, 74, 4, 4] }],
+        ['torus', { shape: 'torus', radius: 35, tube: 15, detail: 64 }, [0, 0, -110], null, { c: [84, 62, 4, 4], a: [40, 62, 4, 4], b: [62, 40, 4, 4] }],
+        ['capsule, its side', { shape: 'capsule', radius: 30, height: 100, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [56, 46, 4, 4], b: [68, 78, 4, 4] }],
       ] as const
     ).map(
-      ([what, spec, at, matrix, regions, pinned]): Case => ({
+      ([what, spec, at, matrix, regions]): Case => ({
         name: `a texture on a ${what}, unlit (#133)`,
         ops: [
           { op: 'createTexture', id: 't', source: 'quadrants', spec: tex() },
@@ -1112,14 +1111,14 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
           { op: 'setMeshMaterial', mesh: 'shape', material: 'm' },
         ],
         regions: regions as unknown as Record<string, Region>,
-        rules: [{ region: 'c', is: 'drawn' }, { region: 'a', is: 'drawn' }, { region: 'b', is: 'drawn' }],
-        known: {
-          issue: '#162',
-          why: "Babylon.js's builders place a shape's texture coordinates differently from Three.js's; #162 builds them from Three.js's generators",
-          rules: [{ region: 'c', is: 'same' }, { region: 'a', is: 'same' }, { region: 'b', is: 'same' }],
-          // What each engine shows today, measured on Chromium revision 1248.
-          pinned: pinned as unknown as Record<Engine, Record<string, number[]>>,
-        },
+        rules: [
+          { region: 'c', is: 'drawn' },
+          { region: 'a', is: 'drawn' },
+          { region: 'b', is: 'drawn' },
+          { region: 'c', is: 'same' },
+          { region: 'a', is: 'same' },
+          { region: 'b', is: 'same' },
+        ],
       }),
     ),
   ];

@@ -27,14 +27,17 @@ import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { Geometry } from '@babylonjs/core/Meshes/geometry';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
-import { CreateBoxVertexData } from '@babylonjs/core/Meshes/Builders/boxBuilder';
-import { CreateSphereVertexData } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
-import { CreateCylinderVertexData } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
-import { CreatePlaneVertexData } from '@babylonjs/core/Meshes/Builders/planeBuilder';
-import { CreateTorusVertexData } from '@babylonjs/core/Meshes/Builders/torusBuilder';
-import { CreateTorusKnotVertexData } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
-import { CreateCapsuleVertexData } from '@babylonjs/core/Meshes/Builders/capsuleBuilder';
-import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
+// Three.js's own geometry generators, imported from their files so this chunk carries them and not the rest of three
+// (#162): both engines build every shape from them (three-shapes.ts).
+import { BoxGeometry } from 'three/src/geometries/BoxGeometry.js';
+import { SphereGeometry } from 'three/src/geometries/SphereGeometry.js';
+import { CylinderGeometry } from 'three/src/geometries/CylinderGeometry.js';
+import { PlaneGeometry } from 'three/src/geometries/PlaneGeometry.js';
+import { TorusGeometry } from 'three/src/geometries/TorusGeometry.js';
+import { TorusKnotGeometry } from 'three/src/geometries/TorusKnotGeometry.js';
+import { CapsuleGeometry } from 'three/src/geometries/CapsuleGeometry.js';
+import type { GeometrySpec } from '../../core/geometry';
+import { threeShape } from './three-shapes';
 import { normalizeMaterial, normalizeTexture, type TextureSpec, type TextureWrap } from '../../core/material';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
@@ -120,46 +123,29 @@ function threeLikePbr(name: string, scene: Scene): PBRMaterial {
 /** Three.js's HemisphereLight ground colour in the Three.js adapter. */
 const HEMISPHERE_GROUND = '#444444';
 
+const GENERATORS = { BoxGeometry, SphereGeometry, CylinderGeometry, PlaneGeometry, TorusGeometry, TorusKnotGeometry, CapsuleGeometry };
+
 /**
- * A core shape as Babylon.js vertex data, in marker space (#132; the report's "Geometry"): radii become diameters;
- * Babylon.js builds the sphere, cylinder and capsule along +Y, turned +90° about X onto +Z, and the torus in XZ, turned
- * −90° about X into XY; the plane is built BACKSIDE, its normal then +Z as on Three.js; the torus knot's segments along
- * the knot are Babylon.js's radialSegments, so its vertices are Three.js's. A box's height is the core's Z.
+ * A core shape as Babylon.js vertex data, in marker space (#162): built with Three.js's generators (three-shapes.ts),
+ * so Babylon.js draws the Three.js adapter's mesh: the same positions, normals, texture coordinates and triangles.
+ *
+ * Only the order of each triangle's corners differs. Three.js's front faces wind counter-clockwise; a mesh in a
+ * right-handed Babylon.js scene takes clockwise ones as its front (sideOrientation 0, mesh.pure.js, the Mesh
+ * constructor), as its own builders wind them (tests/unit/conformance/geometry.test.ts). Each triangle's last two
+ * corners are swapped, so the faces Three.js shows are the ones Babylon.js shows; the normals stay Three.js's.
  */
-export function babylonVertexData(given: GeometrySpec): VertexData {
-  const spec = normalizeGeometry(given);
-  const turned = (data: VertexData, radians: number) => (data.transform(Matrix.RotationX(radians)), data);
-  switch (spec.shape) {
-    case 'box':
-      return CreateBoxVertexData({ width: spec.width, height: spec.depth, depth: spec.height });
-    case 'sphere':
-      // Babylon.js puts 2 × (segments + 2) segments around its axis (sphereBuilder.pure.js): detail around Z, as on Three.js.
-      return turned(CreateSphereVertexData({ diameter: 2 * spec.radius, segments: spec.detail / 2 - 2 }), Math.PI / 2);
-    case 'cylinder':
-      return turned(
-        CreateCylinderVertexData({ height: spec.height, diameterTop: 2 * spec.radiusTop, diameterBottom: 2 * spec.radiusBottom, tessellation: spec.detail }),
-        Math.PI / 2,
-      );
-    case 'plane':
-      // The builder's height is its Y extent: the core's depth.
-      return CreatePlaneVertexData({ width: spec.width, height: spec.depth, sideOrientation: VertexData.BACKSIDE });
-    case 'torus':
-      return turned(CreateTorusVertexData({ diameter: 2 * spec.radius, thickness: 2 * spec.tube, tessellation: spec.detail }), -Math.PI / 2);
-    case 'torusKnot':
-      return CreateTorusKnotVertexData({
-        radius: spec.radius,
-        tube: spec.tube,
-        radialSegments: spec.detail,
-        tubularSegments: TORUS_KNOT_TUBE_SEGMENTS,
-        p: spec.p,
-        q: spec.q,
-      });
-    case 'capsule':
-      return turned(
-        CreateCapsuleVertexData({ radius: spec.radius, height: spec.height, tessellation: spec.detail, capSubdivisions: spec.detail / 4, subdivisions: 1 }),
-        Math.PI / 2,
-      );
-  }
+export function babylonVertexData(spec: GeometrySpec): VertexData {
+  const geometry = threeShape(spec, GENERATORS);
+  const data = new VertexData();
+  data.positions = Array.from(geometry.getAttribute('position').array);
+  data.normals = Array.from(geometry.getAttribute('normal').array);
+  data.uvs = Array.from(geometry.getAttribute('uv').array);
+  const index = geometry.getIndex();
+  const corners = index ? Array.from(index.array) : Array.from({ length: data.positions.length / 3 }, (_, i) => i);
+  for (let t = 0; t + 2 < corners.length; t += 3) [corners[t + 1], corners[t + 2]] = [corners[t + 2], corners[t + 1]];
+  data.indices = corners;
+  geometry.dispose();
+  return data;
 }
 
 /** A model's clips, by the index of `names`, and the one it holds. */
