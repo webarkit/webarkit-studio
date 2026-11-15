@@ -16,6 +16,8 @@ import { Light } from '@babylonjs/core/Lights/light';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';
+import type { Material } from '@babylonjs/core/Materials/material';
+import { Constants } from '@babylonjs/core/Engines/constants';
 // For its side effect: it registers Scene.DefaultMaterialFactory, which scene.defaultMaterial needs for a mesh with no
 // material (scene.pure.js). Primitives no longer use StandardMaterial (#131), but that import used to register it.
 import '@babylonjs/core/Materials/standardMaterial';
@@ -63,6 +65,19 @@ const intensityScale = (kind: LightSpec['kind']) => (kind === 'directional' ? 1 
  */
 const linearHex = (hex: string) => Color3.FromHexString(hex).toLinearSpace(true);
 const linearRgb = (r: number, g: number, b: number) => new Color3(r, g, b).toLinearSpace(true);
+
+/**
+ * Blends a transparent material as Three.js's NormalBlending does (#155): colour (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), alpha
+ * (ONE, ONE_MINUS_SRC_ALPHA). Babylon's default, ALPHA_COMBINE, adds the alpha channel up (ONE, ONE), so two objects at
+ * 0.5 left alpha 1 where they overlap, and the page showed none of the camera there, against 0.75 on Three.js.
+ * ALPHA_LAYER_ACCUMULATE has exactly Three.js's factors (AlphaState.setAlphaMode, States/alphaCullingState.js,
+ * @babylonjs/core 9.30.0); its name is from its use in order-independent transparency. The colour is the same, and one
+ * object over the clear canvas too (alpha a); only an overlap differs. An opaque material does not blend, so it is
+ * unaffected. Every material this adapter makes or loads goes through it (the catcher and scene.material too, #133, #134).
+ */
+const blendLikeThree = (material: Material) => {
+  material.alphaMode = Constants.ALPHA_LAYER_ACCUMULATE;
+};
 /** Three.js's HemisphereLight ground colour in the Three.js adapter. */
 const HEMISPHERE_GROUND = '#444444';
 
@@ -219,6 +234,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       material.roughness = 1;
       material.useSpecularOverAlpha = false;
       material.useRadianceOverAlpha = false;
+      blendLikeThree(material);
       mesh.material = material;
       return wrap(mesh);
     },
@@ -243,6 +259,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           },
         },
       });
+      for (const material of container.materials) blendLikeThree(material);
       container.addAllToScene();
       // The scene is right-handed, so the loader adds no handedness conversion: only glTF's Y-up remains.
       const upright = new TransformNode('gltf-upright', scene);

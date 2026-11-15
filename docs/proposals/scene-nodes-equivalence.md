@@ -118,7 +118,7 @@ re-measured. Metalness 1 without an environment is **not** black here: the direc
 | Base colour, metalness, roughness (one set of params) | Equivalent with a translation, within **look** | Colour in linear (above); light k = 1 (below) | the grid |
 | `side` front / back / double | Equivalent with a translation | Babylon: front = `backFaceCulling`; back = `backFaceCulling` with `cullBackFaces = false`; double = no culling | e2e "side: back and double show a plane facing away on both" |
 | Double side, a back face lit | Equivalent with a translation | Babylon `PBRMaterial.twoSidedLighting = true`; without it the back face is black (0 against 107) | e2e "double side: a back face lit from behind …" |
-| Opacity | Not equivalent in the current adapters (a defect, below); equivalent with a translation (equivalent since #144) | Both write the same framebuffer pixel (96, 64, 32, 128 for `#c08040` at 0.5). Over the page, Three.js gives 128, 128, 128 over `#4080c0`, Babylon 80, 96, 112 (128, 128, 128 since #144): the Babylon context is created with `premultipliedAlpha: false` (`babylon-adapter.ts:76`), so the page multiplies by alpha a second time. The screenshot agrees with the computed composite on both engines (within 1 level). Translation: create the Babylon engine with premultiplied alpha | e2e "pinned: the framebuffer, the computed composite and the screenshot agree, per engine"; `test.fail` "known difference: a half-transparent object looks the same …" (since #144: "a half-transparent object looks the same over the camera on both adapters (#144)", passing, Babylon.js 128, 128, 128) |
+| Opacity | Not equivalent in the current adapters (a defect, below); equivalent with a translation (equivalent since #144) | Both write the same framebuffer pixel (96, 64, 32, 128 for `#c08040` at 0.5). Over the page, Three.js gives 128, 128, 128 over `#4080c0`, Babylon 80, 96, 112 (128, 128, 128 since #144): the Babylon context is created with `premultipliedAlpha: false` (`babylon-adapter.ts:76`), so the page multiplies by alpha a second time. The screenshot agrees with the computed composite on both engines (within 1 level). Translation: create the Babylon engine with premultiplied alpha. Two half-transparent objects that overlap (#155, measured after this report): Babylon's default `alphaMode`, `ALPHA_COMBINE`, adds alpha up (ONE, ONE), so two at 0.5 give alpha 255 against Three.js's 192 (NormalBlending: ONE, ONE_MINUS_SRC_ALPHA), and the page shows none of the camera there (0, 0, 0 against 16, 32, 47 over `#4080c0`). Translation: every Babylon material that can blend gets `alphaMode = Constants.ALPHA_LAYER_ACCUMULATE`, Three.js's factors (`blendLikeThree`, `babylon-adapter.ts`) | e2e "pinned: the framebuffer, the computed composite and the screenshot agree, per engine"; SceneHandle "two overlapping boxes at alpha 0.5 …" and "two overlapping glTF squares at alpha 0.5 …", and "two overlapping half-transparent objects let the same camera through on both adapters (#155)"; `test.fail` "known difference: a half-transparent object looks the same …" (since #144: "a half-transparent object looks the same over the camera on both adapters (#144)", passing, Babylon.js 128, 128, 128) |
 
 ### Lights (`scene.light`, browser)
 
@@ -262,11 +262,13 @@ tessellations and seams differ), nor the same `detail` meaning across engines wi
 the table; unlit `PBRMaterial.unlit`; textures sRGB on both; wrap and repeat by name; video textures with Babylon's
 two side-effect imports; sphere UVs `uOffset 0.5`, `vScale −1` on Babylon (other shapes to measure). Tolerance: same
 for unlit, emissive, textures; look for lit PBR. Must not promise identical highlights (above), nor opacity over the
-camera until the premultiplied-alpha defect is fixed (done by #144).
+camera until the premultiplied-alpha defect is fixed (done by #144). Every Babylon material it makes goes through
+`blendLikeThree` (`ALPHA_LAYER_ACCUMULATE`), or two overlapping half-transparent ones hide the camera (#155).
 
 **#134, point and spot lights, shadows, catcher.** Translate: point `distance` → Babylon `range` with
 `FALLOFF_GLTF`; spot `angle` × 2, `innerAngle` = 2 × angle × (1 − penumbra), `exponent` 0, `FALLOFF_GLTF`; k = 1;
-the catcher `BackgroundMaterial` `shadowOnly` with `primaryColor` black; map size and bias by name; Three.js's shadow
+the catcher `BackgroundMaterial` `shadowOnly` with `primaryColor` black, through `blendLikeThree` like every blending
+material (#155); map size and bias by name; Three.js's shadow
 camera set explicitly at mm scale (extent, near, far). Tolerance: same at the centre and for the catcher, ±2 px on
 the cone's edge. Must not promise `decay` other than 2, nor the same penumbra profile (up to 22 levels apart): either
 document the difference or make penumbra engine-specific. Point-light shadows were not measured.
