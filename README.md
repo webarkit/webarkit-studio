@@ -700,7 +700,9 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
-| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; connected inputs override the params) |
+| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color?, material? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; a connected material replaces it and sets the colour aside; connected inputs override the params) |
+| `scene.material` | ✅ ⚡ | scene, color?, emissive?, map? → material (PBR: colour, metalness, roughness, emissive and its intensity, opacity, side front / back / double, unlit; shared by every mesh it reaches; connected colour and emissive override the params) |
+| `scene.texture` | ✅ ⚡ | scene, video? → texture (an image URL or upload, or a connected video, which wins; sRGB, the same way up on both renderers; wrap clamp / repeat / mirror and repeat U, V live, the URL on the next Run) |
 | `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |
 | `geometry.sphere` | ✅ ⚡ | scene → geometry (radius, detail; poles on Z) |
 | `geometry.cylinder` | ✅ ⚡ | scene → geometry (top and bottom radius, height, detail; along Z; a top radius of 0 is a cone) |

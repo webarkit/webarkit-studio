@@ -13,6 +13,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   shows a geometry on the marker with its position, rotation, scale per axis, colour, spin and Rest on the marker
   (inputs override the params, so a graph can drive an object's size). The same shape has the same size and
   orientation on Three.js and Babylon.js. The source code export writes them.
+- Material and Texture nodes (#133). Material gives meshes (through the Mesh node's new Material input) a physically
+  based surface: colour, metalness, roughness, emissive glow, opacity, front, back or both sides, and Unlit; one
+  material can dress several meshes, and every param changes live. Texture puts an image, or a playing video, on a
+  material's map, with wrap (clamp, repeat, mirror) and repeat live. A material and a texture look the same on
+  Three.js and Babylon.js, and the source code export writes them (an image texture; a video one is refused by name).
+  A new demo, "pinball · a textured poster and a chrome knot", shows both.
 
 ### Changed
 
