@@ -160,14 +160,17 @@ function createThreeScene(
       material.emissive.setRGB(...spec.emissive, THREE.SRGBColorSpace);
       material.emissiveIntensity = spec.emissiveIntensity;
     }
-    material.map = map;
-    material.side = SIDES[spec.side];
+    const side = SIDES[spec.side];
     const transparent = spec.opacity < 1;
+    // A map set or unset, the side and transparency change the shader's defines: only they recompile it. Colours and
+    // numbers are uniforms. A new material (unlit swapped, above) is compiled on its first draw anyway.
+    const shaderChanged = (material.map === null) !== (map === null) || material.side !== side || material.transparent !== transparent;
+    material.map = map;
+    material.side = side;
     material.transparent = transparent;
     material.opacity = spec.opacity;
     material.depthWrite = !transparent;
-    // A map, a side or transparency set or unset changes the shader's defines.
-    material.needsUpdate = true;
+    if (shaderChanged) material.needsUpdate = true;
     return material;
   };
   const modelClips = new WeakMap<THREE.Object3D, ModelClips>();

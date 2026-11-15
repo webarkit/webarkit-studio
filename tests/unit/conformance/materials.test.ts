@@ -236,6 +236,35 @@ describe.each(ENGINES)('%s: materials and textures (#133)', (engine) => {
     }
   });
 
+  test.runIf(engine === 'three')('three: a material is recompiled only when its shader changes (Qodo, #163)', async () => {
+    const { adapter, scene, material, texture } = await world(engine);
+    try {
+      const m = () => (material.native as ThreeMaterialState).material;
+      const version = () => m().version;
+      let before = version();
+      // A colour or a number alone: no recompile.
+      scene.setMaterial(material, setup({ color: [1, 0, 0], metalness: 0.5, roughness: 0.2, emissive: [0, 0, 1], emissiveIntensity: 2, map: texture }));
+      expect(version(), 'colours and numbers').toBe(before);
+      scene.setMaterial(material, setup({ color: [1, 0, 0], opacity: 0.5, map: texture }));
+      before = version();
+      scene.setMaterial(material, setup({ color: [1, 0, 0], opacity: 0.4, map: texture }));
+      expect(version(), 'opacity within transparent').toBe(before);
+      // What changes the shader: each recompiles.
+      for (const [what, next] of [
+        ['map unset', setup({ color: [1, 0, 0], opacity: 0.4, map: null })],
+        ['map set', setup({ color: [1, 0, 0], opacity: 0.4, map: texture })],
+        ['side', setup({ color: [1, 0, 0], opacity: 0.4, side: 'double', map: texture })],
+        ['opaque again', setup({ color: [1, 0, 0], opacity: 1, side: 'double', map: texture })],
+      ] as const) {
+        before = version();
+        scene.setMaterial(material, next);
+        expect(version(), what).toBeGreaterThan(before);
+      }
+    } finally {
+      adapter.dispose();
+    }
+  });
+
   test.runIf(engine === 'babylon')('babylon: a texture still loading when the scene goes rejects, so a node\'s init does not wait forever', async () => {
     const adapter = ADAPTERS[engine]();
     const scene = adapter.createScene({ defaultLights: false });
