@@ -111,6 +111,25 @@ describe('scene.texture', () => {
     expect(out.texture.spec).toEqual({ wrap: 'repeat', repeatU: 0.001, repeatV: 3 });
   });
 
+  it('keeps a wrap or repeat edit made while the texture was being made (Qodo, #163)', async () => {
+    const { scene, calls } = fakeScene();
+    const p = params('scene.texture');
+    const node = textureNode(p, ctx);
+    let release: () => void = () => {};
+    const slow = {
+      ...scene,
+      createTexture: (_s: TextureSource, spec: TextureSpec) =>
+        new Promise<TextureObject>((r) => (release = () => (calls.push(['createTexture', spec]), r({ scene: null, native: 't1', kind: 'texture' } as unknown as TextureObject)))),
+    } as unknown as SceneHandle;
+    const started = node.init!({ scene: slow, video: { element: { tagName: 'VIDEO' }, width: 2, height: 2 } }) as Promise<{ texture: TextureValue }>;
+    Object.assign(p, { wrap: 'mirror', repeatU: 3 });
+    expect(node.onParamChange!('wrap', 'mirror')).toBeUndefined();
+    release();
+    const { texture } = await started;
+    expect(calls.at(-1)).toEqual(['setTexture', 't1', { wrap: 'mirror', repeatU: 3, repeatV: 1 }]);
+    expect(texture.spec).toEqual({ wrap: 'mirror', repeatU: 3, repeatV: 1 });
+  });
+
   it('makes nothing when stopped while it started', async () => {
     const { scene, calls } = fakeScene();
     const node = textureNode(params('scene.texture'), ctx);

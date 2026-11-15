@@ -332,7 +332,10 @@ export const textureNode: NodeFactory = (params, ctx) => {
       if (disposed) return;
       const handle = await scene.createTexture(source, spec);
       if (disposed) return;
-      value = { handle, spec, width: size[0], height: size[1], video: source.kind === 'video' };
+      // A wrap or repeat edit made during the awaits found no value to apply to (onParamChange): applied now.
+      const latest = textureSpec(params);
+      if (JSON.stringify(latest) !== JSON.stringify(spec)) scene.setTexture(handle, latest);
+      value = { handle, spec: latest, width: size[0], height: size[1], video: source.kind === 'video' };
       return { texture: value };
     },
     onParamChange() {
