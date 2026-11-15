@@ -5,7 +5,7 @@
  *  - debug.stats shows frame rates and tracker timings (optionally on the AR view);
  *  - debug.trace records a tracker's trace and downloads it (studio only).
  */
-import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
+import type { GeometryValue, NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
 
 const REPORT_INTERVAL_MS = 200;
@@ -13,6 +13,14 @@ const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
 
 function isMatrix4(v: unknown): v is ArrayLike<number> {
   return !!v && typeof v === 'object' && 'length' in v && (v as ArrayLike<unknown>).length === 16 && typeof (v as ArrayLike<unknown>)[0] === 'number';
+}
+
+/** A geometry socket value (#132): a handle with its spec and bounds. */
+function isGeometryValue(o: Record<string, unknown>): o is Record<string, unknown> & GeometryValue {
+  const handle = o.handle as { kind?: unknown } | null | undefined;
+  const bounds = o.bounds as { min?: unknown; max?: unknown } | null | undefined;
+  const spec = o.spec as { shape?: unknown } | null | undefined;
+  return handle?.kind === 'geometry' && typeof spec?.shape === 'string' && Array.isArray(bounds?.min) && Array.isArray(bounds?.max);
 }
 
 /** Readable text for any socket value. */
@@ -51,6 +59,12 @@ export function formatValue(value: unknown): string {
       return `${(o.renderer as { kind: string }).kind} scene`;
     }
     if (typeof o.kind === 'string' && 'canvas' in o) return `${o.kind} renderer`;
+    // A geometry (#132): its shape and its bounds' extents, never its handle (Babylon.js's geometry and scene are
+    // circular, so JSON.stringify would throw).
+    if (isGeometryValue(o)) {
+      const { min, max } = o.bounds;
+      return `${o.spec.shape} ${[0, 1, 2].map((k) => num(max[k] - min[k])).join(' × ')} mm`;
+    }
     if ('scene' in o && 'native' in o) return 'scene object';
     // Video values: by tag name, not instanceof, so this also runs outside a browser.
     const tag = (o.element as { tagName?: unknown } | null | undefined)?.tagName;
