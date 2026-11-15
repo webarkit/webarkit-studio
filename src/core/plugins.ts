@@ -130,6 +130,11 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
     for (const [side, ports] of [['input', def.inputs], ['output', def.outputs]] as const) {
       for (const [key, port] of Object.entries(ports ?? {})) {
         if (!known(port.type)) problems.push(`${def.type}: ${side} "${key}" has unknown socket type "${port.type}"`);
+        // `overrides` (#133) names params of the same node that the input sets aside while wired.
+        for (const param of port.overrides ?? []) {
+          if (side === 'output') problems.push(`${def.type}: output "${key}" has overrides, which only inputs take`);
+          else if (!Object.hasOwn(def.params ?? {}, param)) problems.push(`${def.type}: input "${key}" overrides "${param}", which is not one of its params`);
+        }
       }
     }
   }

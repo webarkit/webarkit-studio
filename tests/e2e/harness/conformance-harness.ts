@@ -45,7 +45,8 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { GeometryObject, LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { GeometryObject, LightSpec, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from '../../../src/runtime/renderers/adapter';
+import type { MaterialSpec, TextureSpec } from '../../../src/core/material';
 import type { GeometrySpec } from '../../../src/core/geometry';
 import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
@@ -162,6 +163,16 @@ export type AdapterOp =
   | { op: 'setColor'; id: string; color: number[] }
   | { op: 'setIntensity'; id: string; intensity: number }
   /**
+   * #133: a material and a texture (each its own id space), a live change of each, and a mesh given a material (null:
+   * its own again). A texture shows one of the page's sources: `quadrants`, `alphaQuadrants` (the same, its right half
+   * at alpha 0.5), or `video`. `map` names a texture.
+   */
+  | { op: 'createMaterial'; id: string; spec: MaterialSpec; map?: string | null }
+  | { op: 'setMaterial'; id: string; spec: MaterialSpec; map?: string | null }
+  | { op: 'createTexture'; id: string; source: 'quadrants' | 'alphaQuadrants' | 'video'; spec: TextureSpec }
+  | { op: 'setTexture'; id: string; spec: TextureSpec }
+  | { op: 'setMeshMaterial'; mesh: string; material: string | null }
+  /**
    * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
    * a case can check it; otherwise what is read back is the frame after the last operation.
    */
@@ -221,6 +232,16 @@ function quadrantCanvas(): HTMLCanvasElement {
   return c;
 }
 
+/** The quadrants, with their right half (green, white, half the grey) at alpha 0.5. */
+function alphaQuadrantCanvas(): HTMLCanvasElement {
+  const c = quadrantCanvas();
+  const g = c.getContext('2d')!;
+  const right = g.getImageData(32, 0, 32, 64);
+  for (let i = 3; i < right.data.length; i += 4) right.data[i] = 128;
+  g.putImageData(right, 32, 0);
+  return c;
+}
+
 async function videoOf(colour: string): Promise<HTMLVideoElement> {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
@@ -238,11 +259,21 @@ async function videoOf(colour: string): Promise<HTMLVideoElement> {
   await video.play();
   while (video.readyState < 2 || video.videoWidth === 0) await new Promise((r) => setTimeout(r, 20));
   (video as unknown as { stopPaint(): void }).stopPaint = () => clearInterval(timer);
+  // #133: a video that changes, so a texture stuck on its first frame shows.
+  (video as unknown as { setColour(c: string): void }).setColour = (c: string) => void (colour = c);
   return video;
 }
 
 export interface Harness {
   engine: Engine;
+  /** #133: the `video` texture source repaints in this colour from now on. */
+  setVideoColour(colour: string): void;
+  /** #133: a `resize` event on the `video` source element, as the browser sends when its picture size changes. */
+  resizeVideo(): void;
+  /** #133: a texture's wrap as its engine holds it now (clamp, repeat, mirror, or the engine's own value). */
+  textureWrap(id: string): string;
+  /** #133: the `video` source element's state, which a texture must leave as its source node set it. */
+  videoState(): { paused: boolean; loop: boolean; autoplay: boolean; muted: boolean };
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
   build(desc: SceneDesc): Promise<void>;
   /**
@@ -303,6 +334,7 @@ export interface OpenOptions {
 
 async function open(engine: Engine, size: number, options: OpenOptions = {}): Promise<Harness> {
   textures.set('quadrants', { canvas: quadrantCanvas() });
+  textures.set('alphaQuadrants', { canvas: alphaQuadrantCanvas() });
   textures.set('video', { video: await videoOf('#c08040') });
 
   const renderer: RendererAdapter = engine === 'three' ? createThreeAdapter({ antialias: false }) : createBabylonAdapter({ antialias: false });
@@ -320,6 +352,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   const named = new Map<string, SceneObject>();
   /** The geometries of buildAdapterScene, by id (#132). */
   const geometries = new Map<string, GeometryObject>();
+  const materials = new Map<string, MaterialObject>();
+  const adapterTextures = new Map<string, TextureObject>();
   /** Renders until Babylon.js's shaders are ready; throws after 2 s, so a blank frame is never measured. */
   async function babylonReady() {
     if (engine !== 'babylon') return;
@@ -838,6 +872,19 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       clear();
       named.clear();
       geometries.clear();
+      materials.clear();
+      adapterTextures.clear();
+      const materialNamed = (id: string) => {
+        const m = materials.get(id);
+        if (!m) throw new Error(`no material "${id}"`);
+        return m;
+      };
+      const textureNamed = (id: string) => {
+        const t = adapterTextures.get(id);
+        if (!t) throw new Error(`no texture "${id}"`);
+        return t;
+      };
+      const mapOf = (id: string | null | undefined) => (id ? textureNamed(id) : null);
       const geometryNamed = (id: string) => {
         const g = geometries.get(id);
         if (!g) throw new Error(`no geometry "${id}"`);
@@ -899,6 +946,27 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             break;
           case 'setIntensity':
             handle.setIntensity(get(step.id), step.intensity);
+            break;
+          case 'createMaterial':
+            if (materials.has(step.id)) throw new Error(`material "${step.id}" created twice`);
+            materials.set(step.id, handle.createMaterial({ ...step.spec, map: mapOf(step.map) }));
+            break;
+          case 'setMaterial':
+            handle.setMaterial(materialNamed(step.id), { ...step.spec, map: mapOf(step.map) });
+            break;
+          case 'createTexture': {
+            if (adapterTextures.has(step.id)) throw new Error(`texture "${step.id}" created twice`);
+            const t = textures.get(step.source);
+            if (!t) throw new Error(`no texture source "${step.source}"`);
+            const source = 'canvas' in t ? ({ kind: 'image', element: t.canvas } as const) : ({ kind: 'video', element: t.video } as const);
+            adapterTextures.set(step.id, await handle.createTexture(source, step.spec));
+            break;
+          }
+          case 'setTexture':
+            handle.setTexture(textureNamed(step.id), step.spec);
+            break;
+          case 'setMeshMaterial':
+            handle.setMeshMaterial(get(step.mesh), step.material === null ? null : materialNamed(step.material));
             break;
           case 'render':
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.
@@ -1035,6 +1103,32 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       clear();
       renderer.dispose();
       renderer.canvas.remove();
+    },
+    resizeVideo() {
+      const t = textures.get('video');
+      if (t && 'video' in t) t.video.dispatchEvent(new Event('resize'));
+    },
+    textureWrap(id) {
+      const t = adapterTextures.get(id);
+      if (!t) throw new Error(`no texture "${id}"`);
+      if (engine === 'three') {
+        const n = t.native as THREE.Texture;
+        const name = { [THREE.ClampToEdgeWrapping]: 'clamp', [THREE.RepeatWrapping]: 'repeat', [THREE.MirroredRepeatWrapping]: 'mirror' } as Record<number, string>;
+        return n.wrapS === n.wrapT ? (name[n.wrapS] ?? String(n.wrapS)) : `${n.wrapS}/${n.wrapT}`;
+      }
+      const n = t.native as Texture;
+      const name = { [Texture.CLAMP_ADDRESSMODE]: 'clamp', [Texture.WRAP_ADDRESSMODE]: 'repeat', [Texture.MIRROR_ADDRESSMODE]: 'mirror' } as Record<number, string>;
+      return n.wrapU === n.wrapV ? (name[n.wrapU] ?? String(n.wrapU)) : `${n.wrapU}/${n.wrapV}`;
+    },
+    setVideoColour(colour) {
+      const t = textures.get('video');
+      if (t && 'video' in t) (t.video as unknown as { setColour(c: string): void }).setColour(colour);
+    },
+    videoState() {
+      const t = textures.get('video');
+      if (!t || !('video' in t)) throw new Error('no video source');
+      const { paused, loop, autoplay, muted } = t.video;
+      return { paused, loop, autoplay, muted };
     },
   };
 }

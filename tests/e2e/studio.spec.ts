@@ -455,6 +455,25 @@ test.describe('math nodes', () => {
     await page.locator('.studio-node:has(.title span:text-is("RGBA Color")) .remove').click();
     await expect(colour).toBeEnabled();
   });
+  test("a Material on a Mesh sets the Mesh's colour aside: its param is disabled while wired (#133)", async ({ page }) => {
+    await loadDemo(page, 'pinball-material');
+    const colours = page.locator('.studio-node:has(.title span:text-is("Mesh")) .param:has-text("Color") input[type=color]');
+    await expect(colours).toHaveCount(2);
+    for (const colour of await colours.all()) await expect(colour).toBeDisabled();
+    // Without the chrome material, the knot's own colour is editable again; undo wires it back.
+    // The demo adds the poster's material first, then the chrome one.
+    const materials = page.locator('.studio-node:has(.title span:text-is("Material"))');
+    await expect(materials).toHaveCount(2);
+    await materials.nth(1).locator('.remove').click();
+    await expect(page.locator('.studio-node:has(.title span:text-is("Mesh")) .param:has-text("Color") input[type=color]:enabled')).toHaveCount(1);
+    await page.click('#btn-undo');
+    for (const colour of await colours.all()) await expect(colour).toBeDisabled();
+    // The demo runs: the texture loads and nothing fails.
+    await run(page);
+    await expect(page.locator('#log')).toContainText('init scene.texture');
+    await expect(page.locator('#log')).not.toContainText(/error|could not/i);
+  });
+
   for (const renderer of ['three', 'babylon']) {
     test(`pinball-expression on ${renderer}: a formula error shows under the field, a valid formula applies live`, async ({ page }) => {
       await loadDemo(page, 'pinball-expression');

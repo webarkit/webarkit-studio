@@ -35,6 +35,12 @@ import { CreateTorusVertexData } from '@babylonjs/core/Meshes/Builders/torusBuil
 import { CreateTorusKnotVertexData } from '@babylonjs/core/Meshes/Builders/torusKnotBuilder';
 import { CreateCapsuleVertexData } from '@babylonjs/core/Meshes/Builders/capsuleBuilder';
 import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
+import { normalizeMaterial, normalizeTexture, type TextureSpec, type TextureWrap } from '../../core/material';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
+// VideoTexture calls engine methods its extensions add: imported for their side effects (AGENTS.md).
+import '@babylonjs/core/Engines/Extensions/engine.dynamicTexture';
+import '@babylonjs/core/Engines/Extensions/engine.videoTexture';
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
 import {
@@ -45,6 +51,10 @@ import {
   type AnimationOptions,
   type LightSpec,
   type GeometryObject,
+  type MaterialObject,
+  type MaterialSetup,
+  type TextureObject,
+  type TextureSource,
   type ModelSpec,
   type RendererAdapter,
   type SceneHandle,
@@ -78,6 +88,35 @@ const linearRgb = (r: number, g: number, b: number) => new Color3(r, g, b).toLin
 const blendLikeThree = (material: Material) => {
   material.alphaMode = Constants.ALPHA_LAYER_ACCUMULATE;
 };
+const WRAPS: Record<TextureWrap, number> = { clamp: Texture.CLAMP_ADDRESSMODE, repeat: Texture.WRAP_ADDRESSMODE, mirror: Texture.MIRROR_ADDRESSMODE };
+
+/** Wrap and repeat, normalised: Babylon.js's uScale / vScale are Three.js's repeat. */
+function applyTexture(texture: Texture, given: TextureSpec) {
+  const spec = normalizeTexture(given);
+  // Three.js's anisotropy is 1 unless set; Babylon.js's default level is 4 (baseTexture.pure.js).
+  texture.anisotropicFilteringLevel = 1;
+  texture.wrapU = texture.wrapV = WRAPS[spec.wrap];
+  texture.uScale = spec.repeatU;
+  texture.vScale = spec.repeatV;
+}
+
+/**
+ * The PBRMaterial every material of this adapter starts as: Three.js's MeshStandardMaterial in the Three.js adapter
+ * (metalness 0, roughness 1; Babylon's are null, its engine's own defaults apply unless set), emissive black. No
+ * specular or radiance over alpha: on Three.js a highlight does not make a half-transparent mesh more opaque (#153).
+ * Blended as Three.js does (#155).
+ */
+function threeLikePbr(name: string, scene: Scene): PBRMaterial {
+  const material = new PBRMaterial(name, scene);
+  material.albedoColor = linearHex('#ffffff');
+  material.metallic = 0;
+  material.roughness = 1;
+  material.useSpecularOverAlpha = false;
+  material.useRadianceOverAlpha = false;
+  blendLikeThree(material);
+  return material;
+}
+
 /** Three.js's HemisphereLight ground colour in the Three.js adapter. */
 const HEMISPHERE_GROUND = '#444444';
 
@@ -189,6 +228,39 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const geometryOf = (g: GeometryObject) => (assertOwned(handle, g), g.native as Geometry);
   /** The geometries createGeometry made: a release never disposes one, the scene's teardown does (#132). */
   const sharedGeometries = new WeakSet<Geometry>();
+  /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
+  const ownMaterial = new WeakMap<BabylonNode, PBRMaterial>();
+  const materialOf = (m: MaterialObject) => (assertOwned(handle, m), m.native as PBRMaterial);
+  const textureOf = (t: TextureObject) => (assertOwned(handle, t), t.native as Texture);
+  /** Video textures: updated in render(), since they do not follow their element's events (independentVideoSource). */
+  const videoTextures = new Set<VideoTexture>();
+  /** A video texture's wrap and repeat, kept for when it builds its internal texture (it sets its own then). */
+  const videoSpecs = new WeakMap<Texture, TextureSpec>();
+  /** A setup written into a PBRMaterial, with the report's translations ("Materials"). */
+  const writeMaterial = (material: PBRMaterial, setup: MaterialSetup) => {
+    const spec = normalizeMaterial(setup);
+    const map = setup.map ? textureOf(setup.map) : null;
+    material.albedoColor = linearRgb(...spec.color);
+    material.metallic = spec.metalness;
+    material.roughness = spec.roughness;
+    // Unlit: Three.js's MeshBasicMaterial has no emissive, while an unlit PBRMaterial adds it (measured, #133).
+    material.emissiveColor = spec.unlit ? Color3.Black() : linearRgb(...spec.emissive);
+    material.emissiveIntensity = spec.emissiveIntensity;
+    material.unlit = spec.unlit;
+    material.albedoTexture = map;
+    // Transparent, Three.js multiplies by the map's alpha; opaque, it ignores it. Babylon.js reads a map's alpha only with
+    // useAlphaFromAlbedoTexture, and an image texture has hasAlpha (below), which with no transparency mode would turn
+    // alpha testing on (pbrBaseMaterial.pure.js, needAlphaTesting): the mode is set per material, so a texture shared by
+    // an opaque and a transparent material is right for both.
+    const transparent = spec.opacity < 1;
+    material.transparencyMode = transparent ? PBRMaterial.PBRMATERIAL_ALPHABLEND : PBRMaterial.PBRMATERIAL_OPAQUE;
+    material.useAlphaFromAlbedoTexture = transparent;
+    // front: back faces culled; back: front faces culled; double: none, and a back face lit as its own side.
+    material.backFaceCulling = spec.side !== 'double';
+    material.cullBackFaces = spec.side !== 'back';
+    material.twoSidedLighting = spec.side === 'double';
+    material.alpha = spec.opacity; // below 1, Babylon draws the mesh in its transparent pass
+  };
   const transform = (o: SceneObject) => node(o) as TransformNode;
   /** Wired to the scene or to a parent, and made invisible: an object shows when it is the first and not the second. */
   const wired = new WeakSet<BabylonNode>();
@@ -225,18 +297,86 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       const geometry = geometryOf(g);
       const mesh = new Mesh(`mesh-${geometry.id}`, scene);
       geometry.applyToMesh(mesh);
-      // Three.js's MeshStandardMaterial in the Three.js adapter: metalness 0, roughness 1 (Babylon's are null, its
-      // engine's own defaults apply unless set), emissive black. No specular or radiance over alpha: on Three.js a
-      // highlight does not make a half-transparent mesh more opaque.
-      const material = new PBRMaterial(`${mesh.name}-material`, scene);
-      material.albedoColor = linearHex('#ffffff');
-      material.metallic = 0;
-      material.roughness = 1;
-      material.useSpecularOverAlpha = false;
-      material.useRadianceOverAlpha = false;
-      blendLikeThree(material);
+      const material = threeLikePbr(`${mesh.name}-material`, scene);
       mesh.material = material;
+      ownMaterial.set(mesh, material);
       return wrap(mesh);
+    },
+    createMaterial(setup) {
+      const material = threeLikePbr('material', scene);
+      writeMaterial(material, setup);
+      return { scene: handle, native: material, kind: 'material' };
+    },
+    setMaterial(m, setup) {
+      writeMaterial(materialOf(m), setup);
+    },
+    createTexture(source: TextureSource, spec) {
+      if (source.kind === 'video') {
+        // independentVideoSource: the texture leaves the element alone (autoplay, loop, muted, its listeners) and its
+        // dispose() does not pause it: the video's source node owns it (videoTexture.pure.js). No mipmaps, as on
+        // Three.js's VideoTexture; invertY true, as Three.js's flipY.
+        const texture = new VideoTexture('video', source.element, scene, false, true, Texture.BILINEAR_SAMPLINGMODE, {
+          independentVideoSource: true,
+          autoPlay: false,
+          autoUpdateTexture: true,
+        });
+        // Once the video can play, VideoTexture builds its internal texture and sets its own wrap
+        // (_resizeInternalTexture): ours goes back on. Its dispose() leaves that element's resize listener when the
+        // source is independent: removed here.
+        videoSpecs.set(texture, spec);
+        // It sets its own wrap again on each resize of its video (_resizeInternalTexture, its own resize listener): ours
+        // goes back on from a listener that runs after it. Babylon.js adds its listener once the video can play, so ours
+        // moves to the end then (onLoadObservable fires after), and runs after Babylon.js's on every later resize.
+        const rewrap = () => applyTexture(texture, videoSpecs.get(texture) ?? spec);
+        source.element.addEventListener('resize', rewrap);
+        texture.onLoadObservable.add(() => {
+          source.element.removeEventListener('resize', rewrap);
+          source.element.addEventListener('resize', rewrap);
+          rewrap();
+        });
+        const resize = (texture as unknown as { _resizeInternalTexture?: () => void })._resizeInternalTexture;
+        texture.onDisposeObservable.add(() => {
+          if (resize) source.element.removeEventListener('resize', resize);
+          source.element.removeEventListener('resize', rewrap);
+          videoTextures.delete(texture);
+        });
+        applyTexture(texture, spec);
+        videoTextures.add(texture);
+        return Promise.resolve({ scene: handle, native: texture as Texture, kind: 'texture' as const });
+      }
+      // An image by its URL (a canvas as a data URL): Babylon.js loads it again, from the browser's cache. Mipmaps and
+      // trilinear filtering, as on Three.js; invertY (Babylon's default), the same way up as Three.js's flipY (the report).
+      const element = source.element;
+      const url = 'toDataURL' in element ? element.toDataURL() : element.src;
+      return new Promise<TextureObject>((resolve, reject) => {
+        // useSRGBBuffer: decoded to linear by the GPU before filtering, as Three.js's SRGBColorSpace texture is (an
+        // SRGB8_ALPHA8 upload); filtered as sRGB values, a minified texture differed by up to 27 levels (measured, #133).
+        const texture: Texture = new Texture(url, scene, {
+          noMipmap: false,
+          invertY: true,
+          samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
+          useSRGBBuffer: true,
+          onLoad: () => {
+            applyTexture(texture, spec);
+            // Its alpha is read by a transparent material only (writeMaterial sets each material's transparency mode).
+            texture.hasAlpha = true;
+            resolve({ scene: handle, native: texture, kind: 'texture' });
+          },
+          onError: (message) => reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`)),
+        });
+        // Disposed before it loaded (the scene torn down by a Stop): dispose() clears the load callbacks, so the
+        // promise would never settle and the node's init would wait forever. A settled promise ignores this.
+        texture.onDisposeObservable.addOnce(() => reject(new Error('the scene was torn down while the texture loaded')));
+      });
+    },
+    setTexture(t, spec) {
+      const texture = textureOf(t);
+      if (videoSpecs.has(texture)) videoSpecs.set(texture, spec);
+      applyTexture(texture, spec);
+    },
+    setMeshMaterial(o, m) {
+      const mesh = node(o) as AbstractMesh;
+      mesh.material = m ? materialOf(m) : (ownMaterial.get(mesh) ?? mesh.material);
     },
     async loadModel(spec: ModelSpec) {
       // Registers the glTF 2.0 loader; loaded on demand, so graphs without glTF models do not download it.
@@ -290,6 +430,10 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       for (const m of [n, ...n.getDescendants(false)]) {
         const geometry = (m as Mesh).geometry;
         if (geometry && sharedGeometries.has(geometry)) geometry.releaseForMesh(m as Mesh, false);
+        // A mesh with a shared material (#133) goes with its own: dispose(false, true) would dispose the shared one and
+        // its map, which other meshes still draw with. The scene's teardown frees them.
+        const own = ownMaterial.get(m);
+        if (own) (m as AbstractMesh).material = own;
       }
       n.dispose(false, true);
     },
@@ -347,7 +491,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         if (ambients.has(n)) (n as HemisphericLight).groundColor = n.diffuse.clone();
         return;
       }
-      const material = (n as AbstractMesh).material;
+      // A mesh's own material, even while it draws with a shared one (#133).
+      const material = ownMaterial.get(n) ?? (n as AbstractMesh).material;
       if (!(material instanceof PBRMaterial)) return;
       material.albedoColor = linearRgb(r, g, b);
       material.alpha = a; // below 1, Babylon draws the mesh in its transparent pass
@@ -421,6 +566,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         const parent = hemi.parent as TransformNode | null;
         if (parent) Vector3.TransformNormalToRef(localDirection, parent.computeWorldMatrix(true), hemi.direction);
       }
+      for (const texture of videoTextures) texture.update();
       scene.render();
     },
   };

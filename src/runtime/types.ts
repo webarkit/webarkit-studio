@@ -1,7 +1,8 @@
 import type { Rgba } from '../core/color';
 import type { ParamValue } from '../core/graph';
 import type { Bounds, GeometrySpec } from '../core/geometry';
-import type { GeometryObject, RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
+import type { MaterialSpec, TextureSpec } from '../core/material';
+import type { GeometryObject, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from './renderers/adapter';
 import type { PoseFilterConfig } from './filters/pose-filter';
 import type { TraceHeader, TraceRecord } from './trackers/trace';
 
@@ -89,6 +90,23 @@ export interface GeometryValue {
   handle: GeometryObject;
   spec: GeometrySpec;
   bounds: Bounds;
+}
+
+/**
+ * material (#133): a material made in a scene, shared by every mesh given it, with the normalized spec it was last
+ * written with. A new value on every change, so an Inspector shows it; the handle stays the same.
+ */
+export interface MaterialValue {
+  handle: MaterialObject;
+  spec: MaterialSpec;
+}
+/** texture (#133): a texture made in a scene, its picture's size and kind, and its wrap and repeat. */
+export interface TextureValue {
+  handle: TextureObject;
+  spec: TextureSpec;
+  width: number;
+  height: number;
+  video: boolean;
 }
 
 export type PortValues = Record<string, unknown>;

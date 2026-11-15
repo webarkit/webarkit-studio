@@ -2,7 +2,7 @@ import type { ParamValue } from '../../core/graph';
 import type { NodeFactory, VideoValue } from '../types';
 
 /** Resolves a source's URL param; an empty one would resolve to the page itself. */
-function sourceUrl(value: ParamValue, baseUrl: string, what: string): string {
+export function sourceUrl(value: ParamValue, baseUrl: string, what: string): string {
   const url = String(value ?? '').trim();
   if (!url) throw new Error(`no ${what} URL set`);
   return new URL(url, baseUrl).href;
@@ -14,7 +14,7 @@ function videoValue(element: HTMLImageElement | HTMLVideoElement, width: number,
   return { element, width, height };
 }
 
-const LOAD_HINT = 'missing file, unsupported format, or a cross-origin server without CORS headers';
+export const LOAD_HINT = 'missing file, unsupported format, or a cross-origin server without CORS headers';
 
 /** source.camera — opens the device camera. */
 export const cameraSource: NodeFactory = (params) => {

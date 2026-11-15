@@ -477,12 +477,16 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     notifyHistory();
   }
 
-  /** A param is driven while an input of the same name is wired: its control is disabled. */
+  /**
+   * A param is driven while an input of the same name is wired, or an input whose `overrides` names it (scene.mesh's
+   * material sets its colour aside, #133): its control is disabled.
+   */
   function updateDriven(nodeId: string) {
     const node = editor.getNode(nodeId);
     if (!node) return;
     const wired = new Set(editor.getConnections().filter((c) => c.target === nodeId).map((c) => c.targetInput));
-    const driven = new Set(Object.keys(node.def.params).filter((key) => key in node.def.inputs && wired.has(key)));
+    const overridden = new Set([...wired].flatMap((input) => (Object.hasOwn(node.def.inputs, input) ? (node.def.inputs[input].overrides ?? []) : [])));
+    const driven = new Set(Object.keys(node.def.params).filter((key) => (key in node.def.inputs && wired.has(key)) || overridden.has(key)));
     if (driven.size === node.driven.size && [...driven].every((k) => node.driven.has(k))) return;
     node.driven = driven;
     void area.update('node', nodeId);

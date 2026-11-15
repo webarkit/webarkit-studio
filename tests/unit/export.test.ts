@@ -346,6 +346,15 @@ describe('collectAssets', () => {
     expect(Object.keys(files)).toEqual(['data/assets/a/Cafe_deja.dat']);
   });
 
+  it('skips an empty asset param: a Texture fed by a video needs no image (#133), and nothing else is fetched', async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => (fetched.push(String(url)), new Response('the studio page')));
+    const g = doc([['scene.texture', { url: '' }], ['scene.texture', { url: '   ' }]]);
+    expect(await collectAssets(g, base, ctx)).toEqual({});
+    expect(fetched).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
   it('bundles two remote files of the same name apart, and each param points to its own (#88)', async () => {
     vi.stubGlobal('fetch', async (url: string) => new Response(`body of ${url}`));
     const g = doc([

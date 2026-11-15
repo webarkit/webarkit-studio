@@ -14,6 +14,7 @@
  *    projection comes from the AR Camera node.
  */
 import type { GeometrySpec } from '../../core/geometry';
+import type { MaterialSpec, TextureSpec } from '../../core/material';
 import { transformMatrix } from '../../core/math';
 
 export interface SceneObject {
@@ -31,6 +32,33 @@ export interface GeometryObject {
   readonly native: unknown;
   readonly kind: 'geometry';
 }
+
+/**
+ * A material (#133), made in a scene and shared by every mesh given it (setMeshMaterial). Releasing a mesh never
+ * disposes it, nor its map: the scene's teardown does.
+ */
+export interface MaterialObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'material';
+}
+
+/** A texture (#133), made in a scene, for a material's map. Shared like a material. */
+export interface TextureObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'texture';
+}
+
+/**
+ * What a texture shows: a loaded image (or a canvas), or a playing video. The kind is the node's to say: the `video`
+ * socket can carry an image (source.image), and the adapter does not test element classes, which Node does not have.
+ * The texture never changes the element: a video's source node keeps playing, looping and owning it.
+ */
+export type TextureSource = { kind: 'image'; element: HTMLImageElement | HTMLCanvasElement } | { kind: 'video'; element: HTMLVideoElement };
+
+/** A material's values (normalised by the adapter with normalizeMaterial) and its map, or none. */
+export type MaterialSetup = MaterialSpec & { map: TextureObject | null };
 
 export interface LightSpec {
   kind: 'directional' | 'hemisphere' | 'ambient';
@@ -133,6 +161,25 @@ export interface SceneHandle {
    */
   createMesh(geometry: GeometryObject): SceneObject;
   /**
+   * A material (#133): Three.js's MeshStandardMaterial (MeshBasicMaterial when unlit) and Babylon.js's PBRMaterial,
+   * with the report's translations, the same on both within the conformance tolerances.
+   */
+  createMaterial(setup: MaterialSetup): MaterialObject;
+  /** Changes a material in place (a live param): every mesh given it follows, unlit included. */
+  setMaterial(material: MaterialObject, setup: MaterialSetup): void;
+  /**
+   * A texture of an image or a video (TextureSource), sRGB, the image the same way up on both engines. Resolves once
+   * it can be drawn.
+   */
+  createTexture(source: TextureSource, spec: TextureSpec): Promise<TextureObject>;
+  /** Changes a texture's wrap and repeat in place (live). */
+  setTexture(texture: TextureObject, spec: TextureSpec): void;
+  /**
+   * Gives a mesh a material made in this scene, or null for its own again. The mesh's own material keeps what
+   * setColor gave it: setColor on a mesh colours that one only, never a material it was given.
+   */
+  setMeshMaterial(mesh: SceneObject, material: MaterialObject | null): void;
+  /**
    * A glTF model, already stood up from glTF's Y-up to marker space (Z-up).
    * The returned object's own matrix is free for the node's transform. glTF
    * units are kept: the node scales them to millimetres.
@@ -186,7 +233,7 @@ export interface SceneHandle {
 }
 
 /** Throws when an object made in another scene (or engine) is wired in. */
-export function assertOwned(scene: SceneHandle, object: SceneObject | GeometryObject): void {
+export function assertOwned(scene: SceneHandle, object: SceneObject | GeometryObject | MaterialObject | TextureObject): void {
   if (object.scene !== scene) {
     const where = object.scene.renderer === scene.renderer ? 'another scene' : `a ${object.scene.renderer.kind} scene`;
     throw new Error(`object created in ${where} cannot be used in this ${scene.renderer.kind} scene`);

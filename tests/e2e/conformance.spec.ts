@@ -16,6 +16,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
+import type { MaterialSpec, TextureSpec } from '../../src/core/material';
 import { nonZeroScale, transformMatrix } from '../../src/core/math';
 
 const ENGINES = ['three', 'babylon'] as const;
@@ -531,6 +532,8 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     | { row: number; is: 'edges' }
     /** Per engine: the object's world bounds, within the report's 1e-4 mm. */
     | { bounds: string; min: V3; max: V3 }
+    /** Per engine: RGBA within SAME of another region of the same frame (a live change against a fresh object, #133). */
+    | { region: string; is: 'matches'; other: string }
   ) & {
     /** The frame the rule reads: a `render` operation's `capture`; the final frame when omitted. */
     frame?: string;
@@ -559,6 +562,37 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
   ];
   /** Rotated 90° about Z, translated 80 mm down −Z (column-major). */
   const RZ90_AT_80 = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, -80, 1];
+
+  // #133: materials and textures. The 90° view at 128 px shows 64 / d px per mm at d mm: a 100 mm plane 50 mm away
+  // fills the frame; two 40 mm planes at x ±25 show at x 6..57 and 70..121 (regions L and R).
+  /** A material spec: an unlit white by default, so a case states what it changes. */
+  const mat = (over: Partial<MaterialSpec> = {}): MaterialSpec => ({ color: [1, 1, 1], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true, ...over });
+  const tex = (wrap: TextureSpec['wrap'] = 'repeat', repeat = 1): TextureSpec => ({ wrap, repeatU: repeat, repeatV: repeat });
+  /** Rotated about X by `deg`, then moved to `at` (column-major). */
+  const rotX = (deg: number, at: V3) => {
+    const a = (deg * Math.PI) / 180;
+    const [c, s] = [Math.cos(a), Math.sin(a)];
+    return [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, at[0], at[1], at[2], 1];
+  };
+  /** A plane mesh `id` of `width` × `depth` mm at `at` (or placed by a matrix), drawn with material `material`. */
+  const plane = (id: string, width: number, depth: number, at: V3 | number[], material: string): AdapterOp[] => [
+    { op: 'createGeometry', id: `${id}_g`, spec: { shape: 'plane', width, depth } },
+    { op: 'createMesh', id, geometry: `${id}_g` },
+    at.length === 3 ? { op: 'setPosition', id, position: at as V3 } : { op: 'setMatrix', id, matrix: at as number[] },
+    { op: 'addRoot', id },
+    { op: 'setMeshMaterial', mesh: id, material },
+  ];
+  const SUN: AdapterOp[] = [{ op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } }, { op: 'addRoot', id: 'sun' }];
+  /** The whole frame in a grid of 4 px regions, 8 × 8: g<i>_<j> at x 6 + 16 i, y 6 + 16 j. */
+  const GRID: Record<string, Region> = Object.fromEntries([...Array(64)].map((_, k) => [`g${k % 8}_${(k / 8) | 0}`, [6 + 16 * (k % 8), 6 + 16 * ((k / 8) | 0), 4, 4] as Region]));
+  const sameEverywhere = (regions: Record<string, Region>): Rule[] => Object.keys(regions).map((region) => ({ region, is: 'same' }));
+  /** Two 40 mm planes side by side: L made with one setup and changed live to another, R made with that other (#133). */
+  const LIVE_REGIONS: Record<string, Region> = { L: [28, 60, 8, 8], R: [92, 60, 8, 8] };
+  const liveRules = (drawn = true): Rule[] => [
+    ...(drawn ? [{ region: 'L', is: 'drawn' } as Rule, { region: 'R', is: 'drawn' } as Rule] : []),
+    { region: 'L', is: 'matches', other: 'R' },
+    { region: 'L', is: 'same' },
+  ];
 
   const CASES: Case[] = [
     ...(['box', 'sphere', 'torusKnot'] as const).map(
@@ -854,6 +888,240 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ),
       ],
     },
+
+    // #133: materials and textures, as measured on both engines (docs/proposals/scene-nodes-equivalence.md, "Materials"
+    // and "Textures"). A texture on a plane, unlit: the image the same way up, each wrap at repeat 2.
+    {
+      name: 'a texture on a plane, unlit: the same image the same way up (#133)',
+      ops: [{ op: 'createTexture', id: 't', source: 'quadrants', spec: tex() }, { op: 'createMaterial', id: 'm', spec: mat(), map: 't' }, ...plane('p', 100, 100, [0, 0, -50], 'm')],
+      regions: GRID,
+      rules: [{ region: 'g0_0', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    ...(['clamp', 'repeat', 'mirror'] as const).map(
+      (wrap): Case => ({
+        name: `a texture repeated twice, wrap ${wrap}: the same (#133)`,
+        ops: [{ op: 'createTexture', id: 't', source: 'quadrants', spec: tex(wrap, 2) }, { op: 'createMaterial', id: 'm', spec: mat(), map: 't' }, ...plane('p', 100, 100, [0, 0, -50], 'm')],
+        regions: GRID,
+        rules: [{ region: 'g0_0', is: 'drawn' }, ...sameEverywhere(GRID)],
+      }),
+    ),
+    {
+      // Minified and at a grazing angle: mipmaps, trilinear filtering and an sRGB buffer on both (#133: 27 levels apart
+      // before Babylon.js's texture was decoded before filtering).
+      name: 'a texture repeated 4 times on a tilted plane: the same where it is minified (#133)',
+      ops: [{ op: 'createTexture', id: 't', source: 'quadrants', spec: tex('repeat', 4) }, { op: 'createMaterial', id: 'm', spec: mat(), map: 't' }, ...plane('p', 200, 400, rotX(-70, [0, 0, -80]), 'm')],
+      regions: GRID,
+      rules: [{ region: 'g3_7', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    {
+      name: 'an unlit material tints its map, and has no emissive (#133)',
+      ops: [
+        { op: 'createTexture', id: 't', source: 'quadrants', spec: tex() },
+        { op: 'createMaterial', id: 'a', spec: mat({ color: [0.75, 0.5, 0.25] }), map: 't' },
+        { op: 'createMaterial', id: 'b', spec: mat({ color: [0.25, 0.25, 0.25], emissive: [0.75, 0.5, 0.25] }) },
+        ...plane('l', 40, 40, [-25, 0, -50], 'a'),
+        ...plane('r', 40, 40, [25, 0, -50], 'b'),
+      ],
+      regions: { ...LIVE_REGIONS, Ltop: [16, 16, 4, 4] },
+      rules: [{ region: 'L', is: 'drawn' }, { region: 'R', is: 'drawn' }, { region: 'L', is: 'same' }, { region: 'Ltop', is: 'same' }, { region: 'R', is: 'same' }],
+    },
+    {
+      name: 'emissive in the dark, and under a light (#133)',
+      ops: [
+        { op: 'createMaterial', id: 'a', spec: mat({ unlit: false, color: [0.2, 0.2, 0.2], emissive: [0.75, 0.5, 0.25] }) },
+        { op: 'createMaterial', id: 'b', spec: mat({ unlit: false, color: [0.2, 0.2, 0.2], emissive: [0.75, 0.5, 0.25], emissiveIntensity: 0.5 }) },
+        ...plane('l', 40, 40, [-25, 0, -50], 'a'),
+        ...plane('r', 40, 40, [25, 0, -50], 'b'),
+        { op: 'render', capture: 'dark' },
+        ...SUN,
+      ],
+      regions: LIVE_REGIONS,
+      rules: [
+        { frame: 'dark', region: 'L', is: 'drawn' },
+        { frame: 'dark', region: 'L', is: 'same' },
+        { frame: 'dark', region: 'R', is: 'same' },
+        { region: 'L', is: 'drawn' },
+        { region: 'L', is: 'same' },
+        { region: 'R', is: 'same' },
+      ],
+    },
+    {
+      name: 'metalness and roughness under one light, with a map (#133)',
+      ops: [
+        ...SUN,
+        { op: 'createTexture', id: 't', source: 'quadrants', spec: tex() },
+        { op: 'createMaterial', id: 'a', spec: mat({ unlit: false, color: [0.5, 0.5, 0.5], metalness: 1, roughness: 0.6 }) },
+        { op: 'createMaterial', id: 'b', spec: mat({ unlit: false }), map: 't' },
+        ...plane('l', 40, 40, [-25, 0, -50], 'a'),
+        ...plane('r', 40, 40, [25, 0, -50], 'b'),
+      ],
+      regions: { ...LIVE_REGIONS, Rtop: [80, 16, 4, 4] },
+      rules: [{ region: 'L', is: 'drawn' }, { region: 'L', is: 'same' }, { region: 'R', is: 'same' }, { region: 'Rtop', is: 'same' }],
+    },
+    {
+      // One texture with alpha (its right half at 0.5) on an opaque and a half-transparent material: the opaque one stays
+      // opaque, the transparent one multiplies its opacity by the map's alpha, as Three.js does (#133).
+      name: "a map's alpha counts only on a transparent material, the texture shared by both (#133)",
+      ops: [
+        { op: 'createTexture', id: 't', source: 'alphaQuadrants', spec: tex() },
+        { op: 'createMaterial', id: 'o', spec: mat(), map: 't' },
+        { op: 'createMaterial', id: 'h', spec: mat({ opacity: 0.5 }), map: 't' },
+        ...plane('l', 50, 100, [-25, 0, -50], 'o'),
+        ...plane('r', 50, 100, [25, 0, -50], 'h'),
+      ],
+      regions: { opaqueLeft: [16, 60, 8, 8], opaqueRight: [44, 60, 4, 4], halfLeft: [76, 60, 4, 4], halfRight: [108, 60, 8, 8] },
+      rules: [
+        { region: 'opaqueLeft', is: 'drawn' },
+        { region: 'opaqueRight', is: 'drawn' },
+        { region: 'halfLeft', is: 'alpha', value: 128 },
+        { region: 'halfRight', is: 'alpha', value: 64 },
+        ...sameEverywhere({ opaqueLeft: [0, 0, 0, 0], opaqueRight: [0, 0, 0, 0], halfLeft: [0, 0, 0, 0], halfRight: [0, 0, 0, 0] }),
+      ],
+    },
+    {
+      name: 'side back shows a plane facing away, side front does not (#133)',
+      ops: [
+        { op: 'createMaterial', id: 'b', spec: mat({ color: [0.75, 0.5, 0.25], side: 'back' }) },
+        { op: 'createMaterial', id: 'f', spec: mat({ color: [0.75, 0.5, 0.25] }) },
+        ...plane('l', 40, 40, rotX(180, [-25, 0, -50]), 'b'),
+        ...plane('r', 40, 40, rotX(180, [25, 0, -50]), 'f'),
+      ],
+      regions: LIVE_REGIONS,
+      rules: [{ region: 'L', is: 'drawn' }, { region: 'R', is: 'empty' }, { region: 'L', is: 'same' }],
+    },
+    {
+      // A closed box at 0.5 with both sides: its back faces show through its front ones (alpha 0.75 at the centre).
+      name: 'a half-transparent box with both sides: alpha 0.75 through it (#133)',
+      ops: [
+        { op: 'createMaterial', id: 'm', spec: mat({ color: [0.75, 0.5, 0.25], side: 'double', opacity: 0.5 }) },
+        { op: 'createGeometry', id: 'g', spec: { shape: 'box', width: 60, depth: 60, height: 60 } },
+        { op: 'createMesh', id: 'box', geometry: 'g' },
+        { op: 'setPosition', id: 'box', position: [0, 0, -100] },
+        { op: 'addRoot', id: 'box' },
+        { op: 'setMeshMaterial', mesh: 'box', material: 'm' },
+        ...box('n', 10, [40, 40, -60]),
+        { op: 'addRoot', id: 'n' },
+      ],
+      regions: { centre: [60, 60, 8, 8], n: [108, 16, 4, 4] },
+      rules: [{ region: 'n', is: 'drawn' }, { region: 'centre', is: 'alpha', value: 192 }, { region: 'centre', is: 'same' }],
+    },
+    {
+      // A mesh given a material, then its own back: its own colour (setColor) shows again; the other mesh keeps the
+      // material, which that setColor did not touch.
+      name: "setColor colours a mesh's own material, not the one it was given; null shows its own again (#133)",
+      ops: [
+        { op: 'createMaterial', id: 'm', spec: mat({ color: [0.75, 0.5, 0.25] }) },
+        ...plane('l', 40, 40, [-25, 0, -50], 'm'),
+        ...plane('r', 40, 40, [25, 0, -50], 'm'),
+        { op: 'setColor', id: 'l', color: [0.25, 0.5, 0.75, 1] },
+        { op: 'render', capture: 'shared' },
+        { op: 'setMeshMaterial', mesh: 'l', material: null },
+      ],
+      regions: LIVE_REGIONS,
+      rules: [
+        { frame: 'shared', region: 'L', is: 'drawn' },
+        { frame: 'shared', region: 'L', is: 'matches', other: 'R' },
+        { region: 'L', is: 'drawn' },
+        { region: 'L', is: 'same' },
+        { region: 'R', is: 'same' },
+      ],
+    },
+    // Live equals fresh (#133): L is made with one setup and changed live; R is made with the setup L ends with.
+    ...(
+      [
+        ['side front to double, a plane facing away', { side: 'front' }, { side: 'double' }, true],
+        ['opacity 1 to 0.5', { opacity: 1 }, { opacity: 0.5 }, false],
+        ['opacity 0.5 to 1', { opacity: 0.5 }, { opacity: 1 }, true],
+        ['lit to unlit, under a light', { unlit: false }, { unlit: true }, true],
+        ['unlit to lit, under a light', { unlit: true }, { unlit: false }, true],
+      ] as const
+    ).map(
+      ([what, from, to, opaque]): Case => ({
+        name: `live equals fresh: ${what} (#133)`,
+        ops: [
+          ...SUN,
+          { op: 'createMaterial', id: 'a', spec: mat({ color: [0.75, 0.5, 0.25], ...from }) },
+          { op: 'createMaterial', id: 'b', spec: mat({ color: [0.75, 0.5, 0.25], ...to }) },
+          ...plane('l', 40, 40, what.includes('facing away') ? rotX(180, [-25, 0, -50]) : [-25, 0, -50], 'a'),
+          ...plane('r', 40, 40, what.includes('facing away') ? rotX(180, [25, 0, -50]) : [25, 0, -50], 'b'),
+          { op: 'render' },
+          { op: 'setMaterial', id: 'a', spec: mat({ color: [0.75, 0.5, 0.25], ...to }) },
+          // An opaque neighbour, so a frame of two half-transparent planes is a drawn one.
+          ...box('n', 10, [0, 40, -60]),
+          { op: 'addRoot', id: 'n' },
+        ],
+        regions: { ...LIVE_REGIONS, n: [62, 16, 4, 4] },
+        rules: [{ region: 'n', is: 'drawn' }, ...liveRules(opaque)],
+      }),
+    ),
+    {
+      name: 'live equals fresh: a map set, then taken away (#133)',
+      ops: [
+        { op: 'createTexture', id: 't', source: 'quadrants', spec: tex() },
+        { op: 'createMaterial', id: 'a', spec: mat() },
+        { op: 'createMaterial', id: 'b', spec: mat(), map: 't' },
+        { op: 'createMaterial', id: 'c', spec: mat() },
+        ...plane('l', 40, 40, [-25, 0, -50], 'a'),
+        ...plane('r', 40, 40, [25, 0, -50], 'b'),
+        { op: 'render' },
+        { op: 'setMaterial', id: 'a', spec: mat(), map: 't' },
+        { op: 'render', capture: 'mapped' },
+        { op: 'setMaterial', id: 'a', spec: mat(), map: null },
+        { op: 'setMeshMaterial', mesh: 'r', material: 'c' },
+      ],
+      regions: LIVE_REGIONS,
+      rules: [{ frame: 'mapped', region: 'L', is: 'drawn' }, { frame: 'mapped', region: 'L', is: 'matches', other: 'R' }, ...liveRules()],
+    },
+    {
+      name: 'live equals fresh: wrap repeat to mirror, repeat 2 (#133)',
+      ops: [
+        { op: 'createTexture', id: 'tl', source: 'quadrants', spec: tex('repeat', 2) },
+        { op: 'createTexture', id: 'tr', source: 'quadrants', spec: tex('mirror', 2) },
+        { op: 'createMaterial', id: 'a', spec: mat(), map: 'tl' },
+        { op: 'createMaterial', id: 'b', spec: mat(), map: 'tr' },
+        ...plane('l', 40, 40, [-25, 0, -50], 'a'),
+        ...plane('r', 40, 40, [25, 0, -50], 'b'),
+        { op: 'render' },
+        { op: 'setTexture', id: 'tl', spec: tex('mirror', 2) },
+      ],
+      regions: { L: [24, 44, 4, 4], R: [88, 44, 4, 4], L2: [44, 70, 4, 4], R2: [108, 70, 4, 4] },
+      rules: [...liveRules(), { region: 'L2', is: 'matches', other: 'R2' }],
+    },
+    // #133: a texture on the other shapes. Only the plane lies the same on both engines: Babylon.js's builders place
+    // their texture coordinates differently (tests/unit/conformance/geometry-uvs.test.ts). #162 builds Babylon.js's
+    // shapes from Three.js's generators, which makes them match: these cases then lose their `known`.
+    ...(
+      [
+        ['box', { shape: 'box', width: 60, depth: 60, height: 60 }, [0, 0, -120], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }, { three: { c: [128, 128, 128, 255], a: [255, 0, 0, 255], b: [255, 255, 255, 255] }, babylon: { c: [128, 128, 128, 255], a: [0, 0, 255, 255], b: [0, 255, 0, 255] } }],
+        ['sphere', { shape: 'sphere', radius: 45, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 50, 4, 4], b: [74, 74, 4, 4] }, { three: { c: [173.75, 127.5, 115, 255], a: [0, 255, 0, 255], b: [255, 0, 0, 255] }, babylon: { c: [172.875, 127.5, 232.25, 255], a: [0, 0, 255, 255], b: [255, 255, 255, 255] } }],
+        ['cylinder, its top', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 20, detail: 64 }, [0, 0, -100], null, { c: [62, 62, 4, 4], a: [50, 76, 4, 4], b: [76, 50, 4, 4] }, { three: { c: [128, 128, 128, 255], a: [255, 255, 255, 255], b: [255, 0, 0, 255] }, babylon: { c: [128, 128, 128, 255], a: [255, 0, 0, 255], b: [255, 255, 255, 255] } }],
+        ['cylinder, its side', { shape: 'cylinder', radiusTop: 40, radiusBottom: 40, height: 80, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [54, 50, 4, 4], b: [70, 74, 4, 4] }, { three: { c: [169.75, 168.5, 139.25, 255], a: [0, 255, 0, 255], b: [0, 0, 255, 255] }, babylon: { c: [139.25, 255, 139.25, 255], a: [0, 255, 0, 255], b: [255, 255, 255, 255] } }],
+        ['torus', { shape: 'torus', radius: 35, tube: 15, detail: 64 }, [0, 0, -110], null, { c: [84, 62, 4, 4], a: [40, 62, 4, 4], b: [62, 40, 4, 4] }, { three: { c: [154.6875, 154.6875, 255, 255], a: [154.75, 154.75, 255, 255], b: [0, 0, 255, 255] }, babylon: { c: [255, 0, 0, 255], a: [0, 255, 0, 255], b: [154.75, 154.6875, 0, 255] } }],
+        ['capsule, its side', { shape: 'capsule', radius: 30, height: 100, detail: 64 }, null, rotX(-90, [0, 0, -130]), { c: [62, 62, 4, 4], a: [56, 46, 4, 4], b: [68, 78, 4, 4] }, { three: { c: [148.8125, 0, 148.8125, 255], a: [255, 0, 0, 255], b: [0, 0, 255, 255] }, babylon: { c: [163, 163, 255, 255], a: [174.75, 255, 174.75, 255], b: [255, 0, 0, 255] } }],
+      ] as const
+    ).map(
+      ([what, spec, at, matrix, regions, pinned]): Case => ({
+        name: `a texture on a ${what}, unlit (#133)`,
+        ops: [
+          { op: 'createTexture', id: 't', source: 'quadrants', spec: tex() },
+          { op: 'createMaterial', id: 'm', spec: mat(), map: 't' },
+          { op: 'createGeometry', id: 'g', spec: spec as never },
+          { op: 'createMesh', id: 'shape', geometry: 'g' },
+          matrix ? { op: 'setMatrix', id: 'shape', matrix: [...matrix] } : { op: 'setPosition', id: 'shape', position: at as unknown as V3 },
+          { op: 'addRoot', id: 'shape' },
+          { op: 'setMeshMaterial', mesh: 'shape', material: 'm' },
+        ],
+        regions: regions as unknown as Record<string, Region>,
+        rules: [{ region: 'c', is: 'drawn' }, { region: 'a', is: 'drawn' }, { region: 'b', is: 'drawn' }],
+        known: {
+          issue: '#162',
+          why: "Babylon.js's builders place a shape's texture coordinates differently from Three.js's; #162 builds them from Three.js's generators",
+          rules: [{ region: 'c', is: 'same' }, { region: 'a', is: 'same' }, { region: 'b', is: 'same' }],
+          // What each engine shows today, measured on Chromium revision 1248.
+          pinned: pinned as unknown as Record<Engine, Record<string, number[]>>,
+        },
+      }),
+    ),
   ];
 
   const FINAL = 'final';
@@ -936,6 +1204,11 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
           if (rule.is === 'drawn') expect(a, msg).toBeGreaterThanOrEqual(250);
           else if (rule.is === 'empty') expect(a, msg).toBeLessThanOrEqual(2);
           else expect(Math.abs(a - value), `${msg}, expected ${value}`).toBeLessThanOrEqual(SAME);
+        }
+      } else if (rule.is === 'matches') {
+        for (const engine of ENGINES) {
+          const [x, y] = [r[engine].regions[rule.region], r[engine].regions[rule.other]];
+          expect(Math.max(maxDiff(x, y), Math.abs(x[3] - y[3])), `${engine} ${rule.region} / ${rule.other}${at}: ${x} / ${y}`).toBeLessThanOrEqual(SAME);
         }
       } else if (rule.is === 'sameAlpha') expect(Math.abs(b[3] - t[3]), `${rule.region}${at} alpha: ${t[3]} / ${b[3]}`).toBeLessThanOrEqual(SAME);
       else expect(Math.max(maxDiff(b, t), Math.abs(b[3] - t[3])), `${rule.region}${at}: ${t} / ${b}`).toBeLessThanOrEqual(SAME);
@@ -1240,6 +1513,84 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
       for (const engine of ENGINES) expect(Math.abs(out[engine][k].framebuffer[3] - 128), `${engine} ${k} alpha ${out[engine][k].framebuffer}`).toBeLessThanOrEqual(SAME);
       expect(maxDiff(out.babylon[k].screen, out.three[k].screen), `${k} screen: three ${rgb(out.three[k].screen)} / babylon ${rgb(out.babylon[k].screen)}`).toBeLessThanOrEqual(SAME);
     }
+  });
+});
+
+test.describe('conformance: a video texture through the adapters (#133)', () => {
+  // The harness's video is a canvas stream painted #c08040, then #4080c0: a texture stuck on its first frame shows. The
+  // source node owns the element (source.videoFile): the texture leaves its loop, autoplay and mute alone, and neither a
+  // mesh's release nor the scene's teardown pauses it.
+  test('a video texture plays, the same on both engines, and leaves its video playing', async ({ page }) => {
+    const ops: AdapterOp[] = [
+      { op: 'createTexture', id: 't', source: 'video', spec: { wrap: 'repeat', repeatU: 1, repeatV: 1 } },
+      { op: 'createMaterial', id: 'm', spec: { color: [1, 1, 1], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true }, map: 't' },
+      { op: 'createGeometry', id: 'g', spec: { shape: 'plane', width: 100, depth: 100 } },
+      { op: 'createMesh', id: 'p', geometry: 'g' },
+      { op: 'setPosition', id: 'p', position: [0, 0, -50] },
+      { op: 'addRoot', id: 'p' },
+      { op: 'setMeshMaterial', mesh: 'p', material: 'm' },
+    ];
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async (o) => {
+        const H = (window as never as { H: Harness }).H;
+        const settle = () => new Promise((res) => setTimeout(res, 300));
+        const before = H.videoState();
+        await H.buildAdapterScene(o);
+        await settle();
+        H.render();
+        const first = H.region(56, 56, 16, 16);
+        H.setVideoColour('#4080c0');
+        await settle();
+        H.render();
+        const second = H.region(56, 56, 16, 16);
+        const during = H.videoState();
+        H.dispose();
+        await settle();
+        return { before, first, second, during, after: H.videoState() };
+      }, ops),
+    );
+    console.log('video texture', JSON.stringify(r));
+    for (const engine of ENGINES) {
+      expect(maxDiff(r[engine].first, [0xc0, 0x80, 0x40]), `${engine} first frame ${rgb(r[engine].first)}`).toBeLessThanOrEqual(SAME);
+      expect(maxDiff(r[engine].second, [0x40, 0x80, 0xc0]), `${engine} after the video changed ${rgb(r[engine].second)}`).toBeLessThanOrEqual(SAME);
+      expect(r[engine].during, `${engine}: the texture left its video as it was`).toEqual(r[engine].before);
+      expect(r[engine].after, `${engine}: the teardown left its video playing`).toEqual(r[engine].before);
+      expect(r[engine].after.paused, engine).toBe(false);
+    }
+  });
+});
+
+test.describe('conformance: a video texture keeps its wrap (#133)', () => {
+  // Babylon.js's VideoTexture sets its own wrap each time its video's picture size changes (a `resize` event,
+  // videoTexture.pure.js, _resizeInternalTexture); the adapter puts the texture's own back. Qodo, #163.
+  test('a clamp video texture stays clamp after its video resizes, on both engines', async ({ page }) => {
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async () => {
+        const H = (window as never as { H: Harness }).H;
+        await H.buildAdapterScene([
+          { op: 'createTexture', id: 't', source: 'video', spec: { wrap: 'clamp', repeatU: 2, repeatV: 2 } },
+          { op: 'createMaterial', id: 'm', spec: { color: [1, 1, 1], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true }, map: 't' },
+          { op: 'createGeometry', id: 'g', spec: { shape: 'plane', width: 100, depth: 100 } },
+          { op: 'createMesh', id: 'p', geometry: 'g' },
+          { op: 'setPosition', id: 'p', position: [0, 0, -50] },
+          { op: 'addRoot', id: 'p' },
+          { op: 'setMeshMaterial', mesh: 'p', material: 'm' },
+          { op: 'render' },
+        ]);
+        await new Promise((res) => setTimeout(res, 300));
+        H.render();
+        const before = H.textureWrap('t');
+        H.resizeVideo();
+        H.render();
+        const afterOne = H.textureWrap('t');
+        H.resizeVideo();
+        H.resizeVideo();
+        H.render();
+        return { before, afterOne, afterThree: H.textureWrap('t') };
+      }),
+    );
+    console.log('video wrap', JSON.stringify(r));
+    for (const engine of ENGINES) expect(r[engine], engine).toEqual({ before: 'clamp', afterOne: 'clamp', afterThree: 'clamp' });
   });
 });
 

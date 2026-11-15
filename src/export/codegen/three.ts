@@ -6,6 +6,8 @@
  */
 import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
 import { nonZeroScale } from '../../core/math';
+import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type TextureWrap } from '../../core/material';
+import { rgbaToHex } from '../../core/color';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -161,11 +163,61 @@ const geometry =
     };
   };
 
+const SIDES: Record<MaterialSide, string> = { front: 'THREE.FrontSide', back: 'THREE.BackSide', double: 'THREE.DoubleSide' };
+const WRAPS: Record<TextureWrap, string> = { clamp: 'THREE.ClampToEdgeWrapping', repeat: 'THREE.RepeatWrapping', mirror: 'THREE.MirroredRepeatWrapping' };
+
+/**
+ * scene.material as a three.js expression, as the Three.js adapter builds it (#133): MeshStandardMaterial, or
+ * MeshBasicMaterial when unlit (no metalness, roughness or emissive); colours as sRGB hex, which three converts as the
+ * adapter's setRGB(…, SRGBColorSpace) does; transparent below opacity 1, without depth writes. `map` is the texture's
+ * variable, or null.
+ */
+export function threeMaterialCode(spec: MaterialSpec, map: string | null): string {
+  const props = [`color: '${rgbaToHex(spec.color)}'`];
+  if (!spec.unlit) {
+    props.push(`metalness: ${decimal(spec.metalness)}`, `roughness: ${decimal(spec.roughness)}`);
+    if (spec.emissive.some((c) => c > 0)) props.push(`emissive: '${rgbaToHex(spec.emissive)}'`, `emissiveIntensity: ${decimal(spec.emissiveIntensity)}`);
+  }
+  if (map) props.push(`map: ${map}`);
+  if (spec.side !== 'front') props.push(`side: ${SIDES[spec.side]}`);
+  if (spec.opacity < 1) props.push('transparent: true', `opacity: ${decimal(spec.opacity)}`, 'depthWrite: false');
+  return `new THREE.${spec.unlit ? 'MeshBasicMaterial' : 'MeshStandardMaterial'}({ ${props.join(', ')} })`;
+}
+
+const material: CodeEmitter = (ctx) => {
+  required(ctx, 'scene');
+  paramsOnly(ctx, 'color', 'emissive');
+  const m = ctx.name();
+  const map = typeof ctx.inputs.map === 'string' ? ctx.inputs.map : null;
+  return { imports: [THREE_IMPORT], setup: `const ${m} = ${threeMaterialCode(materialSpec(ctx.params), map)};`, outputs: { material: m } };
+};
+
+const texture: CodeEmitter = (ctx) => {
+  const { name, params, literal } = ctx;
+  required(ctx, 'scene');
+  if ('video' in ctx.inputs) throw new Error('its video input is wired, and the source code export writes an image texture only for now');
+  const url = String(params.url ?? '').trim();
+  if (!url) throw new Error('it has no image URL');
+  const t = name();
+  const spec = textureSpec(params);
+  return {
+    imports: [THREE_IMPORT],
+    // sRGB, mipmaps and trilinear filtering (three's defaults for a loaded image), as the Three.js adapter sets them.
+    setup: `const ${t} = await new THREE.TextureLoader().loadAsync(${literal(url)});
+${t}.colorSpace = THREE.SRGBColorSpace;
+${t}.wrapS = ${t}.wrapT = ${WRAPS[spec.wrap]};
+${t}.repeat.set(${decimal(spec.repeatU)}, ${decimal(spec.repeatV)});`,
+    outputs: { texture: t },
+  };
+};
+
 const mesh: CodeEmitter = (ctx) => {
   const { name, params, literal } = ctx;
   required(ctx, 'scene');
   const g = required(ctx, 'geometry');
-  paramsOnly(ctx, 'position', 'rotation', 'scale', 'color');
+  // With a material, the mesh's colour is set aside (#133): its input is not written, so it is not refused either.
+  const withMaterial = typeof ctx.inputs.material === 'string' ? ctx.inputs.material : null;
+  paramsOnly(ctx, 'position', 'rotation', 'scale', ...(withMaterial ? [] : ['color']));
   const m = name();
   const from = ctx.from('geometry') ?? {};
   // As scene.mesh: each component at least MIN_SCALE in magnitude, with its sign.
@@ -176,7 +228,7 @@ const mesh: CodeEmitter = (ctx) => {
   const scaled = scale.some((v) => v !== 1) ? `\n${m}.scale.set(${scale.map(decimal).join(', ')});` : '';
   return {
     imports: [THREE_IMPORT],
-    setup: `const ${m} = new THREE.Mesh(${g}, new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))}, metalness: 0, roughness: 1 }));
+    setup: `const ${m} = new THREE.Mesh(${g}, ${withMaterial ?? `new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))}, metalness: 0, roughness: 1 })`});
 ${m}.position.set(${x}, ${y}, ${decimal(z + lift)});${lift ? ` // resting on the marker: lifted by ${decimal(lift)} mm, its geometry's bottom` : ''}
 ${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}`,
     frame: params.spin ? `${m}.rotation.z += delta * 0.0005; // spins about its own Z axis` : undefined,
@@ -361,6 +413,8 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'scene.arCamera': arCamera,
   'scene.light': light,
   'scene.mesh': mesh,
+  'scene.material': material,
+  'scene.texture': texture,
   // One per shape of the core's GEOMETRY_TYPES (#132).
   ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,

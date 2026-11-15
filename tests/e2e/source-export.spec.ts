@@ -102,6 +102,38 @@ test('pinball-three as source code: built and served, it tracks, shows the knot 
   }
 });
 
+test('pinball-material as source code (#133): the texture ships, the project builds and runs without a missing file', async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  await loadDemo(page, 'pinball-material');
+  const { dir, files } = await exportZip(page, 'source-code');
+  const png = files.find((f) => f.endsWith('/textures/tiles.png'));
+  expect(png, files.join('\n')).toBeDefined();
+  expect(png).toMatch(/\/public\//);
+  const main = readFileSync(join(dir, 'src/main.js'), 'utf8');
+  expect(main).toContain('new THREE.TextureLoader().loadAsync(');
+  expect(main).toMatch(/const prim_pinball = new THREE\.Mesh\(prim_pinball_geometry, chrome\);/);
+
+  const dist = buildProject(dir);
+  const server = await serveDir(dist);
+  try {
+    const app = await browser.newPage();
+    const errors: string[] = [];
+    const missing: string[] = [];
+    app.on('pageerror', (e) => errors.push(e.message));
+    // The tracker asks for a packed .zft first and falls back to the dataset's files (as export.spec.ts allows).
+    app.on('response', (r) => r.status() >= 400 && !r.url().endsWith('.zft') && missing.push(`${r.status()} ${r.url()}`));
+    const loaded = app.waitForResponse((r) => r.url().endsWith('/tiles.png'), NEXT);
+    await app.goto(server.url);
+    await expect(app.locator('.ar-view canvas')).toHaveCount(1, NEXT);
+    expect((await loaded).status()).toBe(200);
+    expect(errors).toEqual([]);
+    expect(missing).toEqual([]);
+    await app.close();
+  } finally {
+    await server.close();
+  }
+});
+
 test('the generated app puts the knot where the studio does (projection, centre offset, lift)', async ({ page, browser }) => {
   // Two whileFound() polls of up to 60 s each, plus the export, the synchronous build and two page loads (about 40 s
   // here, more under load): 240 s, so a poll that fails reports its own message, not the test's timeout.

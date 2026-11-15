@@ -8,8 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # The e2e suite alone takes about 18 min (#108): room for it and the steps before it.
-    timeout-minutes: 35
+    # The e2e suite alone takes about 29 min on CI with 390 tests (Phase 4's conformance cases, #163; 18 min at #108):
+    # room for it and the steps before it.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -31,7 +32,7 @@ jobs:
       # while the job is still alive. A job timeout cancels the job, which runs only the cancelled() steps, if any.
       - name: End-to-end tests
         run: npm run test:e2e
-        timeout-minutes: 28
+        timeout-minutes: 45
       # On a failure, and on a cancelled run too: what ran is still worth reading.
       - uses: actions/upload-artifact@v6
         if: failure() || cancelled()
