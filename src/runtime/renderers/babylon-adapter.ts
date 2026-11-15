@@ -137,11 +137,12 @@ const GENERATORS = { BoxGeometry, SphereGeometry, CylinderGeometry, PlaneGeometr
 export function babylonVertexData(spec: GeometrySpec): VertexData {
   const geometry = threeShape(spec, GENERATORS);
   const data = new VertexData();
-  data.positions = Array.from(geometry.getAttribute('position').array);
-  data.normals = Array.from(geometry.getAttribute('normal').array);
-  data.uvs = Array.from(geometry.getAttribute('uv').array);
+  // Typed arrays, copied: Babylon.js takes them as they are (no number[] round trip on every live change).
+  data.positions = new Float32Array(geometry.getAttribute('position').array);
+  data.normals = new Float32Array(geometry.getAttribute('normal').array);
+  data.uvs = new Float32Array(geometry.getAttribute('uv').array);
   const index = geometry.getIndex();
-  const corners = index ? Array.from(index.array) : Array.from({ length: data.positions.length / 3 }, (_, i) => i);
+  const corners = index ? new Uint32Array(index.array) : Uint32Array.from({ length: data.positions.length / 3 }, (_, i) => i);
   for (let t = 0; t + 2 < corners.length; t += 3) [corners[t + 1], corners[t + 2]] = [corners[t + 2], corners[t + 1]];
   data.indices = corners;
   geometry.dispose();

@@ -4,8 +4,8 @@
  *
  * The core fixes each shape's axes; each renderer adapter builds the shape so (docs/proposals/scene-nodes-equivalence.md,
  * "Geometry"). normalizeGeometry() is the one place a spec's values are made safe: both adapters and the bounds read
- * its result, so an engine never sees a value the other would read differently (a 0 that Babylon.js's builders take
- * as "use the default", a non-integer segment count, a capsule shorter than its two caps).
+ * its result (and so does the source export), so every reader gets the same values: no zero size (a shape with no
+ * area, its triangles degenerate), a whole segment count, no capsule shorter than its two caps.
  */
 import type { Vec3 } from './math';
 
@@ -100,7 +100,7 @@ export function geometrySpec(shape: GeometryShape, p: Record<string, unknown>): 
   return normalizeGeometry(specs[shape]());
 }
 
-/** The smallest size the core passes on (mm): Babylon.js's builders read 0 as "use the default". */
+/** The smallest size the core passes on (mm): a size of 0 would make a shape with no area, its triangles degenerate. */
 export const MIN_SIZE = 0.001;
 /** Segments around a torus knot's tube, on both engines. */
 export const TORUS_KNOT_TUBE_SEGMENTS = 16;

@@ -139,10 +139,17 @@ describe("the Babylon.js adapter's shapes face the way Three.js's do (#162)", ()
   // Three.js's generators wind front faces counter-clockwise; a mesh in a right-handed Babylon.js scene takes clockwise
   // ones as its front (sideOrientation 0), as Babylon.js's own builders wind them. The adapter swaps each triangle's
   // corners: its triangles wind clockwise about the same normals, which stay Three.js's.
-  it.each(Object.keys(SHAPES))("%s: clockwise about its normals, the normals Three.js's", (name) => {
+  it.each(Object.keys(SHAPES))("%s: clockwise about its normals; Three.js's vertices, normals and texture coordinates", (name) => {
     const babylon = babylonVertexData(SHAPES[name]);
     expect(measure(fromBabylon(babylon)).windingAgreesWithNormals).toBe(0);
     const three = threeGeometry(SHAPES[name]);
+    // Array for array: the same mesh, not only the same texel at sampled points.
+    expect(Array.from(babylon.positions!)).toEqual(Array.from(three.getAttribute('position').array));
     expect(Array.from(babylon.normals!)).toEqual(Array.from(three.getAttribute('normal').array));
+    expect(Array.from(babylon.uvs!)).toEqual(Array.from(three.getAttribute('uv').array));
+    // Three.js's triangles, each with its last two corners swapped.
+    const index = Array.from(three.getIndex()!.array);
+    for (let t = 0; t < index.length; t += 3) [index[t + 1], index[t + 2]] = [index[t + 2], index[t + 1]];
+    expect(Array.from(babylon.indices!)).toEqual(index);
   });
 });
