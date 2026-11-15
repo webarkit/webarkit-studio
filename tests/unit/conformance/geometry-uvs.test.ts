@@ -4,7 +4,7 @@
  * surface point is read, and the exact relation between the two is found: a sign or swap of u and v, plus an offset,
  * wrapped on an axis that goes round the shape. A texture shows the same on both engines where the relation is the
  * identity. This pins what each shape does today (docs/proposals/scene-nodes-equivalence.md, "UVs on other shapes"):
- * a translation in babylonVertexData changes the shape's line to `t = (u, v) + (0.0000, 0.0000)`.
+ * #162 builds Babylon.js's shapes from Three.js's generators, which makes every line `t = (u, v) + (0.0000, 0.0000)`.
  */
 import { describe, expect, it } from 'vitest';
 import { threeGeometry } from '../../../src/runtime/renderers/three-adapter';
@@ -153,5 +153,11 @@ describe('UVs on the core shapes: Babylon.js against Three.js (#133)', () => {
 
   it('pinned: the torus, u mirrored a quarter turn on, v half a turn round the tube', () => {
     expect(relations('torus', SHAPES.torus)).toEqual({ all: 't = (-u, v) + (0.2500, -0.5000)' });
+  });
+
+  // Known differences: #162 builds Babylon.js's shapes from Three.js's generators, and these pass then (remove `fails`
+  // and the pinned tests above).
+  it.fails.each(['box', 'sphere', 'cylinder', 'torus', 'torusKnot', 'capsule'] as const)('known difference (#162): %s, the same as Three.js', (name) => {
+    for (const fit of Object.values(relations(name, SHAPES[name]))) expect(fit).toBe('t = (u, v) + (0.0000, 0.0000)');
   });
 });
