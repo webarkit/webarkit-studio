@@ -172,6 +172,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   };
   const node = (o: SceneObject) => (assertOwned(handle, o), o.native as BabylonNode);
   const geometryOf = (g: GeometryObject) => (assertOwned(handle, g), g.native as Geometry);
+  /** The geometries createGeometry made: a release never disposes one, the scene's teardown does (#132). */
+  const sharedGeometries = new WeakSet<Geometry>();
   const transform = (o: SceneObject) => node(o) as TransformNode;
   /** Wired to the scene or to a parent, and made invisible: an object shows when it is the first and not the second. */
   const wired = new WeakSet<BabylonNode>();
@@ -196,6 +198,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     createGeometry(spec) {
       // Updatable: setGeometry replaces the vertex data, whose length a live param can change.
       const geometry = new Geometry(`geometry-${spec.shape}`, scene, babylonVertexData(spec), true);
+      sharedGeometries.add(geometry);
       return { scene: handle, native: geometry, kind: 'geometry' };
     },
     setGeometry(g, spec) {
@@ -264,6 +267,13 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     release: (o) => {
       const n = node(o);
       n.parent = null;
+      // A mesh of a createGeometry geometry, or one under the released node, leaves it first (#132): Mesh.dispose
+      // would release it with shouldDispose, which disposes the geometry with its last mesh (geometry.js,
+      // releaseForMesh), and a geometry node keeps building on it. The scene's teardown frees it.
+      for (const m of [n, ...n.getDescendants(false)]) {
+        const geometry = (m as Mesh).geometry;
+        if (geometry && sharedGeometries.has(geometry)) geometry.releaseForMesh(m as Mesh, false);
+      }
       n.dispose(false, true);
     },
     createLight(given: LightSpec) {

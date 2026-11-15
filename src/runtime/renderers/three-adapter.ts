@@ -95,6 +95,10 @@ function createThreeScene(
   const scratch = new THREE.Vector3();
   const obj = (o: SceneObject) => (assertOwned(handle, o), o.native as THREE.Object3D);
   const geometryState = (g: GeometryObject) => (assertOwned(handle, g), g.native as ThreeGeometryState);
+  /** Each mesh of a createGeometry geometry, and that geometry's state: release() takes the mesh out of it (#132). */
+  const meshGeometry = new WeakMap<THREE.Object3D, ThreeGeometryState>();
+  /** The geometries createGeometry made and keeps: a release never disposes one, the scene's teardown does. */
+  const sharedGeometries = new WeakSet<THREE.BufferGeometry>();
   const modelClips = new WeakMap<THREE.Object3D, ModelClips>();
   const mixers = new Set<THREE.AnimationMixer>();
   /** Mixers with a clip started since the last render: it starts at its beginning, not with the time before it existed. */
@@ -110,6 +114,7 @@ function createThreeScene(
     createGeometry(spec) {
       const state: ThreeGeometryState = { geometry: threeGeometry(spec), meshes: new Set() };
       disposables.add(state.geometry);
+      sharedGeometries.add(state.geometry);
       return { scene: handle, native: state, kind: 'geometry' };
     },
     setGeometry(g, spec) {
@@ -119,6 +124,7 @@ function createThreeScene(
       // for its dispose event), and each mesh's bounding sphere is computed again from the new vertices.
       state.geometry = threeGeometry(spec);
       disposables.add(state.geometry);
+      sharedGeometries.add(state.geometry);
       for (const mesh of state.meshes) mesh.geometry = state.geometry;
       disposables.delete(old);
       old.dispose();
@@ -129,6 +135,7 @@ function createThreeScene(
       disposables.add(material);
       const mesh = new THREE.Mesh(state.geometry, material);
       state.meshes.add(mesh);
+      meshGeometry.set(mesh, state);
       return wrap(mesh);
     },
     async loadModel(spec: ModelSpec) {
@@ -171,7 +178,16 @@ function createThreeScene(
       g.matrixAutoUpdate = false;
       return wrap(g);
     },
-    release: (o) => disposeObject3D(obj(o)),
+    release(o) {
+      const root = obj(o);
+      // A released mesh, or one under a released group, leaves its geometry's meshes: setGeometry no longer touches it.
+      root.traverse((x) => {
+        meshGeometry.get(x)?.meshes.delete(x as THREE.Mesh);
+        meshGeometry.delete(x);
+      });
+      // Its material goes; a geometry other meshes share stays, for the scene's teardown to free.
+      disposeObject3D(root, (geometry) => sharedGeometries.has(geometry));
+    },
     createLight(given: LightSpec) {
       const spec = { ...given, kind: lightKind(given.kind) };
       const color = new THREE.Color(spec.color);
