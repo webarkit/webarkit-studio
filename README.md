@@ -704,7 +704,7 @@ Planned split once the format stabilises (npm workspaces):
 | `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |
 | `geometry.sphere` | ✅ ⚡ | scene → geometry (radius, detail; poles on Z) |
 | `geometry.cylinder` | ✅ ⚡ | scene → geometry (top and bottom radius, height, detail; along Z; a top radius of 0 is a cone) |
-| `geometry.plane` | ✅ ⚡ | scene → geometry (width X, height Y; on the marker, facing +Z) |
+| `geometry.plane` | ✅ ⚡ | scene → geometry (width X, depth Y; on the marker, facing +Z) |
 | `geometry.torus` | ✅ ⚡ | scene → geometry (radius, tube, detail; the ring in XY) |
 | `geometry.torusKnot` | ✅ ⚡ | scene → geometry (radius, tube, p, q, detail) |
 | `geometry.capsule` | ✅ ⚡ | scene → geometry (radius, total height, detail; along Z) |

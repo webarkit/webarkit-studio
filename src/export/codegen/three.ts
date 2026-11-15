@@ -132,7 +132,7 @@ export function threeGeometryCode(spec: GeometrySpec): { code: string; note?: st
     case 'cylinder':
       return { code: `new THREE.CylinderGeometry(${d(s.radiusTop)}, ${d(s.radiusBottom)}, ${d(s.height)}, ${s.detail}).rotateX(Math.PI / 2)`, note: 'along Z, the top at +Z' };
     case 'plane':
-      return { code: `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.height)})`, note: 'on the marker, facing +Z' };
+      return { code: `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.depth)})`, note: 'width X, depth Y, on the marker, facing +Z' };
     case 'torus':
       return { code: `new THREE.TorusGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${s.detail})`, note: 'the ring in XY' };
     case 'torusKnot':

@@ -695,7 +695,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { shape: 'box', width: 40, depth: 30, height: 20 },
         { shape: 'sphere', radius: 20, detail: 32 },
         { shape: 'cylinder', radiusTop: 10, radiusBottom: 20, height: 30, detail: 32 },
-        { shape: 'plane', width: 40, height: 30 },
+        { shape: 'plane', width: 40, depth: 30 },
         { shape: 'torus', radius: 15, tube: 5, detail: 32 },
         { shape: 'torusKnot', radius: 40 / 3, tube: 4, p: 2, q: 3, detail: 100 },
         { shape: 'capsule', radius: 10, height: 40, detail: 16 },

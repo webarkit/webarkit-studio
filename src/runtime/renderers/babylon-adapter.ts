@@ -87,7 +87,8 @@ export function babylonVertexData(given: GeometrySpec): VertexData {
         Math.PI / 2,
       );
     case 'plane':
-      return CreatePlaneVertexData({ width: spec.width, height: spec.height, sideOrientation: VertexData.BACKSIDE });
+      // The builder's height is its Y extent: the core's depth.
+      return CreatePlaneVertexData({ width: spec.width, height: spec.depth, sideOrientation: VertexData.BACKSIDE });
     case 'torus':
       return turned(CreateTorusVertexData({ diameter: 2 * spec.radius, thickness: 2 * spec.tube, tessellation: spec.detail }), -Math.PI / 2);
     case 'torusKnot':

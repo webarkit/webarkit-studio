@@ -18,8 +18,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 - **Graph format v6** (#132): the Primitive node is replaced by a geometry node wired into a Mesh. Older graphs
   upgrade when they are opened: each Primitive becomes a Mesh with the same id, wires and params, and a Box, Sphere
-  or Torus Knot of the same size. A torus knot now rests on the marker: it floated 18.78 mm above it (at size 80),
-  and comes down by that much. A box or sphere does not move.
+  or Torus Knot of the same size. A new Mesh does not spin unless Spin is on; an upgraded one keeps its spin. A
+  torus knot now rests on the marker: it floated 18.78 mm above it (at size 80), and comes down by that much. A box
+  or sphere does not move. On every geometry node, height is out of the marker: the Plane's sizes are width (X) and
+  depth (Y).
 - Babylon.js scenes look different (#131): the Babylon.js renderer now draws primitives with a physically based
   material, as Three.js does, and maps lights and colours as Three.js reads them, so the same graph looks
   alike on both. Lights no longer need lower intensities on Babylon.js, and a hemisphere light no longer

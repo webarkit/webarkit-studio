@@ -711,12 +711,12 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Plane',
     category: 'geometry',
     provider: 'core',
-    description: 'A flat rectangle on the marker plane, facing +Z: width along X, height along Y.',
+    description: 'A flat rectangle on the marker plane, facing +Z: width along X, depth along Y.',
     inputs: { scene: { type: 'scene', label: 'Scene' } },
     outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
     params: {
       width: { kind: 'number', label: 'Width (X, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
-      height: { kind: 'number', label: 'Height (Y, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
     },
   },
   {

@@ -32,7 +32,7 @@ export function threeGeometry(given: GeometrySpec): THREE.BufferGeometry {
     case 'cylinder':
       return new THREE.CylinderGeometry(spec.radiusTop, spec.radiusBottom, spec.height, spec.detail).rotateX(Math.PI / 2);
     case 'plane':
-      return new THREE.PlaneGeometry(spec.width, spec.height);
+      return new THREE.PlaneGeometry(spec.width, spec.depth); // PlaneGeometry's height is its Y extent: the core's depth
     case 'torus':
       return new THREE.TorusGeometry(spec.radius, spec.tube, spec.detail, spec.detail);
     case 'torusKnot':

@@ -38,8 +38,8 @@ export interface PlaneSpec {
   shape: 'plane';
   /** Along X. */
   width: number;
-  /** Along Y: the plane lies on the marker, facing +Z. */
-  height: number;
+  /** Along Y: the plane lies on the marker, facing +Z (`height` is always out of the marker, #132's ruling). */
+  depth: number;
 }
 export interface TorusSpec {
   shape: 'torus';
@@ -92,7 +92,7 @@ export function geometrySpec(shape: GeometryShape, p: Record<string, unknown>): 
     box: () => ({ shape: 'box', width: n('width'), depth: n('depth'), height: n('height') }),
     sphere: () => ({ shape: 'sphere', radius: n('radius'), detail: n('detail') }),
     cylinder: () => ({ shape: 'cylinder', radiusTop: n('radiusTop'), radiusBottom: n('radiusBottom'), height: n('height'), detail: n('detail') }),
-    plane: () => ({ shape: 'plane', width: n('width'), height: n('height') }),
+    plane: () => ({ shape: 'plane', width: n('width'), depth: n('depth') }),
     torus: () => ({ shape: 'torus', radius: n('radius'), tube: n('tube'), detail: n('detail') }),
     torusKnot: () => ({ shape: 'torusKnot', radius: n('radius'), tube: n('tube'), p: n('p'), q: n('q'), detail: n('detail') }),
     capsule: () => ({ shape: 'capsule', radius: n('radius'), height: n('height'), detail: n('detail') }),
@@ -131,7 +131,7 @@ export function normalizeGeometry(spec: GeometrySpec): GeometrySpec {
       return { shape: 'cylinder', radiusTop: top, radiusBottom: size(spec.radiusBottom, 1), height: size(spec.height, 1), detail: segments(spec.detail, 32, 4, 4, 256) };
     }
     case 'plane':
-      return { shape: 'plane', width: size(spec.width, 1), height: size(spec.height, 1) };
+      return { shape: 'plane', width: size(spec.width, 1), depth: size(spec.depth, 1) };
     case 'torus':
       return { shape: 'torus', radius: size(spec.radius, 1), tube: size(spec.tube, 0.25), detail: segments(spec.detail, 32, 4, 4, 256) };
     case 'torusKnot':
@@ -163,7 +163,7 @@ export function geometryBounds(given: GeometrySpec): Bounds {
       return centred(r, r, spec.height / 2);
     }
     case 'plane':
-      return centred(spec.width / 2, spec.height / 2, 0);
+      return centred(spec.width / 2, spec.depth / 2, 0);
     case 'torus':
       return centred(spec.radius + spec.tube, spec.radius + spec.tube, spec.tube);
     case 'torusKnot':

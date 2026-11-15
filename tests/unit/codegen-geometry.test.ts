@@ -15,7 +15,7 @@ const SHAPES: GeometrySpec[] = [
   { shape: 'sphere', radius: 15, detail: 13 },
   { shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 },
   { shape: 'cylinder', radiusTop: 12, radiusBottom: 4, height: 8, detail: 17 },
-  { shape: 'plane', width: 30, height: 20 },
+  { shape: 'plane', width: 30, depth: 20 },
   { shape: 'torus', radius: 20, tube: 5, detail: 9 },
   { shape: 'torusKnot', radius: 80 / 3, tube: 8, p: 2, q: 3, detail: 100 },
   { shape: 'capsule', radius: 5, height: 30, detail: 10 },

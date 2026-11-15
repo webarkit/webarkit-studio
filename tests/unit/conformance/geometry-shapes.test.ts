@@ -89,7 +89,7 @@ const SWEEP: GeometrySpec[] = [
   ...[4, 6, 17, 32].map((detail): GeometrySpec => ({ shape: 'cylinder', radiusTop: 5, radiusBottom: 10, height: 30, detail })),
   { shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 },
   { shape: 'cylinder', radiusTop: 12, radiusBottom: 4, height: 8, detail: 24 },
-  { shape: 'plane', width: 30, height: 20 },
+  { shape: 'plane', width: 30, depth: 20 },
   ...[4, 9, 16, 48].map((detail): GeometrySpec => ({ shape: 'torus', radius: 20, tube: 5, detail })),
   ...[3, 64, 100, 257].map((detail): GeometrySpec => ({ shape: 'torusKnot', radius: 20, tube: 3, p: 2, q: 3, detail })),
   { shape: 'torusKnot', radius: 80 / 3, tube: 8, p: 3, q: 5, detail: 100 },
@@ -138,7 +138,7 @@ describe.each(Object.keys(ENGINES) as Engine[])('%s: createGeometry builds the c
 
   test('a plane faces +Z: its normals are +Z', () => {
     withScene(engine, (scene) => {
-      const geometry = scene.createGeometry({ shape: 'plane', width: 30, height: 20 });
+      const geometry = scene.createGeometry({ shape: 'plane', width: 30, depth: 20 });
       const normals =
         engine === 'three'
           ? ((geometry.native as ThreeGeometryState).geometry.getAttribute('normal') as THREE.BufferAttribute).array

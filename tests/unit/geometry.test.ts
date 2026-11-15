@@ -25,8 +25,8 @@ describe('geometryBounds: each shape, its axes in marker space', () => {
     close(geometryBounds({ shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 }), [-10, -10, -15], [10, 10, 15]);
   });
 
-  it('plane: flat on the marker, width along X and height along Y', () => {
-    close(geometryBounds({ shape: 'plane', width: 30, height: 20 }), [-15, -10, 0], [15, 10, 0]);
+  it('plane: flat on the marker, width along X and depth along Y (height is always out of the marker)', () => {
+    close(geometryBounds({ shape: 'plane', width: 30, depth: 20 }), [-15, -10, 0], [15, 10, 0]);
   });
 
   it('torus: the ring in XY, the tube along Z', () => {
@@ -88,7 +88,7 @@ describe('restLift: the lift that rests a mesh on the marker', () => {
   it("is the bounds' bottom below the origin, times the scale along Z", () => {
     expect(restLift(box, 1)).toBe(30);
     expect(restLift(box, 2)).toBe(60);
-    expect(restLift(geometryBounds({ shape: 'plane', width: 10, height: 10 }), 1)).toBe(0);
+    expect(restLift(geometryBounds({ shape: 'plane', width: 10, depth: 10 }), 1)).toBe(0);
   });
 
   it('takes the top as the bottom under a negative scale, and 0 under a scale of 0', () => {
