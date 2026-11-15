@@ -45,7 +45,8 @@ import type { BaseTexture } from '@babylonjs/core/Materials/Textures/baseTexture
 import { ShadowOnlyMaterial } from '@babylonjs/materials/shadowOnly/shadowOnlyMaterial';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
-import type { GeometryObject, LightSpec, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import type { GeometryObject, LightSpec, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from '../../../src/runtime/renderers/adapter';
+import type { MaterialSpec, TextureSpec } from '../../../src/core/material';
 import type { GeometrySpec } from '../../../src/core/geometry';
 import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
@@ -162,6 +163,16 @@ export type AdapterOp =
   | { op: 'setColor'; id: string; color: number[] }
   | { op: 'setIntensity'; id: string; intensity: number }
   /**
+   * #133: a material and a texture (each its own id space), a live change of each, and a mesh given a material (null:
+   * its own again). A texture shows one of the page's sources: `quadrants`, `alphaQuadrants` (the same, its right half
+   * at alpha 0.5), or `video`. `map` names a texture.
+   */
+  | { op: 'createMaterial'; id: string; spec: MaterialSpec; map?: string | null }
+  | { op: 'setMaterial'; id: string; spec: MaterialSpec; map?: string | null }
+  | { op: 'createTexture'; id: string; source: 'quadrants' | 'alphaQuadrants' | 'video'; spec: TextureSpec }
+  | { op: 'setTexture'; id: string; spec: TextureSpec }
+  | { op: 'setMeshMaterial'; mesh: string; material: string | null }
+  /**
    * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
    * a case can check it; otherwise what is read back is the frame after the last operation.
    */
@@ -218,6 +229,16 @@ function quadrantCanvas(): HTMLCanvasElement {
   fill(0, 32, 32, 32, '#0000ff');
   fill(32, 32, 32, 32, '#ffffff');
   fill(24, 24, 16, 16, '#808080');
+  return c;
+}
+
+/** The quadrants, with their right half (green, white, half the grey) at alpha 0.5. */
+function alphaQuadrantCanvas(): HTMLCanvasElement {
+  const c = quadrantCanvas();
+  const g = c.getContext('2d')!;
+  const right = g.getImageData(32, 0, 32, 64);
+  for (let i = 3; i < right.data.length; i += 4) right.data[i] = 128;
+  g.putImageData(right, 32, 0);
   return c;
 }
 
@@ -303,6 +324,7 @@ export interface OpenOptions {
 
 async function open(engine: Engine, size: number, options: OpenOptions = {}): Promise<Harness> {
   textures.set('quadrants', { canvas: quadrantCanvas() });
+  textures.set('alphaQuadrants', { canvas: alphaQuadrantCanvas() });
   textures.set('video', { video: await videoOf('#c08040') });
 
   const renderer: RendererAdapter = engine === 'three' ? createThreeAdapter({ antialias: false }) : createBabylonAdapter({ antialias: false });
@@ -320,6 +342,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
   const named = new Map<string, SceneObject>();
   /** The geometries of buildAdapterScene, by id (#132). */
   const geometries = new Map<string, GeometryObject>();
+  const materials = new Map<string, MaterialObject>();
+  const adapterTextures = new Map<string, TextureObject>();
   /** Renders until Babylon.js's shaders are ready; throws after 2 s, so a blank frame is never measured. */
   async function babylonReady() {
     if (engine !== 'babylon') return;
@@ -838,6 +862,19 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       clear();
       named.clear();
       geometries.clear();
+      materials.clear();
+      adapterTextures.clear();
+      const materialNamed = (id: string) => {
+        const m = materials.get(id);
+        if (!m) throw new Error(`no material "${id}"`);
+        return m;
+      };
+      const textureNamed = (id: string) => {
+        const t = adapterTextures.get(id);
+        if (!t) throw new Error(`no texture "${id}"`);
+        return t;
+      };
+      const mapOf = (id: string | null | undefined) => (id ? textureNamed(id) : null);
       const geometryNamed = (id: string) => {
         const g = geometries.get(id);
         if (!g) throw new Error(`no geometry "${id}"`);
@@ -899,6 +936,27 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             break;
           case 'setIntensity':
             handle.setIntensity(get(step.id), step.intensity);
+            break;
+          case 'createMaterial':
+            if (materials.has(step.id)) throw new Error(`material "${step.id}" created twice`);
+            materials.set(step.id, handle.createMaterial({ ...step.spec, map: mapOf(step.map) }));
+            break;
+          case 'setMaterial':
+            handle.setMaterial(materialNamed(step.id), { ...step.spec, map: mapOf(step.map) });
+            break;
+          case 'createTexture': {
+            if (adapterTextures.has(step.id)) throw new Error(`texture "${step.id}" created twice`);
+            const t = textures.get(step.source);
+            if (!t) throw new Error(`no texture source "${step.source}"`);
+            const source = 'canvas' in t ? ({ kind: 'image', element: t.canvas } as const) : ({ kind: 'video', element: t.video } as const);
+            adapterTextures.set(step.id, await handle.createTexture(source, step.spec));
+            break;
+          }
+          case 'setTexture':
+            handle.setTexture(textureNamed(step.id), step.spec);
+            break;
+          case 'setMeshMaterial':
+            handle.setMeshMaterial(get(step.mesh), step.material === null ? null : materialNamed(step.material));
             break;
           case 'render':
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.

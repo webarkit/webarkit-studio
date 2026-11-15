@@ -93,6 +93,8 @@ const WRAPS: Record<TextureWrap, number> = { clamp: Texture.CLAMP_ADDRESSMODE, r
 /** Wrap and repeat, normalised: Babylon.js's uScale / vScale are Three.js's repeat. */
 function applyTexture(texture: Texture, given: TextureSpec) {
   const spec = normalizeTexture(given);
+  // Three.js's anisotropy is 1 unless set; Babylon.js's default level is 4 (baseTexture.pure.js).
+  texture.anisotropicFilteringLevel = 1;
   texture.wrapU = texture.wrapV = WRAPS[spec.wrap];
   texture.uScale = spec.repeatU;
   texture.vScale = spec.repeatV;
@@ -241,10 +243,18 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     material.albedoColor = linearRgb(...spec.color);
     material.metallic = spec.metalness;
     material.roughness = spec.roughness;
-    material.emissiveColor = linearRgb(...spec.emissive);
+    // Unlit: Three.js's MeshBasicMaterial has no emissive, while an unlit PBRMaterial adds it (measured, #133).
+    material.emissiveColor = spec.unlit ? Color3.Black() : linearRgb(...spec.emissive);
     material.emissiveIntensity = spec.emissiveIntensity;
     material.unlit = spec.unlit;
     material.albedoTexture = map;
+    // Transparent, Three.js multiplies by the map's alpha; opaque, it ignores it. Babylon.js reads a map's alpha only with
+    // useAlphaFromAlbedoTexture, and an image texture has hasAlpha (below), which with no transparency mode would turn
+    // alpha testing on (pbrBaseMaterial.pure.js, needAlphaTesting): the mode is set per material, so a texture shared by
+    // an opaque and a transparent material is right for both.
+    const transparent = spec.opacity < 1;
+    material.transparencyMode = transparent ? PBRMaterial.PBRMATERIAL_ALPHABLEND : PBRMaterial.PBRMATERIAL_OPAQUE;
+    material.useAlphaFromAlbedoTexture = transparent;
     // front: back faces culled; back: front faces culled; double: none, and a back face lit as its own side.
     material.backFaceCulling = spec.side !== 'double';
     material.cullBackFaces = spec.side !== 'back';
@@ -329,18 +339,21 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       const element = source.element;
       const url = 'toDataURL' in element ? element.toDataURL() : element.src;
       return new Promise<TextureObject>((resolve, reject) => {
-        const texture: Texture = new Texture(
-          url,
-          scene,
-          false,
-          true,
-          Texture.TRILINEAR_SAMPLINGMODE,
-          () => {
+        // useSRGBBuffer: decoded to linear by the GPU before filtering, as Three.js's SRGBColorSpace texture is (an
+        // SRGB8_ALPHA8 upload); filtered as sRGB values, a minified texture differed by up to 27 levels (measured, #133).
+        const texture: Texture = new Texture(url, scene, {
+          noMipmap: false,
+          invertY: true,
+          samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
+          useSRGBBuffer: true,
+          onLoad: () => {
             applyTexture(texture, spec);
+            // Its alpha is read by a transparent material only (writeMaterial sets each material's transparency mode).
+            texture.hasAlpha = true;
             resolve({ scene: handle, native: texture, kind: 'texture' });
           },
-          (message) => reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`)),
-        );
+          onError: (message) => reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`)),
+        });
       });
     },
     setTexture(t, spec) {
