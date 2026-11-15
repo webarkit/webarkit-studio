@@ -125,6 +125,25 @@ describe.each(Object.keys(ENGINES) as Engine[])('%s: createGeometry builds the c
     });
   });
 
+  test.each([
+    { shape: 'box', width: 1e300, depth: 1e300, height: 1e300 },
+    { shape: 'sphere', radius: Number.MAX_VALUE, detail: 16 },
+    { shape: 'torusKnot', radius: 1e40, tube: 1e40, p: 1e9, q: 1e300, detail: 64 },
+  ] as GeometrySpec[])('extreme values build finite vertices, within float32, that match the core bounds: $shape', (spec) => {
+    withScene(engine, (scene) => {
+      const p = positions(scene.createGeometry(spec), engine);
+      for (let i = 0; i < p.length; i++) expect(Number.isFinite(p[i]) && Math.abs(p[i]) < 3.4e38, `vertex ${i}: ${p[i]}`).toBe(true);
+      // Float32 vertices of shapes up to MAX_SIZE: compared relative to their size.
+      const got = boundsOf(p);
+      const want = geometryBounds(spec);
+      for (let k = 0; k < 3; k++) {
+        const scale = Math.max(1, Math.abs(want.max[k]), Math.abs(want.min[k]));
+        expect(Math.abs(got.max[k] - want.max[k]) / scale, `max[${k}]`).toBeLessThan(1e-6);
+        expect(Math.abs(got.min[k] - want.min[k]) / scale, `min[${k}]`).toBeLessThan(1e-6);
+      }
+    });
+  });
+
   test("a cone's tip is at +Z, its base at −Z", () => {
     withScene(engine, (scene) => {
       const p = positions(scene.createGeometry({ shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 }), engine);

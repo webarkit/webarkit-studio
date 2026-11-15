@@ -1,7 +1,9 @@
 // The core's geometry (#132): normalized specs, bounding boxes in marker space, and how far a mesh is lifted to rest
-// on the marker. The engines' own vertices are compared with these bounds in tests/unit/conformance/geometry.test.ts.
+// on the marker. The engines' own vertices are compared with these bounds in tests/unit/conformance/geometry-shapes.test.ts.
 import { describe, expect, it } from 'vitest';
-import { geometryBounds, MIN_SIZE, normalizeGeometry, restLift, type Bounds, type GeometrySpec } from '../../src/core/geometry';
+import { GEOMETRY_TYPES, geometryBounds, geometrySpec, MAX_SIZE, MAX_WINDING, MIN_SIZE, normalizeGeometry, restLift, type Bounds, type GeometrySpec } from '../../src/core/geometry';
+import { GRAPH_VERSION } from '../../src/core/graph';
+import { loadUnfinishedGraphDocument } from '../../src/core/migrations';
 import { transformMatrix } from '../../src/core/math';
 
 const close = (got: Bounds, min: number[], max: number[], digits = 4) => {
@@ -70,6 +72,30 @@ describe('normalizeGeometry: values both engines read the same way', () => {
     expect(normalizeGeometry({ shape: 'torus', radius: 1, tube: 0.2, detail: 1e9 })).toMatchObject({ detail: 256 });
     expect(normalizeGeometry({ shape: 'torusKnot', radius: 1, tube: 0.2, p: 2, q: 3, detail: 64.4 })).toMatchObject({ detail: 64 });
     expect(normalizeGeometry({ shape: 'capsule', radius: 1, height: 4, detail: Number.NaN })).toMatchObject({ detail: 16 });
+  });
+
+  it('keeps sizes at most MAX_SIZE and windings at most MAX_WINDING: a huge finite value would overflow float32 vertices', () => {
+    expect(normalizeGeometry({ shape: 'box', width: 1e300, depth: Number.MAX_VALUE, height: 2e6 })).toEqual({ shape: 'box', width: MAX_SIZE, depth: MAX_SIZE, height: MAX_SIZE });
+    expect(normalizeGeometry({ shape: 'torusKnot', radius: 1e40, tube: 1e40, p: 1e9, q: 1e300, detail: 100 })).toMatchObject({ radius: MAX_SIZE, tube: MAX_SIZE, p: MAX_WINDING, q: MAX_WINDING });
+    const b = geometryBounds({ shape: 'torusKnot', radius: 1e40, tube: 1e40, p: 1e9, q: 1e300, detail: 100 });
+    for (const v of [...b.min, ...b.max]) expect(Number.isFinite(v) && Math.abs(v) < 3.4e38).toBe(true);
+  });
+
+  it('reads extreme params through a loaded graph the same way: geometrySpec normalizes what the document holds', () => {
+    const doc = {
+      format: 'webarkit-studio/graph',
+      version: GRAPH_VERSION,
+      nodes: [
+        { id: 'b', type: 'geometry.box', params: { width: 1e300, depth: 1, height: 1 } },
+        { id: 'k', type: 'geometry.torusKnot', params: { radius: 10, tube: 1, p: 1e9, q: 3, detail: 100 } },
+      ],
+      edges: [],
+    };
+    // Validation reads kinds, not ranges: the document loads unfinished (the scenes are not wired).
+    const { doc: loaded } = loadUnfinishedGraphDocument(doc);
+    const spec = (id: string) => geometrySpec(GEOMETRY_TYPES[loaded.nodes.find((n) => n.id === id)!.type], loaded.nodes.find((n) => n.id === id)!.params);
+    expect(spec('b')).toMatchObject({ width: MAX_SIZE });
+    expect(spec('k')).toMatchObject({ p: MAX_WINDING });
   });
 
   it("makes a torus knot's windings positive integers", () => {

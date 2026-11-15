@@ -105,18 +105,27 @@ export const MIN_SIZE = 0.001;
 /** Segments around a torus knot's tube, on both engines. */
 export const TORUS_KNOT_TUBE_SEGMENTS = 16;
 
-const size = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(v, MIN_SIZE) : fallback);
+/**
+ * The largest size the core passes on (mm): 1 km. Engines keep vertices in float32 (at most about 3.4e38), and a huge
+ * finite size (1e300) became Infinity there and in the bounds; a kilometre is far beyond any AR scene, and float32
+ * still places its vertices to a few hundredths of a millimetre.
+ */
+export const MAX_SIZE = 1e6;
+/** The largest winding of a torus knot: its curve's frequency, far past a readable knot, kept so the vertices stay finite. */
+export const MAX_WINDING = 64;
+
+const size = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(v, MIN_SIZE), MAX_SIZE) : fallback);
 /** A segment count: an integer from `min` to `max`, rounded to a multiple of `step` (so the axis angles are vertices). */
 const segments = (v: unknown, fallback: number, step: number, min: number, max: number) => {
   const n = typeof v === 'number' && Number.isFinite(v) ? v : fallback;
   return Math.min(max, Math.max(min, Math.round(n / step) * step));
 };
 /** A torus knot's winding: a positive integer. */
-const winding = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(1, Math.round(v)) : fallback);
+const winding = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(MAX_WINDING, Math.max(1, Math.round(v))) : fallback);
 
 /**
- * A spec both adapters and geometryBounds() can rely on: finite sizes of at least MIN_SIZE (a cone's top radius may be
- * 0), segment counts rounded per shape so the shape reaches its analytic bounds, integer windings, and a capsule at
+ * A spec both adapters and geometryBounds() can rely on: finite sizes from MIN_SIZE to MAX_SIZE (a cone's top radius
+ * may be 0), segment counts rounded per shape so the shape reaches its analytic bounds, integer windings, and a capsule at
  * least as tall as its two caps (a shorter one is a sphere of that radius).
  */
 export function normalizeGeometry(spec: GeometrySpec): GeometrySpec {
