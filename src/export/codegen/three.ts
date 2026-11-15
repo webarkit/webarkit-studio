@@ -4,7 +4,7 @@
  * (src/runtime/renderers/three-adapter.ts) and the scene nodes (src/runtime/nodes/scene.ts). Units: millimetres,
  * the marker on the XY plane, +Z up; rotations in degrees, applied X, then Y, then Z (Euler 'XYZ').
  */
-import { geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
+import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
 import { nonZeroScale } from '../../core/math';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
@@ -361,13 +361,8 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'scene.arCamera': arCamera,
   'scene.light': light,
   'scene.mesh': mesh,
-  'geometry.box': geometry('box'),
-  'geometry.sphere': geometry('sphere'),
-  'geometry.cylinder': geometry('cylinder'),
-  'geometry.plane': geometry('plane'),
-  'geometry.torus': geometry('torus'),
-  'geometry.torusKnot': geometry('torusKnot'),
-  'geometry.capsule': geometry('capsule'),
+  // One per shape of the core's GEOMETRY_TYPES (#132).
+  ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,

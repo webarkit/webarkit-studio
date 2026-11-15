@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { geometryNode, light, mesh } from '../../src/runtime/nodes/scene';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 import { resolveParams, type ParamValue } from '../../src/core/graph';
-import { geometryBounds, type GeometrySpec } from '../../src/core/geometry';
+import { GEOMETRY_TYPES, geometryBounds, type GeometrySpec } from '../../src/core/geometry';
+import { NODE_REGISTRY } from '../../src/runtime/registry';
+import { THREE_EMITTERS } from '../../src/export/codegen/three';
 import { transformMatrix, type GeometryObject, type SceneHandle, type SceneObject } from '../../src/runtime/renderers/adapter';
 import type { FrameInfo, GeometryValue, RuntimeContext } from '../../src/runtime/types';
 
@@ -161,6 +163,13 @@ describe('geometry.* nodes', () => {
     expect(next).not.toBe(first);
     expect(next.handle).toBe(first.handle);
     expect(next.bounds.max[2]).toBe(20);
+  });
+
+  it('the catalog, the registry and the source export know the same geometry types: those of GEOMETRY_TYPES', () => {
+    const catalog = Object.keys(NODE_CATALOG).filter((t) => t.startsWith('geometry.')).sort();
+    expect(Object.keys(GEOMETRY_TYPES).sort()).toEqual(catalog);
+    expect(Object.keys(NODE_REGISTRY).filter((t) => t.startsWith('geometry.')).sort()).toEqual(catalog);
+    expect(Object.keys(THREE_EMITTERS).filter((t) => t.startsWith('geometry.')).sort()).toEqual(catalog);
   });
 
   it('every param of every geometry node is live, and each node has its own factory', () => {
