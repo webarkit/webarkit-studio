@@ -1560,6 +1560,40 @@ test.describe('conformance: a video texture through the adapters (#133)', () => 
   });
 });
 
+test.describe('conformance: a video texture keeps its wrap (#133)', () => {
+  // Babylon.js's VideoTexture sets its own wrap each time its video's picture size changes (a `resize` event,
+  // videoTexture.pure.js, _resizeInternalTexture); the adapter puts the texture's own back. Qodo, #163.
+  test('a clamp video texture stays clamp after its video resizes, on both engines', async ({ page }) => {
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async () => {
+        const H = (window as never as { H: Harness }).H;
+        await H.buildAdapterScene([
+          { op: 'createTexture', id: 't', source: 'video', spec: { wrap: 'clamp', repeatU: 2, repeatV: 2 } },
+          { op: 'createMaterial', id: 'm', spec: { color: [1, 1, 1], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true }, map: 't' },
+          { op: 'createGeometry', id: 'g', spec: { shape: 'plane', width: 100, depth: 100 } },
+          { op: 'createMesh', id: 'p', geometry: 'g' },
+          { op: 'setPosition', id: 'p', position: [0, 0, -50] },
+          { op: 'addRoot', id: 'p' },
+          { op: 'setMeshMaterial', mesh: 'p', material: 'm' },
+          { op: 'render' },
+        ]);
+        await new Promise((res) => setTimeout(res, 300));
+        H.render();
+        const before = H.textureWrap('t');
+        H.resizeVideo();
+        H.render();
+        const afterOne = H.textureWrap('t');
+        H.resizeVideo();
+        H.resizeVideo();
+        H.render();
+        return { before, afterOne, afterThree: H.textureWrap('t') };
+      }),
+    );
+    console.log('video wrap', JSON.stringify(r));
+    for (const engine of ENGINES) expect(r[engine], engine).toEqual({ before: 'clamp', afterOne: 'clamp', afterThree: 'clamp' });
+  });
+});
+
 test.describe('conformance: textures', () => {
   // The harness's 64 px canvas: top left red, top right green, bottom left blue, bottom right white, an sRGB 128 grey
   // centre; nearest filtering, sRGB colour space on both. Unlit, so the texel comes out as it is.

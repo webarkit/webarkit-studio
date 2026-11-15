@@ -268,6 +268,10 @@ export interface Harness {
   engine: Engine;
   /** #133: the `video` texture source repaints in this colour from now on. */
   setVideoColour(colour: string): void;
+  /** #133: a `resize` event on the `video` source element, as the browser sends when its picture size changes. */
+  resizeVideo(): void;
+  /** #133: a texture's wrap as its engine holds it now (clamp, repeat, mirror, or the engine's own value). */
+  textureWrap(id: string): string;
   /** #133: the `video` source element's state, which a texture must leave as its source node set it. */
   videoState(): { paused: boolean; loop: boolean; autoplay: boolean; muted: boolean };
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
@@ -1099,6 +1103,22 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       clear();
       renderer.dispose();
       renderer.canvas.remove();
+    },
+    resizeVideo() {
+      const t = textures.get('video');
+      if (t && 'video' in t) t.video.dispatchEvent(new Event('resize'));
+    },
+    textureWrap(id) {
+      const t = adapterTextures.get(id);
+      if (!t) throw new Error(`no texture "${id}"`);
+      if (engine === 'three') {
+        const n = t.native as THREE.Texture;
+        const name = { [THREE.ClampToEdgeWrapping]: 'clamp', [THREE.RepeatWrapping]: 'repeat', [THREE.MirroredRepeatWrapping]: 'mirror' } as Record<number, string>;
+        return n.wrapS === n.wrapT ? (name[n.wrapS] ?? String(n.wrapS)) : `${n.wrapS}/${n.wrapT}`;
+      }
+      const n = t.native as Texture;
+      const name = { [Texture.CLAMP_ADDRESSMODE]: 'clamp', [Texture.WRAP_ADDRESSMODE]: 'repeat', [Texture.MIRROR_ADDRESSMODE]: 'mirror' } as Record<number, string>;
+      return n.wrapU === n.wrapV ? (name[n.wrapU] ?? String(n.wrapU)) : `${n.wrapU}/${n.wrapV}`;
     },
     setVideoColour(colour) {
       const t = textures.get('video');

@@ -324,10 +324,20 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         // (_resizeInternalTexture): ours goes back on. Its dispose() leaves that element's resize listener when the
         // source is independent: removed here.
         videoSpecs.set(texture, spec);
-        texture.onLoadObservable.add(() => applyTexture(texture, videoSpecs.get(texture) ?? spec));
+        // It sets its own wrap again on each resize of its video (_resizeInternalTexture, its own resize listener): ours
+        // goes back on from a listener that runs after it. Babylon.js adds its listener once the video can play, so ours
+        // moves to the end then (onLoadObservable fires after), and runs after Babylon.js's on every later resize.
+        const rewrap = () => applyTexture(texture, videoSpecs.get(texture) ?? spec);
+        source.element.addEventListener('resize', rewrap);
+        texture.onLoadObservable.add(() => {
+          source.element.removeEventListener('resize', rewrap);
+          source.element.addEventListener('resize', rewrap);
+          rewrap();
+        });
         const resize = (texture as unknown as { _resizeInternalTexture?: () => void })._resizeInternalTexture;
         texture.onDisposeObservable.add(() => {
           if (resize) source.element.removeEventListener('resize', resize);
+          source.element.removeEventListener('resize', rewrap);
           videoTextures.delete(texture);
         });
         applyTexture(texture, spec);
