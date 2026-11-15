@@ -27,7 +27,7 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 - Babylon.js builds every geometry node's shape from Three.js's own generators (#162), so both renderers draw the same
   mesh: the same size and outline as before, and now the same texture coordinates, so a texture lies the same way on
-  a box, sphere, cylinder, torus, torus knot or capsule. The Babylon.js renderer downloads about 21 KB more (gzipped).
+  a box, sphere, cylinder, torus, torus knot or capsule. The Babylon.js renderer downloads about 16 KB more (gzipped).
 
 - **Graph format v6** (#132): the Primitive node is replaced by a geometry node wired into a Mesh. Older graphs
   upgrade when they are opened: each Primitive becomes a Mesh with the same id, wires and params, and a Box, Sphere
