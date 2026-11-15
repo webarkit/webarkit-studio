@@ -32,6 +32,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- Two half-transparent objects that overlap let as much of the camera through on Babylon.js as on Three.js (#155):
+  where they overlapped, Babylon.js hid the camera completely (two objects at 0.5 showed none of it, against a
+  quarter on Three.js). This holds for meshes and for glTF models.
 - A hemisphere light in a group, or under the marker's anchor, follows its parent on the same frame on
   Three.js (#145): it lagged one frame behind, so on a moving marker its sky pointed where the marker had
   been. Babylon.js was not affected.

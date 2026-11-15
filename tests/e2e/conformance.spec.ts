@@ -127,6 +127,28 @@ const GLTF_HIGHLIGHT_OPS: AdapterOp[] = [
   { op: 'addRoot', id: 'b' },
 ];
 
+/**
+ * The #155 scene: two half-transparent boxes, one in front of the other, overlapping at the centre, and an opaque box
+ * above them (so a frame read is drawn). The harness's 90° view at 128 px shows 64 / d px per mm at d mm. The far box,
+ * z −170..−110, shows its front face (110 mm away) at x 59..94 px, y 47..81; the near one, z −100..−60, at x 27..69,
+ * y 43..85. Only their front faces are seen, and they do not intersect. Regions: `near` and `far` alone, `both`, and
+ * the opaque `top` (x 55..73, y 18..37).
+ */
+const OVERLAP_OPS: AdapterOp[] = [
+  { op: 'createPrimitive', id: 'far', spec: { shape: 'box', size: 60, color: '#808080' } },
+  { op: 'setPosition', id: 'far', position: [21, 0, -140] },
+  { op: 'addRoot', id: 'far' },
+  { op: 'createPrimitive', id: 'near', spec: { shape: 'box', size: 40, color: '#808080' } },
+  { op: 'setPosition', id: 'near', position: [-15, 0, -80] },
+  { op: 'addRoot', id: 'near' },
+  { op: 'setColor', id: 'far', color: [0.25, 0.5, 0.75, 0.5] },
+  { op: 'setColor', id: 'near', color: [0.75, 0.5, 0.25, 0.5] },
+  { op: 'createPrimitive', id: 'top', spec: { shape: 'box', size: 20, color: '#808080' } },
+  { op: 'setPosition', id: 'top', position: [0, 40, -80] },
+  { op: 'addRoot', id: 'top' },
+];
+const OVERLAP_REGIONS: Record<string, [number, number, number, number]> = { near: [34, 62, 4, 4], both: [62, 62, 4, 4], far: [84, 62, 4, 4], top: [62, 22, 4, 4] };
+
 /** The clipping rule: a sample is only evidence if every channel lies in 30..225. */
 const unclipped = (v: number[]) => v.slice(0, 3).every((c) => c >= 30 && c <= 225);
 
@@ -641,6 +663,48 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       // (Three.js 55, 36, 18 against Babylon.js 40, 28, 16).
       rules: [{ region: 'b', is: 'drawn' }, { region: 'centre', is: 'sameAlpha' }, { region: 'b', is: 'same' }, { region: 'centre', is: 'same' }],
     },
+    {
+      // #155: two half-transparent boxes, one in front of the other, overlapping at the centre. Over the clear canvas
+      // the framebuffer's alpha is what the page lets through of the camera: 0.5 where one box covers it, and where both
+      // do, 0.5 + 0.5 × (1 − 0.5) = 0.75 (192), Three.js's NormalBlending. An alpha channel that adds up gives 1.
+      name: 'two overlapping boxes at alpha 0.5: alpha 0.75 where they overlap (#155)',
+      ops: OVERLAP_OPS,
+      regions: OVERLAP_REGIONS,
+      rules: [
+        { region: 'top', is: 'drawn' },
+        { region: 'near', is: 'alpha', value: 128 },
+        { region: 'far', is: 'alpha', value: 128 },
+        { region: 'both', is: 'alpha', value: 192 },
+        { region: 'both', is: 'sameAlpha' },
+        { region: 'both', is: 'same' },
+      ],
+    },
+    {
+      // #155 on loaded models: the same layout with two glTF squares (alphaMode BLEND, alpha 0.5), whose materials the
+      // loaders make, not the adapter. Flat squares, so sized for the regions: the far one (70 mm, 140 mm away) at
+      // x 59..91 px, y 48..80; the near one (50 mm, 80 mm away) at x 32..72, y 44..84.
+      name: 'two overlapping glTF squares at alpha 0.5: alpha 0.75 where they overlap (#155)',
+      ops: [
+        { op: 'loadModel', id: 'far', gltf: transparentSquareGltf(35, [0.25, 0.5, 0.75, 0.5], 1) },
+        { op: 'setPosition', id: 'far', position: [25, 0, -140] },
+        { op: 'addRoot', id: 'far' },
+        { op: 'loadModel', id: 'near', gltf: transparentSquareGltf(25, [0.75, 0.5, 0.25, 0.5], 1) },
+        { op: 'setPosition', id: 'near', position: [-15, 0, -80] },
+        { op: 'addRoot', id: 'near' },
+        { op: 'createPrimitive', id: 'top', spec: { shape: 'box', size: 20, color: '#808080' } },
+        { op: 'setPosition', id: 'top', position: [0, 40, -80] },
+        { op: 'addRoot', id: 'top' },
+      ],
+      regions: OVERLAP_REGIONS,
+      rules: [
+        { region: 'top', is: 'drawn' },
+        { region: 'near', is: 'alpha', value: 128 },
+        { region: 'far', is: 'alpha', value: 128 },
+        { region: 'both', is: 'alpha', value: 192 },
+        { region: 'both', is: 'sameAlpha' },
+        { region: 'both', is: 'same' },
+      ],
+    },
     // #131: a coloured primitive under each light kind, and a light's colour and intensity set live. A light's colour
     // and the material's are sRGB on both (converted to linear on Babylon.js); Babylon.js takes k = 1 for a directional
     // light, 1/π for hemisphere and ambient. The box faces the camera; a hemisphere's sky (+Z) faces the box.
@@ -1059,6 +1123,67 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
   test('a half-transparent object looks the same over the camera on both adapters (#144)', async ({ page }) => {
     const r = await measure(page);
     expect(maxDiff(r.babylon.screen, r.three.screen)).toBeLessThanOrEqual(SAME);
+  });
+
+  // #155: two overlapping half-transparent boxes (OVERLAP_OPS) over the page. Where both cover it, a quarter of the
+  // background shows through on Three.js (framebuffer alpha 0.75); the page composites the framebuffer as premultiplied.
+  test('two overlapping half-transparent objects let the same camera through on both adapters (#155)', async ({ page }) => {
+    const out = {} as Record<Engine, Record<string, { framebuffer: number[]; screen: number[] }>>;
+    for (const engine of ENGINES) {
+      await open(page, engine, 128);
+      const framebuffer = await page.evaluate(
+        async ([ops, regions]) => {
+          const H = (window as never as { H: Harness }).H;
+          await H.buildAdapterScene(ops);
+          H.render();
+          return Object.fromEntries(Object.entries(regions).map(([k, [x, y, w, h]]) => [k, H.region(x, y, w, h)]));
+        },
+        [OVERLAP_OPS, OVERLAP_REGIONS] as const,
+      );
+      await page.evaluate((bg) => {
+        const back = document.createElement('div');
+        back.style.cssText = `position:absolute;left:0;top:0;width:128px;height:128px;background:rgb(${bg.join(',')})`;
+        document.body.prepend(back);
+        document.querySelector('canvas')!.style.zIndex = '1';
+      }, BG);
+      await page.evaluate(() => (window as never as { H: Harness }).H.render());
+      out[engine] = {};
+      for (const k of ['near', 'both', 'far']) {
+        const [x, y, w, h] = OVERLAP_REGIONS[k];
+        const png = await page.screenshot({ clip: { x, y, width: w, height: h } });
+        const screen = await page.evaluate(
+          async ([b64, n]) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${b64}`;
+            await img.decode();
+            const c = document.createElement('canvas');
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext('2d')!;
+            g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, img.width, img.height).data;
+            const sum = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) for (let q = 0; q < 3; q++) sum[q] += d[i + q];
+            return sum.map((v) => v / n);
+          },
+          [png.toString('base64'), w * h] as const,
+        );
+        out[engine][k] = { framebuffer: framebuffer[k], screen };
+      }
+    }
+    console.log('overlap opacity', JSON.stringify(out));
+    for (const engine of ENGINES) {
+      // The control: one box alone lets half the background through on both, as #144 left it.
+      for (const k of ['near', 'far']) expect(Math.abs(out[engine][k].framebuffer[3] - 128), `${engine} ${k} alpha ${out[engine][k].framebuffer}`).toBeLessThanOrEqual(SAME);
+      // The page composites what the framebuffer holds, on each engine.
+      for (const k of ['near', 'both', 'far']) {
+        const { framebuffer, screen } = out[engine][k];
+        expect(maxDiff(screen, composite(framebuffer)), `${engine} ${k} screen ${rgb(screen)} computed ${composite(framebuffer)}`).toBeLessThanOrEqual(SAME);
+      }
+    }
+    for (const k of ['near', 'both', 'far']) {
+      expect(maxDiff(out.babylon[k].screen, out.three[k].screen), `${k} screen: three ${rgb(out.three[k].screen)} / babylon ${rgb(out.babylon[k].screen)}`).toBeLessThanOrEqual(SAME);
+    }
   });
 
   // #153: a half-transparent glTF material under a directional light (GLTF_HIGHLIGHT_OPS), over the page: its
