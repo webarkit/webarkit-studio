@@ -1481,6 +1481,50 @@ test.describe('conformance: opacity over the camera (framebuffer RGBA, then the 
   });
 });
 
+test.describe('conformance: a video texture through the adapters (#133)', () => {
+  // The harness's video is a canvas stream painted #c08040, then #4080c0: a texture stuck on its first frame shows. The
+  // source node owns the element (source.videoFile): the texture leaves its loop, autoplay and mute alone, and neither a
+  // mesh's release nor the scene's teardown pauses it.
+  test('a video texture plays, the same on both engines, and leaves its video playing', async ({ page }) => {
+    const ops: AdapterOp[] = [
+      { op: 'createTexture', id: 't', source: 'video', spec: { wrap: 'repeat', repeatU: 1, repeatV: 1 } },
+      { op: 'createMaterial', id: 'm', spec: { color: [1, 1, 1], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true }, map: 't' },
+      { op: 'createGeometry', id: 'g', spec: { shape: 'plane', width: 100, depth: 100 } },
+      { op: 'createMesh', id: 'p', geometry: 'g' },
+      { op: 'setPosition', id: 'p', position: [0, 0, -50] },
+      { op: 'addRoot', id: 'p' },
+      { op: 'setMeshMaterial', mesh: 'p', material: 'm' },
+    ];
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async (o) => {
+        const H = (window as never as { H: Harness }).H;
+        const settle = () => new Promise((res) => setTimeout(res, 300));
+        const before = H.videoState();
+        await H.buildAdapterScene(o);
+        await settle();
+        H.render();
+        const first = H.region(56, 56, 16, 16);
+        H.setVideoColour('#4080c0');
+        await settle();
+        H.render();
+        const second = H.region(56, 56, 16, 16);
+        const during = H.videoState();
+        H.dispose();
+        await settle();
+        return { before, first, second, during, after: H.videoState() };
+      }, ops),
+    );
+    console.log('video texture', JSON.stringify(r));
+    for (const engine of ENGINES) {
+      expect(maxDiff(r[engine].first, [0xc0, 0x80, 0x40]), `${engine} first frame ${rgb(r[engine].first)}`).toBeLessThanOrEqual(SAME);
+      expect(maxDiff(r[engine].second, [0x40, 0x80, 0xc0]), `${engine} after the video changed ${rgb(r[engine].second)}`).toBeLessThanOrEqual(SAME);
+      expect(r[engine].during, `${engine}: the texture left its video as it was`).toEqual(r[engine].before);
+      expect(r[engine].after, `${engine}: the teardown left its video playing`).toEqual(r[engine].before);
+      expect(r[engine].after.paused, engine).toBe(false);
+    }
+  });
+});
+
 test.describe('conformance: textures', () => {
   // The harness's 64 px canvas: top left red, top right green, bottom left blue, bottom right white, an sRGB 128 grey
   // centre; nearest filtering, sRGB colour space on both. Unlit, so the texel comes out as it is.

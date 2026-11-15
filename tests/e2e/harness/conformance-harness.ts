@@ -259,11 +259,17 @@ async function videoOf(colour: string): Promise<HTMLVideoElement> {
   await video.play();
   while (video.readyState < 2 || video.videoWidth === 0) await new Promise((r) => setTimeout(r, 20));
   (video as unknown as { stopPaint(): void }).stopPaint = () => clearInterval(timer);
+  // #133: a video that changes, so a texture stuck on its first frame shows.
+  (video as unknown as { setColour(c: string): void }).setColour = (c: string) => void (colour = c);
   return video;
 }
 
 export interface Harness {
   engine: Engine;
+  /** #133: the `video` texture source repaints in this colour from now on. */
+  setVideoColour(colour: string): void;
+  /** #133: the `video` source element's state, which a texture must leave as its source node set it. */
+  videoState(): { paused: boolean; loop: boolean; autoplay: boolean; muted: boolean };
   /** Builds the scene (replacing the previous one); resolves when its textures and environment are ready. */
   build(desc: SceneDesc): Promise<void>;
   /**
@@ -1093,6 +1099,16 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
       clear();
       renderer.dispose();
       renderer.canvas.remove();
+    },
+    setVideoColour(colour) {
+      const t = textures.get('video');
+      if (t && 'video' in t) (t.video as unknown as { setColour(c: string): void }).setColour(colour);
+    },
+    videoState() {
+      const t = textures.get('video');
+      if (!t || !('video' in t)) throw new Error('no video source');
+      const { paused, loop, autoplay, muted } = t.video;
+      return { paused, loop, autoplay, muted };
     },
   };
 }
