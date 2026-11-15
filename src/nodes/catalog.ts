@@ -669,7 +669,7 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     outputs: { texture: { type: 'texture', label: 'Texture' } },
     params: {
-      url: { kind: 'string', label: 'Image URL', default: '', asset: 'file' },
+      url: { kind: 'string', label: 'Image URL', default: 'textures/tiles.png', asset: 'file' },
       wrap: { kind: 'select', label: 'Wrap', default: 'repeat', options: { Clamp: 'clamp', Repeat: 'repeat', Mirror: 'mirror' }, live: true },
       repeatU: { kind: 'number', label: 'Repeat U', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },
       repeatV: { kind: 'number', label: 'Repeat V', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },

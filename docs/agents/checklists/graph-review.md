@@ -82,6 +82,8 @@ key by key; a renamed key looks like one removal plus one addition.
 
 - Socket types (`src/core/sockets.ts`) stay compatible with existing graphs: a changed
   compatibility rule can break saved connections, so treat it as a format change.
+- An input that sets other params aside while wired lists them in `overrides` (#133), and they are the node's own params
+  (`validatePlugin()` checks a plugin's).
 - An input that overrides a param (same name) is `optional`, has the socket type of the
   param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
   no valid value (AGENTS.md, "Inputs override params"). An optional input without a

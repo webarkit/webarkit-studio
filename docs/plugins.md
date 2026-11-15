@@ -110,6 +110,11 @@ Vectors and rotations are plain arrays of numbers: `vector2` is `[x, y]`, `vecto
 `quaternion` is `[x, y, z, w]` (a unit quaternion), and `matrix4` holds 16 numbers, column-major. The
 Inspector shows each as a list (a `matrix4` as four rows).
 
+An input of the same name as a param overrides it while wired, and the editor shows the param disabled. An input
+that sets other params aside while wired names them in its `overrides` (plugin API types 1.7.0, #133), for example
+`overrides: ['color']`; `validatePlugin()` refuses a name that is not one of the node's params, and `overrides` on
+an output.
+
 A pure node (its outputs depend only on its inputs and params) is computed only when an input or a live
 param changes: inputs are compared by `Object.is`, so a node that outputs an array must return a new
 array when its values change, and keep the old one when they do not. The core's math, colour and logic

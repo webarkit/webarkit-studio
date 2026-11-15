@@ -354,6 +354,9 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           },
           onError: (message) => reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`)),
         });
+        // Disposed before it loaded (the scene torn down by a Stop): dispose() clears the load callbacks, so the
+        // promise would never settle and the node's init would wait forever. A settled promise ignores this.
+        texture.onDisposeObservable.addOnce(() => reject(new Error('the scene was torn down while the texture loaded')));
       });
     },
     setTexture(t, spec) {

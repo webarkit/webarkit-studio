@@ -118,6 +118,17 @@ describe('validatePlugin', () => {
   it('rejects ports on unknown socket types', () => {
     expect(problemsOf(plugin({ sockets: [] }))).toContainEqual(expect.stringMatching(/acme\.tracker: input "marker" has unknown socket type "acme\.marker"/));
   });
+
+  it("checks an input's overrides (#133): params of its own node, and on inputs only", () => {
+    const [node] = plugin().nodes;
+    const withParam = { ...node, params: { gain: { kind: 'number' as const, label: 'Gain', default: 1 } } };
+    const ok = plugin({ nodes: [{ ...withParam, inputs: { ...node.inputs, level: { type: 'number', label: 'Level', optional: true, overrides: ['gain'] } } }] });
+    expect(problemsOf(ok)).toEqual([]);
+    const unknown = plugin({ nodes: [{ ...withParam, inputs: { ...node.inputs, level: { type: 'number', label: 'Level', optional: true, overrides: ['__proto__'] } } }] });
+    expect(problemsOf(unknown)).toContainEqual(expect.stringMatching(/acme\.tracker: input "level" overrides "__proto__", which is not one of its params/));
+    const onOutput = plugin({ nodes: [{ ...withParam, outputs: { ...node.outputs, level: { type: 'number', label: 'Level', overrides: ['gain'] } } }] });
+    expect(problemsOf(onOutput)).toContainEqual(expect.stringMatching(/acme\.tracker: output "level" has overrides/));
+  });
 });
 
 describe('compareVersions', () => {

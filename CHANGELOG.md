@@ -19,6 +19,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   material's map, with wrap (clamp, repeat, mirror) and repeat live. A material and a texture look the same on
   Three.js and Babylon.js, and the source code export writes them (an image texture; a video one is refused by name).
   A new demo, "pinball · a textured poster and a chrome knot", shows both.
+- Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
+  editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
 
 ### Changed
 

@@ -115,7 +115,22 @@ describe.each(ENGINES)('%s: materials and textures (#133)', (engine) => {
       expect(isDisposed(texture, engine, events), 'its map').toBe(false);
       scene.setMaterial(material, setup({ color: [1, 0, 0], map: texture }));
       expect(baseColor(drawnWith(b, engine), engine).map((v) => Math.round(v * 255))).toEqual([255, 0, 0]);
+      // A direct release, with a third mesh left: it follows a live change of the material and of its map.
+      const third = scene.createMesh(scene.createGeometry({ shape: 'box', width: 5, depth: 5, height: 5 }));
+      scene.addRoot(third);
+      scene.setMeshMaterial(third, material);
       scene.release(b);
+      expect(isDisposed(material, engine, events), 'the shared material after a direct release').toBe(false);
+      expect(isDisposed(texture, engine, events), 'its map after a direct release').toBe(false);
+      scene.setMaterial(material, setup({ color: [0, 1, 0], map: texture }));
+      scene.setTexture(texture, { wrap: 'mirror', repeatU: 3, repeatV: 3 });
+      const drawn = drawnWith(third, engine);
+      expect(baseColor(drawn, engine).map((v) => Math.round(v * 255))).toEqual([0, 255, 0]);
+      const map = engine === 'three' ? (drawn as THREE.MeshStandardMaterial).map : (drawn as PBRMaterial).albedoTexture;
+      expect(map).toBe(texture.native);
+      if (engine === 'three') expect([(map as THREE.Texture).wrapS, (map as THREE.Texture).repeat.x]).toEqual([THREE.MirroredRepeatWrapping, 3]);
+      else expect([(map as Texture).wrapU, (map as Texture).uScale]).toEqual([BabylonTexture.MIRROR_ADDRESSMODE, 3]);
+      scene.release(third);
       expect(isDisposed(material, engine, events), 'after its last mesh').toBe(false);
       // Still usable: a new mesh can be given it.
       const c = scene.createMesh(scene.createGeometry({ shape: 'sphere', radius: 5, detail: 8 }));
@@ -204,6 +219,29 @@ describe.each(ENGINES)('%s: materials and textures (#133)', (engine) => {
     } finally {
       adapter.dispose();
     }
+  });
+
+  test.runIf(engine === 'three')('three: an image is uploaded once; a repeat change alone uploads nothing, a wrap change does', async () => {
+    const { adapter, scene, texture } = await world(engine);
+    try {
+      const t = texture.native as THREE.Texture;
+      const created = t.version;
+      expect(created, 'uploaded once when made').toBeGreaterThan(0);
+      scene.setTexture(texture, { wrap: 'repeat', repeatU: 4, repeatV: 2 });
+      expect(t.version).toBe(created);
+      scene.setTexture(texture, { wrap: 'mirror', repeatU: 4, repeatV: 2 });
+      expect(t.version).toBe(created + 1);
+    } finally {
+      adapter.dispose();
+    }
+  });
+
+  test.runIf(engine === 'babylon')('babylon: a texture still loading when the scene goes rejects, so a node\'s init does not wait forever', async () => {
+    const adapter = ADAPTERS[engine]();
+    const scene = adapter.createScene({ defaultLights: false });
+    const loading = scene.createTexture(image(), { wrap: 'repeat', repeatU: 1, repeatV: 1 });
+    adapter.dispose();
+    await expect(loading).rejects.toThrow(/torn down while the texture loaded/);
   });
 
   test('a material or a texture of another scene is refused', async () => {

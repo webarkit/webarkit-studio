@@ -65,12 +65,18 @@ export interface ThreeMaterialState {
 const SIDES: Record<MaterialSide, THREE.Side> = { front: THREE.FrontSide, back: THREE.BackSide, double: THREE.DoubleSide };
 const WRAPS: Record<TextureWrap, THREE.Wrapping> = { clamp: THREE.ClampToEdgeWrapping, repeat: THREE.RepeatWrapping, mirror: THREE.MirroredRepeatWrapping };
 
-/** Wrap and repeat, normalised. A wrap is a sampler setting, applied on the next upload. */
+/**
+ * Wrap and repeat, normalised. A wrap is a sampler setting, applied on the next upload, so a changed wrap uploads the
+ * texture again; repeat is the texture's matrix, read each frame, and needs none.
+ */
 function applyTexture(texture: THREE.Texture, given: TextureSpec) {
   const spec = normalizeTexture(given);
-  texture.wrapS = texture.wrapT = WRAPS[spec.wrap];
+  const wrap = WRAPS[spec.wrap];
+  if (texture.wrapS !== wrap || texture.wrapT !== wrap) {
+    texture.wrapS = texture.wrapT = wrap;
+    texture.needsUpdate = true;
+  }
   texture.repeat.set(spec.repeatU, spec.repeatV);
-  texture.needsUpdate = true;
 }
 
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
@@ -225,6 +231,8 @@ function createThreeScene(
       }
       texture.magFilter = THREE.LinearFilter;
       applyTexture(texture, spec);
+      // An image is uploaded once, whatever its wrap (clamp is the one it starts with); a video uploads its frames itself.
+      if (source.kind === 'image') texture.needsUpdate = true;
       disposables.add(texture);
       return { scene: handle, native: texture, kind: 'texture' };
     },
