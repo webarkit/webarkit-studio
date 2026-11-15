@@ -254,6 +254,8 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       const value = String(node.params[key] ?? spec.default);
+      // No file to bundle (a Texture fed by a video, #133): `new URL('', base)` would be the studio page itself.
+      if (!value.trim()) continue;
       const multi = pluginAssetKind(spec.asset);
       const ref = parseAssetRef(value);
       if (ref) {
