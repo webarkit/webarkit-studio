@@ -162,9 +162,12 @@ function createThreeScene(
     }
     const side = SIDES[spec.side];
     const transparent = spec.opacity < 1;
-    // A map set or unset, the side and transparency change the shader's defines: only they recompile it. Colours and
-    // numbers are uniforms. A new material (unlit swapped, above) is compiled on its first draw anyway.
-    const shaderChanged = (material.map === null) !== (map === null) || material.side !== side || material.transparent !== transparent;
+    // The map, the side and transparency change the shader: only they recompile it. The map by its identity, not only
+    // whether there is one: the program decodes a video texture's sRGB itself (decodeVideoTexture, WebGLPrograms.js,
+    // three 0.186.1), and the renderer's own checks never look at the map, so an image swapped for a video would keep
+    // the old program. A texture swap is rare. Colours and numbers are uniforms. A new material (unlit swapped, above)
+    // is compiled on its first draw anyway.
+    const shaderChanged = material.map !== map || material.side !== side || material.transparent !== transparent;
     material.map = map;
     material.side = side;
     material.transparent = transparent;

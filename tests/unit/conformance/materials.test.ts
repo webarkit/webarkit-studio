@@ -260,6 +260,16 @@ describe.each(ENGINES)('%s: materials and textures (#133)', (engine) => {
         scene.setMaterial(material, next);
         expect(version(), what).toBeGreaterThan(before);
       }
+      // One texture swapped for another, an image for a video: the program decodes a video's sRGB itself
+      // (decodeVideoTexture, WebGLPrograms.js, three 0.186.1), which the renderer's own checks never compare. A colour
+      // change after it still recompiles nothing.
+      const video = await scene.createTexture({ kind: 'video', element: { width: 2, height: 2, videoWidth: 2, videoHeight: 2 } as unknown as HTMLVideoElement }, { wrap: 'repeat', repeatU: 1, repeatV: 1 });
+      before = version();
+      scene.setMaterial(material, setup({ color: [1, 0, 0], opacity: 1, side: 'double', map: video }));
+      expect(version(), 'an image texture swapped for a video one').toBeGreaterThan(before);
+      before = version();
+      scene.setMaterial(material, setup({ color: [0, 1, 0], opacity: 1, side: 'double', map: video }));
+      expect(version(), 'a colour after the swap').toBe(before);
     } finally {
       adapter.dispose();
     }
