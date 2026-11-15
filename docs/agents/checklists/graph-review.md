@@ -1,7 +1,7 @@
 # Graph review checklist
 
 Use this checklist for a diff that touches the graph format, the node catalog, the
-registry, node implementations, the renderer adapters or the demo graphs:
+registry, node implementations, the renderer adapters, the source export or the demo graphs:
 
 - `src/core/`
 - `src/nodes/catalog.ts`
@@ -9,6 +9,7 @@ registry, node implementations, the renderer adapters or the demo graphs:
 - `src/runtime/nodes/`
 - `src/runtime/renderers/`
 - `src/plugin-api/`, `src/plugins/` and the plugins' catalogs and manifests (`plugins/jsartoolkit-nft/catalog.ts`, `plugins/jsartoolkit-nft/index.ts`)
+- `src/export/codegen/`
 - `public/graphs/`
 
 It is tool-agnostic. The Claude Code agent `.claude/agents/graph-reviewer.md` runs
@@ -30,6 +31,9 @@ A format change requires all of:
 - `GRAPH_VERSION` bumped in `src/core/graph.ts`, with the change described in its comment;
 - its migration in `src/core/migrations.ts`, with literal types and params (it reads neither the
   catalog nor the loaded plugins), and a test that an older document opens;
+- when the new version changes a default, the migration writes the old default into the document, and a test
+  checks that a document of the previous version, migrated, behaves as before (#132: a migrated primitive keeps
+  spinning);
 - every graph in `public/graphs/` updated to the new version and still valid;
 - a line under `## [Unreleased]` in `CHANGELOG.md`.
 
@@ -71,6 +75,8 @@ key by key; a renamed key looks like one removal plus one addition.
 - A param marked `live: true` is applied in the factory's `onParamChange` without a
   restart, and `onParamChange` returns the outputs that changed.
 - A param that is not live must not be read from `onParamChange`: it applies on the next Run.
+- A size or count param is clamped by one core normaliser that the runtime, both adapters and the source export
+  all read, so a huge finite value stays finite (validation reads kinds, not ranges; #132: `normalizeGeometry()`).
 
 ## 5. Sockets
 
@@ -98,6 +104,8 @@ key by key; a renamed key looks like one removal plus one addition.
   the issue that translates it is fixed, is a `known` case marked `test.fail` with that issue.
 - A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
   and validates it against the real catalog and `GRAPH_VERSION` (#110).
+- The Inspector (`formatValue`, `src/runtime/nodes/debug.ts`) shows a value a new socket carries as plain text, never
+  as `JSON.stringify` of an engine handle, which is circular on Babylon.js (#132), with a test on both adapters' values.
 - The README node table lists new nodes; ⚡ marks live params.
 
 ## 8. Renderer adapters
@@ -112,6 +120,18 @@ key by key; a renamed key looks like one removal plus one addition.
 - A Babylon.js feature that needs an engine extension imports it for its side effects. `VideoTexture` needs
   `@babylonjs/core/Engines/Extensions/engine.dynamicTexture` and
   `@babylonjs/core/Engines/Extensions/engine.videoTexture`, both imported for their side effects.
+- Releasing one object never frees, or keeps updating, a resource other objects share (a geometry; a material or a
+  texture next, #133): a Node conformance case releases one user, directly and under a released group, and checks that
+  the others still follow a live change (#132: `tests/unit/conformance/geometry-release.test.ts`).
+
+## 9. Source export
+
+- A node has an emitter for its type and target (`three`), or the export refuses it by name, never drops it (#64).
+- Graph text reaches the generated code only through `literal()`, or `commentText()` in comments
+  (`src/export/codegen/text.ts`); variable names come from the context's `name()`, and names an emitter declares itself
+  go in its `locals` (#103).
+- The emitters and registry entries of a family of nodes are built from the core's list of it (`GEOMETRY_TYPES`), with a
+  test that the catalog, the registry and the emitters know the same types (#132).
 
 ## Commands
 
@@ -120,6 +140,7 @@ Run and report each:
 - `npm run typecheck`
 - `npm test`
 - `npm run build` when the catalog, the registry or `public/graphs/` changed
+- `npm run test:e2e -- tests/e2e/source-export.spec.ts` when `src/export/codegen/` changed (long: run it in the background)
 - `npm run test:e2e -- tests/e2e/conformance.spec.ts` when `src/runtime/renderers/` changed (several minutes: run it in
   the background)
 
