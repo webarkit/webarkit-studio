@@ -1,5 +1,6 @@
-// PostToolUse on Edit and Write: reruns check:agents when an agent file changed, and reminds of the
-// format change rule when a node catalog changed. The file already changed, so exit 2 cannot undo it:
+// PostToolUse on Edit and Write: reruns check:agents when an agent file changed, reminds of the
+// format change rule when a node catalog changed, and of the adapters rule when `SceneHandle` or an
+// adapter changed. The file already changed, so exit 2 cannot undo it:
 // it shows the problem to Claude.
 //
 // This script can run from the main checkout while the file is in a worktree: everything below
@@ -22,7 +23,11 @@ function checkoutOf(file) {
 
 const isCatalog = (path) => path === 'src/nodes/catalog.ts' || /^plugins\/[^/]+\/catalog\.ts$/.test(path);
 
+const isAdapter = (path) => /^src\/runtime\/renderers\/(adapter|three-adapter|babylon-adapter)\.ts$/.test(path);
+
 const FORMAT_REMINDER = 'A node catalog changed: check it against the format change rule of AGENTS.md (GRAPH_VERSION, its migration in src/core/migrations.ts, public/graphs/, CHANGELOG.md). This is a reminder: a new node type is not a format change.';
+
+const ADAPTERS_REMINDER = 'A renderer adapter changed: both adapters keep the same semantics (AGENTS.md). A SceneHandle method added or changed on one is on the other, with a conformance case on both engines (tests/e2e/conformance.spec.ts, tests/unit/conformance/; how to add one: tests/e2e/AGENTS.md). This is a reminder.';
 
 runHook('post-edit', (input) => {
   const path = input.tool_input?.file_path;
@@ -33,6 +38,7 @@ runHook('post-edit', (input) => {
   const inCheckout = relative(checkout, file).replaceAll('\\', '/');
 
   if (isCatalog(inCheckout)) addContext('PostToolUse', FORMAT_REMINDER);
+  if (isAdapter(inCheckout)) addContext('PostToolUse', ADAPTERS_REMINDER);
   // A branch from before the check exists has nothing to run.
   if (!isAgentFile(inCheckout) || !existsSync(join(checkout, CHECK))) return;
 

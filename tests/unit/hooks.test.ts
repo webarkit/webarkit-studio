@@ -201,6 +201,23 @@ describe('post-edit', () => {
     expect(hookSpecificOutput.additionalContext).toContain('GRAPH_VERSION');
   });
 
+  it.each(['src/runtime/renderers/adapter.ts', 'src/runtime/renderers/three-adapter.ts', 'src/runtime/renderers/babylon-adapter.ts'])(
+    'reminds of the adapters rule when %s changes',
+    (path) => {
+      const { status, stdout, stderr } = edit(path);
+      expect(status).toBe(0);
+      expect(stderr).toBe('');
+      const { hookSpecificOutput } = JSON.parse(stdout);
+      expect(hookSpecificOutput.hookEventName).toBe('PostToolUse');
+      expect(hookSpecificOutput.additionalContext).toContain('both adapters');
+      expect(hookSpecificOutput.additionalContext).toContain('conformance');
+    },
+  );
+
+  it.each(['src/runtime/renderers/disposal.ts', 'src/runtime/nodes/scene.ts'])('does not remind of the adapters rule for %s', (path) => {
+    expect(edit(path)).toMatchObject({ status: 0, stdout: '', stderr: '' });
+  });
+
   it('lets through a file outside any checkout', () => {
     const elsewhere = mkdtempSync(join(tmpdir(), 'elsewhere-'));
     writeFileSync(join(elsewhere, 'CLAUDE.md'), '');
@@ -256,6 +273,20 @@ describe('session-context', () => {
     mkdirSync(join(root, 'public/data'), { recursive: true });
     writeFileSync(join(root, 'public/data/camera_para.dat'), '');
     expect(context().text).not.toContain('npm run assets');
+  });
+
+  it('reports a worktree without its own node_modules', () => {
+    git('init', '-q', '-b', 'feat/x');
+    const { status, text } = context();
+    expect(status).toBe(0);
+    expect(text).toContain('node_modules');
+    expect(text).toContain('npm install');
+  });
+
+  it('says nothing about node_modules once they are there', () => {
+    git('init', '-q', '-b', 'feat/x');
+    mkdirSync(join(root, 'node_modules'));
+    expect(context().text).not.toContain('node_modules');
   });
 
   it('works without origin/dev', () => {

@@ -1,5 +1,5 @@
-// SessionStart: adds the branch, how far it is from origin/dev and whether the test assets are
-// missing. Everything is read from the `cwd` of the input, which is the worktree, and from what git
+// SessionStart: adds the branch, how far it is from origin/dev, and whether the test assets or the
+// checkout's own node_modules are missing. Everything is read from the `cwd` of the input, which is the worktree, and from what git
 // already knows: no fetch, so the numbers are as of the last one. It never stops a session.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -27,6 +27,11 @@ runHook('session-context', (input) => {
     lines.push(`Against origin/dev, as of the last fetch: ${ahead} ahead, ${behind} behind.`);
   }
 
+  // Without its own node_modules, a worktree under .claude/worktrees/ resolves the main checkout's
+  // packages, Playwright included, so the pixel checks would run on another Chromium (tests/e2e/AGENTS.md).
+  if (!existsSync(join(root, 'node_modules'))) {
+    lines.push('This checkout has no node_modules of its own: run npm install before the tests (a worktree would otherwise use the packages, and the Playwright, of a checkout above it).');
+  }
   if (!existsSync(join(root, 'public/data/camera_para.dat'))) {
     lines.push('The test assets are missing (public/data/): run npm run assets before the integration and e2e tests.');
   }
