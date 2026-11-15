@@ -41,6 +41,13 @@ Test files: `tests/unit/conformance/*.test.ts` (Node), `tests/e2e/conformance.sp
 
 ### Geometry (Node)
 
+**Since #162, the Babylon.js adapter builds every shape with Three.js's generators** (`three/src/geometries/`,
+`src/runtime/renderers/three-shapes.ts`): the same positions, normals, texture coordinates and triangles on both
+engines, so the per-shape Babylon.js translations below are history (they described Babylon.js's own builders, which
+the adapter no longer uses). Only each triangle's corner order changes: a mesh in a right-handed Babylon.js scene takes
+clockwise faces as its front (`sideOrientation` 0, `mesh.pure.js`), so the adapter swaps the last two corners of each
+of Three.js's counter-clockwise triangles; the normals stay Three.js's.
+
 All builders: Three.js winds faces counter-clockwise about their normals, Babylon.js clockwise
 (`geometry.test.ts`, "winds …"); Babylon's right-handed scene shows its builders' outside regardless
 (`conformance.spec.ts`, "facing").
@@ -175,8 +182,8 @@ blacks out for ambient (`babylon-adapter.ts:188`) but not for hemisphere. The gr
 | A map's alpha (#133) | Equivalent with a translation | Three.js multiplies by it on a transparent material and ignores it on an opaque one. Babylon `hasAlpha` on the texture, and per material `transparencyMode` (ALPHABLEND below opacity 1, else OPAQUE) with `useAlphaFromAlbedoTexture`: with no mode, `hasAlpha` turns alpha testing on | SceneHandle "a map's alpha counts only on a transparent material …" |
 | A video texture leaves its video alone (#133) | Equivalent with a translation | Babylon `VideoTexture` with `independentVideoSource: true` (otherwise it sets the element's autoplay, loop and mute, and pauses it on dispose), updated in `render()`; its leftover `resize` listener removed on dispose. `HtmlElementTexture` is not an option: its texture matrix is always the identity, so repeat would not apply | "a video texture plays, the same on both engines, and leaves its video playing" |
 | Video | Equivalent with a translation | Three.js `VideoTexture` (uploads once a frame is ready); Babylon `VideoTexture` needs the side-effect imports `Engines/Extensions/engine.dynamicTexture` and `engine.videoTexture` | e2e "a video texture (a canvas stream, no codec) …" |
-| UVs on a sphere | Equivalent with a translation | As built, Babylon's u starts half a turn on and v runs the other way: Babylon `uOffset = 0.5`, `vScale = −1` gives the same texels | e2e "sphere UVs as built: not the same …", "sphere UVs with Babylon.js uOffset 0.5 and vScale −1 …" |
-| UVs on other shapes (#133) | **Not equivalent** as built | Probed in Node at every triangle of each shape (`tests/unit/conformance/geometry-uvs.test.ts`): the plane is the same; each box face and the cylinder's caps are a sign or swap of u and v, and the cylinder's side a quarter turn about its axis (exact); the sphere, the torus (its v half a turn round the tube), the capsule (a different v profile) and the torus knot (at its seam) have no exact relation. #162 builds Babylon.js's shapes from Three.js's generators (the maintainer's ruling) | the probe; SceneHandle `known` cases "a texture on a box / sphere / cylinder … (#133)", `test.fail` with #162 |
+| UVs on a sphere (before #162) | Equivalent with a translation | As built, Babylon's u starts half a turn on and v runs the other way: Babylon `uOffset = 0.5`, `vScale = −1` gives the same texels | e2e "sphere UVs as built: not the same …", "sphere UVs with Babylon.js uOffset 0.5 and vScale −1 …" |
+| UVs on every shape (#133, #162) | Equivalent | Before #162, with Babylon.js's builders, only the plane matched (each box face and the cylinder's caps a sign or swap of u and v, its side a quarter turn; the sphere, torus, capsule and torus knot no exact relation). #162 builds Babylon.js's shapes from Three.js's generators: the same texture coordinates at every point | `tests/unit/conformance/geometry-uvs.test.ts` (every shape, point by point); SceneHandle "a texture on a box / sphere / cylinder / torus / capsule, unlit (#133)" |
 
 ### Shadows (`castShadow`, `scene.shadowCatcher`)
 
@@ -257,7 +264,7 @@ PBR). Defaults: set metalness 0 and roughness 1 explicitly (Babylon's are null).
 Tolerance: same, except the cells marked look. Must not promise identical highlights at low roughness (3.8 levels) or
 on rough metals (up to 6).
 
-**#132, geometry nodes and `scene.mesh`.** Translate: radii → Babylon diameters (sphere, cylinder, torus `diameter`
+**#132, geometry nodes and `scene.mesh`** (its Babylon.js translations replaced by Three.js's generators in #162). Translate: radii → Babylon diameters (sphere, cylinder, torus `diameter`
 and `thickness`); cylinder, cone, capsule and sphere along Y on both: rotate +90° about X on both for marker Z; the
 torus lies along marker Z already on Three.js and needs −90° about X on Babylon; the torus knot needs nothing beyond
 `radialSegments` = Three.js `tubularSegments`; the plane is built `BACKSIDE` on Babylon; the capsule's Three.js
