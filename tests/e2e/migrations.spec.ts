@@ -1,4 +1,5 @@
-// Older documents upgrade on load (#61): a v4 graph, as the v0.1.0 release wrote it, opened in the studio.
+// Older documents upgrade on load (#61): a v4 graph, as the v0.1.0 release wrote it, and a v5 graph, as v0.3.0 wrote
+// it (#132: its primitive becomes a mesh and a geometry), opened in the studio.
 import { expect, test, type Page } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
@@ -7,12 +8,9 @@ import { exportApp, nodeStatus, openStudio, pickDemo, run, startupDone } from '.
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 const V4 = JSON.parse(readFileSync('tests/unit/data/pinball-three.v4.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
-
-/** A demo of today as v4: the graphs of v0.1.0 and v0.2.0 differ in `version` and `plugins` and nothing else. */
-function downgraded(demo: string) {
-  const { plugins: _plugins, ...doc } = JSON.parse(readFileSync(`public/graphs/${demo}.json`, 'utf8'));
-  return { ...doc, version: 4 };
-}
+const V5 = JSON.parse(readFileSync('tests/unit/data/pinball-math.v5.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
+/** What the v5 → v6 step adds to a graph with one primitive: its geometry node, and that node's two wires (#132). */
+const V6_ADDS = { nodes: 1, edges: 2 };
 
 const freshStudio = openStudio;
 
@@ -21,22 +19,22 @@ const importGraph = (page: Page, doc: unknown) =>
 
 const saved = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), AUTOSAVE_KEY);
 
-const v4Graphs = [
-  ['pinball-three, from the v0.1.0 release', V4],
-  ['pinball-babylon', downgraded('pinball-babylon')],
+const olderGraphs = [
+  ['a v4 graph: pinball-three, from the v0.1.0 release', V4, '↑ upgraded from v4 to v6'],
+  ['a v5 graph: pinball-math, from the v0.3.0 release (its primitive wired to math and colour nodes)', V5, '↑ upgraded from v5 to v6'],
 ] as const;
 
-for (const [name, graph] of v4Graphs) {
-  test(`a v4 graph opens, runs, exports and saves as v5: ${name}`, async ({ page }) => {
+for (const [name, graph, note] of olderGraphs) {
+  test(`${name} opens, runs, exports and saves as v6`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await freshStudio(page);
 
     await importGraph(page, graph);
-    await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
-    await expect(page.locator('.studio-node')).toHaveCount(graph.nodes.length);
-    await expect(page.locator('svg.connection path')).toHaveCount(graph.edges.length);
-    await expect.poll(async () => (await saved(page))?.version).toBe(5);
+    await expect(page.locator('#log')).toContainText(note);
+    await expect(page.locator('.studio-node')).toHaveCount(graph.nodes.length + V6_ADDS.nodes);
+    await expect(page.locator('svg.connection path')).toHaveCount(graph.edges.length + V6_ADDS.edges);
+    await expect.poll(async () => (await saved(page))?.version).toBe(6);
     expect((await saved(page)).plugins).toEqual([{ id: 'jsartoolkitNFT', version: expect.any(String) }]);
 
     await run(page);
@@ -44,7 +42,7 @@ for (const [name, graph] of v4Graphs) {
 
     const { dir } = await exportApp(page);
     const exported = JSON.parse(readFileSync(join(dir, 'graph.json'), 'utf8'));
-    expect(exported.version).toBe(5);
+    expect(exported.version).toBe(6);
     expect(exported.plugins).toEqual([{ id: 'jsartoolkitNFT', version: expect.any(String) }]);
     expect(errors).toEqual([]);
   });
@@ -56,9 +54,9 @@ test('a v4 autosave is upgraded, not replaced by the demo', async ({ page }) => 
   await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(named)] as const);
   await page.reload();
 
-  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
-  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
-  await expect.poll(async () => (await saved(page))?.version).toBe(5);
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v6');
+  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length + V6_ADDS.nodes);
+  await expect.poll(async () => (await saved(page))?.version).toBe(6);
   expect((await saved(page)).name).toBe('My old work');
 
 });
@@ -66,7 +64,7 @@ test('a v4 autosave is upgraded, not replaced by the demo', async ({ page }) => 
 const SET_ASIDE_KEY = 'webarkit-studio:autosave-set-aside';
 
 for (const [name, raw, message] of [
-  ['a v3 document', JSON.stringify({ format: 'webarkit-studio/graph', version: 3, name: 'My v3 work', nodes: [{ id: 'a', type: 'x.y', params: {} }], edges: [] }), /versions 4 to 5/],
+  ['a v3 document', JSON.stringify({ format: 'webarkit-studio/graph', version: 3, name: 'My v3 work', nodes: [{ id: 'a', type: 'x.y', params: {} }], edges: [] }), /versions 4 to 6/],
   ['a v4 graph with a node type this studio does not have', JSON.stringify({ ...V4, name: 'My v4 work', nodes: [{ ...(V4.nodes[0] as object), type: 'nowhere.node' }, ...V4.nodes.slice(1)] }), /unknown type "nowhere\.node"/],
   ['a document with no nodes', '{"version":4,"name":"x"}', null],
   ['text that is not JSON', 'not json {', null],
@@ -83,11 +81,11 @@ for (const [name, raw, message] of [
   });
 }
 
-const V5 = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
+const CURRENT = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as { nodes: unknown[]; edges: unknown[] };
 
 for (const [name, graph, upgraded] of [
   ['v4', V4, true],
-  ['v5', V5, false],
+  ['current', CURRENT, false],
 ] as const) {
   test(`an unfinished ${name} autosave reopens with every node and wire, and Run and export report the input`, async ({ page }) => {
     await freshStudio(page);
@@ -97,17 +95,19 @@ for (const [name, graph, upgraded] of [
     await page.reload();
     await startupDone(page);
 
-    await expect(page.locator('.studio-node')).toHaveCount(graph.nodes.length);
-    await expect(page.locator('svg.connection path')).toHaveCount(unfinished.edges.length);
+    // Upgraded from v4, the primitive gained its geometry node and two wires (#132).
+    const added = upgraded ? V6_ADDS : { nodes: 0, edges: 0 };
+    await expect(page.locator('.studio-node')).toHaveCount(graph.nodes.length + added.nodes);
+    await expect(page.locator('svg.connection path')).toHaveCount(unfinished.edges.length + added.edges);
     const log = page.locator('#log');
-    if (upgraded) await expect(log).toContainText('↑ upgraded from v4 to v5');
+    if (upgraded) await expect(log).toContainText('↑ upgraded from v4 to v6');
     await expect(log).not.toContainText('could not be opened');
     expect(await page.evaluate((key) => localStorage.getItem(key), SET_ASIDE_KEY)).toBeNull();
     // Written back whole, and at the current version.
     const back = await saved(page);
-    expect(back).toMatchObject({ name: 'My unfinished work', version: 5 });
-    expect(back.nodes).toHaveLength(graph.nodes.length);
-    expect(back.edges).toHaveLength(unfinished.edges.length);
+    expect(back).toMatchObject({ name: 'My unfinished work', version: 6 });
+    expect(back.nodes).toHaveLength(graph.nodes.length + added.nodes);
+    expect(back.edges).toHaveLength(unfinished.edges.length + added.edges);
 
     await page.click('#btn-run');
     await expect(log).toContainText('is not connected');
@@ -121,7 +121,7 @@ for (const [name, graph, upgraded] of [
 
 test('a load never autosaves part of a graph: a reload during one must not reopen a piece of it', async ({ page }) => {
   await freshStudio(page);
-  const demo = JSON.parse(readFileSync('public/graphs/pinball-babylon.json', 'utf8')) as typeof V5;
+  const demo = JSON.parse(readFileSync('public/graphs/pinball-babylon.json', 'utf8')) as typeof CURRENT;
   // Records the size of every autosave, from before the page's own code runs.
   await page.addInitScript((key) => {
     const writes: Array<[number, number]> = [];
@@ -137,15 +137,15 @@ test('a load never autosaves part of a graph: a reload during one must not reope
   }, AUTOSAVE_KEY);
   const writes = () => page.evaluate(() => (window as unknown as { writes: Array<[number, number]> }).writes);
 
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(V5)] as const);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify(CURRENT)] as const);
   await page.reload();
   await startupDone(page);
-  await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
-  expect(await writes()).toEqual([[V5.nodes.length, V5.edges.length]]);
+  await expect(page.locator('.studio-node')).toHaveCount(CURRENT.nodes.length);
+  expect(await writes()).toEqual([[CURRENT.nodes.length, CURRENT.edges.length]]);
 
   await pickDemo(page, 'pinball-babylon');
   expect(await writes()).toEqual([
-    [V5.nodes.length, V5.edges.length],
+    [CURRENT.nodes.length, CURRENT.edges.length],
     [demo.nodes.length, demo.edges.length],
   ]);
 });
@@ -154,14 +154,14 @@ test('a graph left unfinished in the editor reopens after a reload', async ({ pa
   await freshStudio(page);
   await page.click('#btn-new');
   await expect(page.locator('.studio-node')).toHaveCount(0);
-  await page.locator('#palette button', { hasText: 'Primitive' }).click();
+  await page.locator('#palette button', { hasText: 'Mesh' }).click();
   await expect(page.locator('.studio-node')).toHaveCount(1);
   await expect.poll(async () => (await saved(page))?.nodes?.length).toBe(1);
 
   await page.reload();
   await startupDone(page);
   await expect(page.locator('.studio-node')).toHaveCount(1);
-  await expect(page.locator('.studio-node .title', { hasText: 'Primitive' })).toBeVisible();
+  await expect(page.locator('.studio-node .title', { hasText: 'Mesh' })).toBeVisible();
   await expect(page.locator('#log')).not.toContainText('could not be opened');
 });
 
@@ -169,7 +169,7 @@ for (const kind of ['json', 'project'] as const) {
   test(`an unfinished graph imported from a ${kind} file opens with every node and wire, and Run and export report the input (#86)`, async ({ page }) => {
     await freshStudio(page);
     // The first wire is gone: its required input is left unconnected.
-    const unfinished = { ...V5, edges: V5.edges.slice(1) };
+    const unfinished = { ...CURRENT, edges: CURRENT.edges.slice(1) };
     if (kind === 'json') {
       await importGraph(page, unfinished);
     } else {
@@ -177,7 +177,7 @@ for (const kind of ['json', 'project'] as const) {
       await page.setInputFiles('#file-import', { name: 'unfinished.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
     }
     const log = page.locator('#log');
-    await expect(page.locator('.studio-node')).toHaveCount(V5.nodes.length);
+    await expect(page.locator('.studio-node')).toHaveCount(CURRENT.nodes.length);
     await expect(page.locator('svg.connection path')).toHaveCount(unfinished.edges.length);
     await expect(log).not.toContainText('import failed');
 
@@ -194,14 +194,14 @@ for (const kind of ['json', 'project'] as const) {
 test('a file with a graph that is broken, not just unfinished, is still refused', async ({ page }) => {
   await freshStudio(page);
   const nodes = await page.locator('.studio-node').count();
-  await importGraph(page, { ...V5, nodes: [...V5.nodes, { id: 'x', type: 'nope.node', params: {} }] });
+  await importGraph(page, { ...CURRENT, nodes: [...CURRENT.nodes, { id: 'x', type: 'nope.node', params: {} }] });
   await expect(page.locator('#log')).toContainText('unknown type "nope.node"');
   await expect(page.locator('.studio-node')).toHaveCount(nodes);
 });
 
 test('an empty autosave is not worth keeping', async ({ page }) => {
   await freshStudio(page);
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify({ format: 'webarkit-studio/graph', version: 5, nodes: [], edges: [] })] as const);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE_KEY, JSON.stringify({ format: 'webarkit-studio/graph', version: 6, nodes: [], edges: [] })] as const);
   await page.reload();
   await expect(page.locator('.studio-node').first()).toBeVisible();
   expect(await page.evaluate((key) => localStorage.getItem(key), SET_ASIDE_KEY)).toBeNull();
@@ -216,8 +216,8 @@ test('a v4 project upgrades its graph once, after replacing the assets', async (
     'assets/p1/photo.png': new Uint8Array([1, 2, 3]),
   });
   await page.setInputFiles('#file-import', { name: 'old.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
-  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
-  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length);
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v6');
+  await expect(page.locator('.studio-node')).toHaveCount(V4.nodes.length + V6_ADDS.nodes);
   await expect(page.locator('#assets-panel .asset')).toHaveCount(1);
   expect((await page.locator('#log').textContent())?.match(/upgraded from/g)).toHaveLength(1);
 });
@@ -228,12 +228,12 @@ test('a v3 project is refused before it replaces the assets', async ({ page }) =
   await expect(page.locator('#assets-panel .asset')).toHaveCount(1);
   const project = zipSync({ 'graph.json': strToU8(JSON.stringify({ format: 'webarkit-studio/graph', version: 3, nodes: [], edges: [] })), 'assets.json': strToU8('[]') });
   await page.setInputFiles('#file-import', { name: 'older.webarkit.zip', mimeType: 'application/zip', buffer: Buffer.from(project) });
-  await expect(page.locator('#log')).toContainText(/versions 4 to 5/);
+  await expect(page.locator('#log')).toContainText(/versions 4 to 6/);
   await expect(page.locator('#assets-panel .asset:has(.asset-name:text-is("keep.glb"))')).toHaveCount(1);
 });
 
 for (const [version, message] of [
-  [3, /versions 4 to 5/],
+  [3, /versions 4 to 6/],
   [99, /made by a newer studio/],
 ] as const) {
   test(`a v${version} document is refused, and the log says why`, async ({ page }) => {

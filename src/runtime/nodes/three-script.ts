@@ -1,6 +1,6 @@
 /**
  * three.script (#36): a three.js script that builds part of the scene, plugged into a Marker Anchor like a
- * Primitive. The studio keeps the camera, the marker pose, found / lost visibility and the export; the script only
+ * Mesh. The studio keeps the camera, the marker pose, found / lost visibility and the export; the script only
  * creates and animates content.
  *
  * - Its code defines `onInit({ THREE, group, inputs })`, `onFrame({ THREE, group, time, delta, inputs })` and

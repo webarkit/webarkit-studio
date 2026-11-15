@@ -9,7 +9,7 @@ const NEXT = { timeout: 30_000 };
  */
 const doc = {
   format: 'webarkit-studio/graph',
-  version: 5,
+  version: 6,
   nodes: [
     { id: 'time', type: 'math.time', params: { speed: 1 }, position: { x: 0, y: 0 } },
     { id: 'deltaView', type: 'debug.inspector', params: {}, position: { x: 400, y: 0 } },

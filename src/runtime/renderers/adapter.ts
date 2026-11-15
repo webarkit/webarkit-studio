@@ -13,6 +13,7 @@
  *  - the camera sits at the origin looking down -Z (OpenGL convention); its
  *    projection comes from the AR Camera node.
  */
+import type { GeometrySpec } from '../../core/geometry';
 import { transformMatrix } from '../../core/math';
 
 export interface SceneObject {
@@ -21,10 +22,14 @@ export interface SceneObject {
   readonly native: unknown;
 }
 
-export interface PrimitiveSpec {
-  shape: 'box' | 'sphere' | 'torusKnot';
-  size: number;
-  color: string;
+/**
+ * A geometry (#132), made in a scene: Babylon.js's belongs to one, Three.js's does not, and the handle makes them alike.
+ * Not a SceneObject: it is never added to the scene, only given to createMesh().
+ */
+export interface GeometryObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'geometry';
 }
 
 export interface LightSpec {
@@ -115,7 +120,18 @@ export interface RendererAdapter {
 export interface SceneHandle {
   readonly renderer: RendererAdapter;
 
-  createPrimitive(spec: PrimitiveSpec): SceneObject;
+  /**
+   * A geometry of the core's shapes (src/core/geometry.ts), built in marker space with the axes the core fixes, from
+   * normalizeGeometry(spec): the same vertices' bounds on every adapter (docs/proposals/scene-nodes-equivalence.md).
+   */
+  createGeometry(spec: GeometrySpec): GeometryObject;
+  /** Rebuilds a geometry in place (a live param change): every mesh made from it follows, its bounds included. */
+  setGeometry(geometry: GeometryObject, spec: GeometrySpec): void;
+  /**
+   * A mesh of a geometry made in this scene, with the default PBR material (white, metalness 0, roughness 1; colour it
+   * with setColor). Throws for a geometry of another scene, on every adapter.
+   */
+  createMesh(geometry: GeometryObject): SceneObject;
   /**
    * A glTF model, already stood up from glTF's Y-up to marker space (Z-up).
    * The returned object's own matrix is free for the node's transform. glTF
@@ -170,7 +186,7 @@ export interface SceneHandle {
 }
 
 /** Throws when an object made in another scene (or engine) is wired in. */
-export function assertOwned(scene: SceneHandle, object: SceneObject): void {
+export function assertOwned(scene: SceneHandle, object: SceneObject | GeometryObject): void {
   if (object.scene !== scene) {
     const where = object.scene.renderer === scene.renderer ? 'another scene' : `a ${object.scene.renderer.kind} scene`;
     throw new Error(`object created in ${where} cannot be used in this ${scene.renderer.kind} scene`);

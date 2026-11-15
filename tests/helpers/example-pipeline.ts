@@ -100,7 +100,7 @@ export interface ExampleInput {
 
 /**
  * The Pinball · Three.js demo graph with the uploaded dataset in place of
- * pinball and the uploaded model in place of the primitive, plus the assets
+ * pinball and the uploaded model in place of the mesh and its geometry, plus the assets
  * to pack with it (src/export/project.ts).
  */
 export function buildExampleProject({ dataset, model, scale = 60 }: ExampleInput): {
@@ -121,6 +121,10 @@ export function buildExampleProject({ dataset, model, scale = 60 }: ExampleInput
   const prim = node('prim_pinball');
   prim.type = 'scene.gltf';
   prim.params = { url: assetRef(modelId, model.name), scale };
+  // The mesh's geometry (#132) goes with it: a model has none.
+  const geometry = node('prim_pinball_geometry').id;
+  graph.nodes = graph.nodes.filter((n) => n.id !== geometry);
+  graph.edges = graph.edges.filter((e) => e.from.node !== geometry && e.to.node !== geometry);
   // Ids that named pinball, and the edges that use them.
   const renamed: Record<string, string> = { select_pinball: 'select', anchor_pinball: 'anchor', prim_pinball: 'model' };
   for (const n of graph.nodes) n.id = renamed[n.id] ?? n.id;

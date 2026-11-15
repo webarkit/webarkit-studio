@@ -25,7 +25,7 @@ describe('validateGraph', () => {
 
   it('rejects wrong format and version', () => {
     const doc = { ...graph([], []), format: 'other', version: 1 };
-    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 5)']);
+    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 6)']);
   });
 
   it('still accepts the format id of the WebAR-Studio prototype', () => {
@@ -164,14 +164,14 @@ describe('validateGraph: plugins (v5)', () => {
     }
   };
 
-  it('is version 5, and rejects version 4 documents', () => {
-    expect(GRAPH_VERSION).toBe(5);
-    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+  it('is version 6, and rejects version 4 documents', () => {
+    expect(GRAPH_VERSION).toBe(6);
+    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 6)']);
   });
 
   it('reports only the version of a document in another version, not what that version lacks', () => {
     // A v4 graph cannot list plugins: its plugin nodes are not errors of their own.
-    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 6)']);
   });
 
   it('accepts a graph that lists the plugins of its nodes', () => {
@@ -229,9 +229,9 @@ describe('topologicalOrder', () => {
 
 describe('resolveParams', () => {
   it('fills defaults and keeps explicit values', () => {
-    const def = NODE_CATALOG['scene.primitive'];
-    const params = resolveParams(def, { size: 120 });
-    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true, position: [0, 0, 0], rotation: [0, 0, 0] });
+    const def = NODE_CATALOG['scene.mesh'];
+    const params = resolveParams(def, { spin: true });
+    expect(params).toEqual({ color: '#ff0055', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], rest: true, spin: true });
   });
 
   it('copies array values, so a node changing one never changes the default or the document', () => {

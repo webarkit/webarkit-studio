@@ -4,6 +4,8 @@
  * (src/runtime/renderers/three-adapter.ts) and the scene nodes (src/runtime/nodes/scene.ts). Units: millimetres,
  * the marker on the XY plane, +Z up; rotations in degrees, applied X, then Y, then Z (Euler 'XYZ').
  */
+import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
+import { nonZeroScale } from '../../core/math';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -111,24 +113,72 @@ ${s}.add(${v}); // camera space, until an anchor takes it`,
   };
 };
 
-const primitive: CodeEmitter = (ctx) => {
+/** A number as source text: at most 6 decimals, never `-0`. */
+const decimal = (v: number) => String(Math.round(v * 1e6) / 1e6 + 0);
+
+/**
+ * A core shape as three.js source text: the same geometry the Three.js adapter builds (threeGeometry() in
+ * src/runtime/renderers/three-adapter.ts), in marker space. tests/unit/codegen-geometry.test.ts evaluates each one
+ * against three and compares its bounds with the core's.
+ */
+export function threeGeometryCode(spec: GeometrySpec): { code: string; note?: string } {
+  const s = normalizeGeometry(spec);
+  const d = decimal;
+  switch (s.shape) {
+    case 'box':
+      return { code: `new THREE.BoxGeometry(${d(s.width)}, ${d(s.depth)}, ${d(s.height)})`, note: 'width X, depth Y, height Z' };
+    case 'sphere':
+      return { code: `new THREE.SphereGeometry(${d(s.radius)}, ${s.detail}, ${s.detail / 2}).rotateX(Math.PI / 2)`, note: 'poles on Z' };
+    case 'cylinder':
+      return { code: `new THREE.CylinderGeometry(${d(s.radiusTop)}, ${d(s.radiusBottom)}, ${d(s.height)}, ${s.detail}).rotateX(Math.PI / 2)`, note: 'along Z, the top at +Z' };
+    case 'plane':
+      return { code: `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.depth)})`, note: 'width X, depth Y, on the marker, facing +Z' };
+    case 'torus':
+      return { code: `new THREE.TorusGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${s.detail})`, note: 'the ring in XY' };
+    case 'torusKnot':
+      return { code: `new THREE.TorusKnotGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${TORUS_KNOT_TUBE_SEGMENTS}, ${s.p}, ${s.q})` };
+    case 'capsule':
+      return {
+        code: `new THREE.CapsuleGeometry(${d(s.radius)}, ${d(s.height - 2 * s.radius)}, ${s.detail / 4}, ${s.detail}).rotateX(Math.PI / 2)`,
+        note: 'along Z: the middle section is the height less the caps',
+      };
+  }
+}
+
+/** geometry.*: the shape, and its bounds' bottom and top for the mesh after it (`from('geometry')`), to rest on. */
+const geometry =
+  (shape: GeometryShape): CodeEmitter =>
+  (ctx) => {
+    required(ctx, 'scene');
+    const g = ctx.name();
+    const spec = geometrySpec(shape, ctx.params);
+    const bounds = geometryBounds(spec);
+    const { code, note } = threeGeometryCode(spec);
+    return {
+      imports: [THREE_IMPORT],
+      setup: `const ${g} = ${code};${note ? ` // ${note}` : ''}`,
+      outputs: { geometry: g, bottom: String(bounds.min[2]), top: String(bounds.max[2]) },
+    };
+  };
+
+const mesh: CodeEmitter = (ctx) => {
   const { name, params, literal } = ctx;
   required(ctx, 'scene');
-  paramsOnly(ctx, 'position', 'color');
+  const g = required(ctx, 'geometry');
+  paramsOnly(ctx, 'position', 'rotation', 'scale', 'color');
   const m = name();
-  const size = num(params.size);
-  const geometry =
-    params.shape === 'sphere'
-      ? `new THREE.SphereGeometry(${size} / 2, 32, 16)`
-      : params.shape === 'torusKnot'
-        ? `new THREE.TorusKnotGeometry(${size} / 3, ${size} / 10, 100, 16)`
-        : `new THREE.BoxGeometry(${size}, ${size}, ${size})`;
+  const from = ctx.from('geometry') ?? {};
+  // As scene.mesh: each component at least MIN_SCALE in magnitude, with its sign.
+  const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
+  // As scene.mesh rests (restLift): the geometry's bottom, scaled along Z, before the rotation.
+  const lift = params.rest ? restLift({ min: [0, 0, Number(from.bottom)], max: [0, 0, Number(from.top)] }, scale[2]) : 0;
   const [x, y, z] = vec3(params.position);
+  const scaled = scale.some((v) => v !== 1) ? `\n${m}.scale.set(${scale.map(decimal).join(', ')});` : '';
   return {
     imports: [THREE_IMPORT],
-    setup: `const ${m} = new THREE.Mesh(${geometry}, new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))} }));
-${m}.position.set(${x}, ${y}, ${z} + ${size} / 2); // resting on the marker: lifted by half its size
-${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');`,
+    setup: `const ${m} = new THREE.Mesh(${g}, new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))}, metalness: 0, roughness: 1 }));
+${m}.position.set(${x}, ${y}, ${decimal(z + lift)});${lift ? ` // resting on the marker: lifted by ${decimal(lift)} mm, its geometry's bottom` : ''}
+${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}`,
     frame: params.spin ? `${m}.rotation.z += delta * 0.0005; // spins about its own Z axis` : undefined,
     outputs: { object: m },
   };
@@ -310,7 +360,9 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'scene.scene': scene,
   'scene.arCamera': arCamera,
   'scene.light': light,
-  'scene.primitive': primitive,
+  'scene.mesh': mesh,
+  // One per shape of the core's GEOMETRY_TYPES (#132).
+  ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,

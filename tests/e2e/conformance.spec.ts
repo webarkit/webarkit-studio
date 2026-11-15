@@ -6,7 +6,7 @@
 // - "conformance: SceneHandle" is the table of the adapters as the studio's nodes drive them: a new common scene node
 //   or adapter method adds one entry there (tests/e2e/AGENTS.md, "Conformance cases").
 // - "conformance: lights in the current adapters" also goes through the adapters (buildWithAdapter): it holds the three
-//   light kinds on scene.primitive, with the values each engine renders (alike since #131). It also checks that an
+//   light kinds on scene.mesh, with the values each engine renders (alike since #131). It also checks that an
 //   adopted hemisphere is aimed on the frame its parent turns (#145; the directions: tests/unit/conformance/hemisphere.test.ts).
 // - The other tables are the report's experiments, built with each engine's own classes for what the adapters do not
 //   have yet; a Phase 4 issue that implements one moves its case to the SceneHandle table.
@@ -16,6 +16,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
+import { nonZeroScale, transformMatrix } from '../../src/core/math';
 
 const ENGINES = ['three', 'babylon'] as const;
 type Engine = (typeof ENGINES)[number];
@@ -365,7 +366,7 @@ test.describe('conformance: lights (Babylon.js on PBRMaterial, exact sRGB)', () 
   });
 });
 
-test.describe('conformance: lights in the current adapters (scene.light on scene.primitive)', () => {
+test.describe('conformance: lights in the current adapters (scene.light on scene.mesh)', () => {
   // Three.js MeshStandardMaterial; Babylon.js PBRMaterial with the report's light mapping since #131 (k = 1, 1/π for
   // hemisphere and ambient; colours in linear; exact sRGB; a hemispheric light's specular black). Before #131 it was
   // StandardMaterial with every light x 0.4, and these values differed (Babylon.js 20, 51, 56). Red channel of a #808080
@@ -687,6 +688,84 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ]),
       }),
     ),
+    // #132: each core shape through createGeometry and createMesh, 80 mm away, its marker-space Z axis towards the
+    // camera, unlit: the same silhouette on three rows (every lit / unlit transition: the torus's hole counts).
+    ...(
+      [
+        { shape: 'box', width: 40, depth: 30, height: 20 },
+        { shape: 'sphere', radius: 20, detail: 32 },
+        { shape: 'cylinder', radiusTop: 10, radiusBottom: 20, height: 30, detail: 32 },
+        { shape: 'plane', width: 40, depth: 30 },
+        { shape: 'torus', radius: 15, tube: 5, detail: 32 },
+        { shape: 'torusKnot', radius: 40 / 3, tube: 4, p: 2, q: 3, detail: 100 },
+        { shape: 'capsule', radius: 10, height: 40, detail: 16 },
+      ] as const
+    ).map(
+      (spec): Case => ({
+        name: `createGeometry ${spec.shape} and createMesh, unlit: the same silhouette (#132)`,
+        ops: [
+          { op: 'createGeometry', id: 'g', spec },
+          { op: 'createMesh', id: 'm', geometry: 'g' },
+          { op: 'setPosition', id: 'm', position: [0, 0, -80] },
+          { op: 'addRoot', id: 'm' },
+        ],
+        rules: [
+          { row: 56, is: 'edges' },
+          { row: 64, is: 'edges' },
+          { row: 72, is: 'edges' },
+        ],
+      }),
+    ),
+    // #132: a mesh scaled to 0 on an axis is flat on both engines. scene.mesh writes each scale component at least
+    // MIN_SCALE in magnitude (nonZeroScale): a 0 would make a singular matrix, which three's Matrix4.decompose turns
+    // into scale 1 and no rotation, so Three.js would draw the full box where Babylon.js flattens it.
+    ...(
+      [
+        ['[1, 1, 0]: flat, facing the camera', [1, 1, 0], 'drawn'],
+        ['[0, 1, 1]: flat, a plane the camera sees from the side', [0, 1, 1], 'drawn'],
+        ['[0, 0, 0]: nothing seen', [0, 0, 0], 'empty'],
+      ] as const
+    ).map(
+      ([what, scale, seen]): Case => ({
+        name: `a mesh scaled ${what}, as scene.mesh writes it (#132)`,
+        ops: [
+          { op: 'createGeometry', id: 'g', spec: { shape: 'box', width: 30, depth: 30, height: 30 } },
+          { op: 'createMesh', id: 'm', geometry: 'g' },
+          { op: 'setMatrix', id: 'm', matrix: transformMatrix({ position: [-25, 0, -80], rotation: [0, 0, 0], scale: scale.map(nonZeroScale) as V3 }) },
+          { op: 'addRoot', id: 'm' },
+          ...box('b', 30, [30, 0, -80]),
+          { op: 'addRoot', id: 'b' },
+        ],
+        // The flattened box's region: its face at 64 + 64 · −25 / 80 = 44 px, or, edge-on, the plane at x = −25 mm.
+        regions: { m: [42, 62, 3, 3], b: [94, 62, 4, 4] },
+        rules: [
+          { region: 'm', is: seen },
+          { region: 'b', is: 'drawn' },
+        ],
+      }),
+    ),
+    // #132: a live geometry change grows a sphere from radius 10 to 25: a sample outside the small silhouette (about
+    // 8 px from the centre) and inside the large one (about 21 px) is empty before setGeometry, drawn after, on both.
+    // A growth, not a shrink: stale culling bounds would leave the new rim undrawn.
+    {
+      name: 'setGeometry grows a sphere on a running scene: its mesh follows, on the next frame (#132)',
+      ops: [
+        { op: 'createGeometry', id: 'g', spec: { shape: 'sphere', radius: 10, detail: 32 } },
+        { op: 'createMesh', id: 'm', geometry: 'g' },
+        { op: 'setPosition', id: 'm', position: [0, 0, -80] },
+        { op: 'addRoot', id: 'm' },
+        { op: 'render', capture: 'small' },
+        { op: 'setGeometry', id: 'g', spec: { shape: 'sphere', radius: 25, detail: 32 } },
+      ],
+      regions: { centre: [62, 62, 4, 4], rim: [78, 62, 3, 3] },
+      rules: [
+        { frame: 'small', region: 'centre', is: 'drawn' },
+        { frame: 'small', region: 'rim', is: 'empty' },
+        { region: 'centre', is: 'drawn' },
+        { region: 'rim', is: 'drawn' },
+        { region: 'rim', is: 'sameAlpha' },
+      ],
+    },
     // #153: a half-transparent glTF material (alpha 0.5, roughness 0.3) under a directional light. Its highlight peaks
     // near pixel (77, 83), where the view ray reflects toward the light (0.2, −0.3, 1): `hl` samples it, and a 5 × 5
     // grid samples the rest of the square (pixels 40..88). A highlight must not raise the framebuffer's alpha. Without

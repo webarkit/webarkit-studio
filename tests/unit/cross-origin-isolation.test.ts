@@ -260,7 +260,7 @@ describe('the export', () => {
     const seen: string[][] = [];
     const acme = { id: 'acme', crossOriginIsolation: (nodes) => (seen.push(nodes.map((n) => n.id)), true) } as StudioPlugin;
     const plain = { id: 'plain' } as StudioPlugin;
-    const graph = (...types: string[]): GraphDocument => ({ format: 'webarkit-studio/graph', version: 5, nodes: types.map((type, i) => ({ id: `n${i}`, type, params: {} })), edges: [] });
+    const graph = (...types: string[]): GraphDocument => ({ format: 'webarkit-studio/graph', version: 6, nodes: types.map((type, i) => ({ id: `n${i}`, type, params: {} })), edges: [] });
     expect(needsIsolation(graph('three.renderer', 'plain.thing'), [acme, plain])).toBe(false);
     expect(seen).toEqual([]);
     expect(needsIsolation(graph('three.renderer', 'acme.tracker'), [acme, plain])).toBe(true);

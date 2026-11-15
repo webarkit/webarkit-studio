@@ -54,7 +54,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'geometry' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug';
 
 export interface NodeDefinition {
   type: string;
@@ -246,7 +246,7 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
     label: 'Matrix4',
     description:
       'A transform matrix from a position (mm), a rotation (degrees, X then Y then Z) and a uniform scale: T · R · S, the ' +
-      'convention models and primitives are placed with. Connected inputs override the params.',
+      'convention models and meshes are placed with. Connected inputs override the params.',
     inputs: { position: vec3In('Position'), rotation: vec3In('Rotation (°)'), scale: { type: 'number', label: 'Scale', optional: true } },
     outputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
     params: {
@@ -593,28 +593,31 @@ export const CORE_NODES: NodeDefinition[] = [
     },
   },
   {
-    type: 'scene.primitive',
-    label: 'Primitive',
+    type: 'scene.mesh',
+    label: 'Mesh',
     category: 'scene',
     provider: 'core',
     description:
-      'A simple mesh created in the connected scene, resting on the marker. Position (mm) and rotation (degrees, X then Y then Z) ' +
-      'move it from there; Spin turns it about its own Z axis.',
+      'A mesh of the connected geometry, created in the connected scene, with a default physically based material. Rest puts ' +
+      'it on the marker (its geometry\'s bottom on the marker plane, before its rotation); position (mm), rotation (degrees, X ' +
+      'then Y then Z) and scale (per axis) apply from there. Spin turns it about its own Z axis. Connected inputs override ' +
+      'the params; a colour with alpha below 1 makes it transparent.',
     inputs: {
       scene: { type: 'scene', label: 'Scene' },
-      // Overrides the position param while connected (e.g. from math nodes).
+      geometry: { type: 'geometry', label: 'Geometry' },
       position: { type: 'vector3', label: 'Position', optional: true },
-      // Overrides the color param while connected; alpha below 1 makes it transparent.
+      rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
+      scale: { type: 'vector3', label: 'Scale', optional: true },
       color: { type: 'color', label: 'Color', optional: true },
     },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
-      shape: { kind: 'select', label: 'Shape', default: 'box', options: { Box: 'box', Sphere: 'sphere', 'Torus knot': 'torusKnot' } },
-      size: { kind: 'number', label: 'Size (mm)', default: 80, min: 1, max: 1000, step: 1 },
       color: { kind: 'color', label: 'Color', default: '#ff0055', live: true },
-      spin: { kind: 'boolean', label: 'Spin', default: true, live: true },
       position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
       rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+      scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
+      rest: { kind: 'boolean', label: 'Rest on the marker', default: true, live: true },
+      spin: { kind: 'boolean', label: 'Spin', default: false, live: true },
     },
   },
   {
@@ -656,6 +659,109 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     outputs: { object: { type: 'sceneObject', label: 'Anchor' } },
     params: { center: { kind: 'boolean', label: 'Center on marker', default: true, live: true } },
+  },
+
+  // ------------------------------------------------------------ geometry
+  // Shapes in mm, in marker space (+Z out of the marker), for scene.mesh (#132). Every param is live: a change rebuilds
+  // the geometry in place, and the meshes made from it follow. Detail is rounded per shape (src/core/geometry.ts).
+  {
+    type: 'geometry.box',
+    label: 'Box',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A box, centred on its origin: width along X, depth along Y, height along Z (out of the marker).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.sphere',
+    label: 'Sphere',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A sphere, centred on its origin, its poles on Z. Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 40, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 8, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.cylinder',
+    label: 'Cylinder',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A cylinder along Z, centred on its origin, the top radius at +Z: a top radius of 0 makes a cone. Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radiusTop: { kind: 'number', label: 'Top radius (mm)', default: 20, min: 0, max: 1000, step: 1, live: true },
+      radiusBottom: { kind: 'number', label: 'Bottom radius (mm)', default: 20, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 4, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.plane',
+    label: 'Plane',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A flat rectangle on the marker plane, facing +Z: width along X, depth along Y.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.torus',
+    label: 'Torus',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A ring in the XY plane, around Z: radius to the middle of the tube, and the tube\'s radius. Detail: segments around the ring and the tube (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 30, min: 0, max: 1000, step: 1, live: true },
+      tube: { kind: 'number', label: 'Tube radius (mm)', default: 10, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 4, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.torusKnot',
+    label: 'Torus Knot',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A (p, q) torus knot lying in the XY plane: it winds p times around Z and q times through the ring. Detail: segments along the knot.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 27, min: 0, max: 1000, step: 1, live: true },
+      tube: { kind: 'number', label: 'Tube radius (mm)', default: 8, min: 0, max: 1000, step: 1, live: true },
+      p: { kind: 'number', label: 'p', default: 2, min: 1, max: 20, step: 1, live: true },
+      q: { kind: 'number', label: 'q', default: 3, min: 1, max: 20, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 100, min: 3, max: 1024, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.capsule',
+    label: 'Capsule',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A capsule along Z, centred on its origin: a cylinder with a half sphere at each end. Height is the total, caps included, at least twice the radius (less gives a sphere). Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 15, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, total, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 16, min: 4, max: 256, step: 4, live: true },
+    },
   },
 
   // -------------------------------------------------------------- output
@@ -839,7 +945,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'RGBA Color',
     category: 'color',
     provider: 'core',
-    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
+    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Mesh transparent.',
     inputs: {
       r: { type: 'number', label: 'R', optional: true },
       g: { type: 'number', label: 'G', optional: true },
@@ -983,7 +1089,7 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'scene',
     provider: 'Three.js',
     description:
-      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Primitive. ' +
+      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Mesh. ' +
       'Define onInit({ THREE, group, inputs }) to create meshes, materials and lights in group (marker space: mm, +Z up), ' +
       'onFrame({ THREE, group, time, delta, inputs }) to animate, and onDispose() to release what onInit made. The header ' +
       'declares value inputs (in name socket d=…) and dropdowns (enum), as Script\'s does; it has no out lines. Needs the ' +
@@ -1210,7 +1316,7 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'action',
     provider: 'core',
     description:
-      'Shows or hides a model or a primitive. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
+      'Shows or hides a model or a mesh. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
       'In one frame, Hide wins over Show, and Show over Toggle.',
     inputs: {
       target: { type: 'sceneObject', label: 'Target' },

@@ -15,7 +15,7 @@ in  t       number  d=0
 in  height  number  d=30 min=0 max=200
 out position vector3
 */
-// The math demo's animation in one node: wire Time's Seconds into t, and position into a Primitive's Position.
+// The math demo's animation in one node: wire Time's Seconds into t, and position into a Mesh's Position.
 position = [0, 0, 40 + height * Math.sin(t * Math.PI)];
 `,
   },
@@ -26,7 +26,7 @@ position = [0, 0, 40 + height * Math.sin(t * Math.PI)];
 in  speed  number  d=60 step=10
 out color  color
 */
-// Hue in degrees, from the script's own clock: wire color into a Primitive's or a Light's Color.
+// Hue in degrees, from the script's own clock: wire color into a Mesh's or a Light's Color.
 const h = ((time * speed) % 360) / 60;
 const x = 1 - Math.abs((h % 2) - 1);
 const [r, g, b] = h < 1 ? [1, x, 0] : h < 2 ? [x, 1, 0] : h < 3 ? [0, 1, x] : h < 4 ? [0, x, 1] : h < 5 ? [x, 0, 1] : [1, 0, x];

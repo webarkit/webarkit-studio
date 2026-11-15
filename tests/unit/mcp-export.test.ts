@@ -72,10 +72,10 @@ describe('export_bundle', () => {
     const { plugins: _plugins, ...graph } = JSON.parse(readFileSync(GRAPH, 'utf8'));
     const result = (await call(client, 'export_bundle', { graph: { ...graph, version: 4 }, out, baseDir: fakePublic() })) as { ok: true; value: any };
     expect(result.ok).toBe(true);
-    expect(result.value.log).toContain('↑ upgraded from v4 to v5');
+    expect(result.value.log).toContain('↑ upgraded from v4 to v6');
     const zip = unzipSync(new Uint8Array(readFileSync(out)));
     const exported = JSON.parse(strFromU8(zip[`${slugify(graph.name)}/graph.json`]));
-    expect(exported.version).toBe(5);
+    expect(exported.version).toBe(6);
     expect(exported.plugins).toEqual([{ id: 'jsartoolkitNFT', version: '0.1.0' }]);
   });
 

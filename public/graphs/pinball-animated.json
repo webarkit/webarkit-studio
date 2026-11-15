@@ -1,6 +1,6 @@
 {
  "format": "webarkit-studio/graph",
- "version": 5,
+ "version": 6,
  "name": "Pinball · animated model, plays on found, pauses on lost",
  "plugins": [
   {

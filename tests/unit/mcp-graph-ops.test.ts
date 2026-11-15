@@ -53,9 +53,9 @@ describe('applyOps', () => {
 
   it('accepts vector3 and number params of the right shape', () => {
     const doc = applyOps(emptyGraph(), [
-      { op: 'addNode', type: 'scene.primitive', id: 'v', params: { position: [1, 2, 3], size: 40 } },
+      { op: 'addNode', type: 'scene.gltf', id: 'v', params: { position: [1, 2, 3], scale: 40 } },
     ]);
-    expect(doc.nodes[0].params).toEqual({ position: [1, 2, 3], size: 40 });
+    expect(doc.nodes[0].params).toEqual({ position: [1, 2, 3], scale: 40 });
   });
 
   it.each<[string, GraphOp[], RegExp]>([
@@ -68,7 +68,7 @@ describe('applyOps', () => {
     ['an unknown param', [{ op: 'setParam', node: 'controller', key: 'nope', value: 1 }], /no param "nope"/],
     ['a value of the wrong kind', [{ op: 'setParam', node: 'camera', key: 'url', value: 3 }], /must be a string/],
     ['a select value that is not an option', [{ op: 'setParam', node: 'controller', key: 'build', value: 'fast' }], /must be one of/],
-    ['a vector3 of the wrong length', [{ op: 'addNode', type: 'scene.primitive', id: 'p' }, { op: 'setParam', node: 'p', key: 'position', value: [1, 2] }], /3 numbers/],
+    ['a vector3 of the wrong length', [{ op: 'addNode', type: 'scene.mesh', id: 'p' }, { op: 'setParam', node: 'p', key: 'position', value: [1, 2] }], /3 numbers/],
     ['an unknown edge', [{ op: 'disconnect', id: 'e99' }], /no edge "e99"/],
     ['a second connection into a single input', [{ op: 'addNode', type: 'source.image', id: 'image2' }, { op: 'connect', from: { node: 'image2', port: 'video' }, to: { node: 'controller', port: 'video' } }], /already connected .*e1/],
     ['the same connection twice', [{ op: 'connect', from: { node: 'pinball', port: 'dataset' }, to: { node: 'controller', port: 'dataset' } }], /already connected .*e3/],
@@ -85,12 +85,12 @@ describe('applyOps', () => {
 
   it('names generated ids after the last segment of the type', () => {
     const doc = applyOps(emptyGraph(), [
-      { op: 'addNode', type: 'scene.primitive' },
-      { op: 'addNode', type: 'scene.primitive' },
+      { op: 'addNode', type: 'scene.mesh' },
+      { op: 'addNode', type: 'scene.mesh' },
       { op: 'addNode', type: 'scene.scene' },
-      { op: 'connect', from: { node: 'scene1', port: 'scene' }, to: { node: 'primitive2', port: 'scene' } },
+      { op: 'connect', from: { node: 'scene1', port: 'scene' }, to: { node: 'mesh2', port: 'scene' } },
     ]);
-    expect(doc.nodes.map((n) => n.id)).toEqual(['primitive1', 'primitive2', 'scene1']);
+    expect(doc.nodes.map((n) => n.id)).toEqual(['mesh1', 'mesh2', 'scene1']);
   });
 
   it('keeps the plugin refs of plugins that are not loaded, so validation names them', () => {
@@ -122,7 +122,7 @@ describe('graph_create and graph_edit tools', () => {
   it('creates a graph from ops and reports what is still missing', async () => {
     const { value } = (await call(client, 'graph_create', { name: 'Draft', ops: TRACKING.slice(0, 4) })) as { value: any };
     expect(value.graph.name).toBe('Draft');
-    expect(value.graph.version).toBe(5);
+    expect(value.graph.version).toBe(6);
     expect(value.valid).toBe(false);
     expect(value.problems.some((p: string) => p.includes('required input'))).toBe(true);
   });

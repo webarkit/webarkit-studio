@@ -5,11 +5,12 @@
  */
 import type * as THREE from 'three';
 
-export function disposeObject3D(object: THREE.Object3D): void {
+export function disposeObject3D(object: THREE.Object3D, keepGeometry: (geometry: THREE.BufferGeometry) => boolean = () => false): void {
   object.removeFromParent();
   object.traverse((o) => {
     const mesh = o as THREE.Mesh;
-    mesh.geometry?.dispose();
+    // A geometry shared by other meshes (a geometry.* node's, #132) is freed with its scene, not with one of them.
+    if (mesh.geometry && !keepGeometry(mesh.geometry)) mesh.geometry.dispose();
     const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
     for (const material of materials) {
       // Textures held as the material's properties (map, normalMap…), or in a ShaderMaterial's uniforms.

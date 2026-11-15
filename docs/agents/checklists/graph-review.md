@@ -56,13 +56,13 @@ key by key; a renamed key looks like one removal plus one addition.
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
   the plugin API: `PLUGIN_API_VERSION` is bumped, and the major version of `packages/studio-plugin-api/`.
-  The values of `renderer`, `scene` and `sceneObject` are the exception: they are studio internals.
+  The values of `renderer`, `scene`, `sceneObject` and `geometry` are the exception: they are studio internals.
 
 ## 3. Naming
 
 - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
   nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
-- Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
+- Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 
@@ -92,7 +92,7 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 7. Tests and docs
 
 - New or changed node logic that does not need a browser has a unit test (`tests/unit/`).
-- A new common scene node (`scene.*`, and the geometry nodes #132 adds) or a new `SceneHandle` method has at least one
+- A new common scene node (`scene.*`, `geometry.*`) or a new `SceneHandle` method has at least one
   case in the conformance suite on both engines (`tests/e2e/conformance.spec.ts`, `tests/unit/conformance/`; #130). A
   difference between the engines is translated by the adapters, or makes the node `three.*` / `babylon.*`, or, until
   the issue that translates it is fixed, is a `known` case marked `test.fail` with that issue.

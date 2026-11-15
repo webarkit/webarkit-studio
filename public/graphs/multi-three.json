@@ -1,6 +1,6 @@
 {
  "format": "webarkit-studio/graph",
- "version": 5,
+ "version": 6,
  "name": "Multi NFT (pinball + kuva) \u00b7 Three.js",
  "plugins": [
   {
@@ -206,12 +206,16 @@
   },
   {
    "id": "prim_pinball",
-   "type": "scene.primitive",
+   "type": "scene.mesh",
    "params": {
-    "shape": "torusKnot",
-    "size": 80,
     "color": "#ff0055",
-    "spin": true
+    "spin": true,
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "rest": true
    },
    "position": {
     "x": 960,
@@ -242,15 +246,47 @@
   },
   {
    "id": "prim_kuva",
-   "type": "scene.primitive",
+   "type": "scene.mesh",
    "params": {
-    "shape": "box",
-    "size": 60,
     "color": "#ffc400",
-    "spin": true
+    "spin": true,
+    "scale": [
+     1,
+     1,
+     1
+    ],
+    "rest": true
    },
    "position": {
     "x": 960,
+    "y": 1076
+   }
+  },
+  {
+   "id": "prim_pinball_geometry",
+   "type": "geometry.torusKnot",
+   "params": {
+    "radius": 26.666666666666668,
+    "tube": 8,
+    "p": 2,
+    "q": 3,
+    "detail": 100
+   },
+   "position": {
+    "x": 720,
+    "y": 535
+   }
+  },
+  {
+   "id": "prim_kuva_geometry",
+   "type": "geometry.box",
+   "params": {
+    "width": 60,
+    "depth": 60,
+    "height": 60
+   },
+   "position": {
+    "x": 720,
     "y": 1076
    }
   }
@@ -606,6 +642,50 @@
    "to": {
     "node": "view",
     "port": "video"
+   }
+  },
+  {
+   "id": "migrated_edge",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "prim_pinball_geometry",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "migrated_edge_2",
+   "from": {
+    "node": "prim_pinball_geometry",
+    "port": "geometry"
+   },
+   "to": {
+    "node": "prim_pinball",
+    "port": "geometry"
+   }
+  },
+  {
+   "id": "migrated_edge_3",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "prim_kuva_geometry",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "migrated_edge_4",
+   "from": {
+    "node": "prim_kuva_geometry",
+    "port": "geometry"
+   },
+   "to": {
+    "node": "prim_kuva",
+    "port": "geometry"
    }
   }
  ]

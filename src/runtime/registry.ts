@@ -7,7 +7,8 @@ import type { NodeFactory } from './types';
 import { cameraSource, imageSource, videoFileSource } from './nodes/sources';
 import { oneEuroFilter } from './nodes/filters';
 import { babylonRenderer, threeRenderer } from './nodes/renderers';
-import { anchor, arCamera, gltf, light, primitive, sceneNode } from './nodes/scene';
+import { anchor, arCamera, geometryNode, gltf, light, mesh, sceneNode } from './nodes/scene';
+import { GEOMETRY_TYPES } from '../core/geometry';
 import { arView } from './nodes/ar-view';
 import {
   add,
@@ -58,7 +59,9 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'scene.scene': sceneNode,
   'scene.arCamera': arCamera,
   'scene.light': light,
-  'scene.primitive': primitive,
+  'scene.mesh': mesh,
+  // The geometry.* nodes (#132), one per shape of the core's GEOMETRY_TYPES: a new shape is one entry there.
+  ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometryNode(shape)])),
   'scene.gltf': gltf,
   'scene.anchor': anchor,
   'output.arView': arView,

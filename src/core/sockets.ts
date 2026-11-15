@@ -23,6 +23,7 @@ export const CORE_SOCKET_TYPES = {
   renderer: { label: 'Renderer', color: '#e57373' },
   scene: { label: 'Scene', color: '#f48fb1' },
   sceneObject: { label: 'Scene object', color: '#90a4ae' },
+  geometry: { label: 'Geometry', color: '#a5d6a7' },
   boolean: { label: 'Boolean', color: '#fff176' },
   number: { label: 'Number', color: '#a1887f' },
   /** x, y: a point or direction on the marker's plane (mm). */

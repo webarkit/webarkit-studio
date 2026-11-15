@@ -1,6 +1,6 @@
 {
   "format": "webarkit-studio/graph",
-  "version": 5,
+  "version": 6,
   "name": "Pinball NFT · a three.js script builds the scene (Three.js)",
   "plugins": [
     {

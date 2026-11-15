@@ -20,13 +20,14 @@ const onEngine = (doc: Doc, engine: string) => {
 };
 
 /**
- * The still-photo demo (its marker is always found) with the cube model in place of its Primitive, and
+ * The still-photo demo (its marker is always found) with the cube model in place of its Mesh and geometry, and
  * `nodes` wired to it by `edges`.
  */
 function photoGraph(engine: string, nodes: Record<string, [string, Record<string, unknown>]>, edges: Array<[Port, Port]>): Doc {
   const doc = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8')) as Doc;
-  doc.nodes = doc.nodes.filter((n) => n.id !== 'prim_pinball');
-  doc.edges = doc.edges.filter((e) => e.from.node !== 'prim_pinball' && e.to.node !== 'prim_pinball');
+  const gone = ['prim_pinball', 'prim_pinball_geometry'];
+  doc.nodes = doc.nodes.filter((n) => !gone.includes(n.id));
+  doc.edges = doc.edges.filter((e) => !gone.includes(e.from.node) && !gone.includes(e.to.node));
   const all: Record<string, [string, Record<string, unknown>]> = {
     model: ['scene.gltf', { url: 'models/cube.glb', scale: 60, position: [0, 0, 0], rotation: [0, 0, 0], autoplay: false }],
     ...nodes,

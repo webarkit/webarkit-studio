@@ -17,10 +17,11 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
  * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
- * v4 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
+ * v6: scene.primitive replaced by the geometry.* nodes and scene.mesh (#132).
+ * v4 and v5 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
  * formats, stay rejected. A bump ships its migration, and a test that an older document opens.
  */
-export const GRAPH_VERSION = 5;
+export const GRAPH_VERSION = 6;
 
 /** A param value; arrays hold `vector3` (3) and `matrix4` (16, column-major) params. */
 export type ParamValue = string | number | boolean | number[];

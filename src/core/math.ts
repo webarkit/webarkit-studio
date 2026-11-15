@@ -16,22 +16,29 @@ const DEG = Math.PI / 180;
 /** The 4 × 4 identity. */
 export const IDENTITY: readonly number[] = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
-/** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and uniform scale. */
+/** Position (mm), rotation (degrees about X, then Y, then Z: three.js "XYZ") and scale. */
 export interface Transform {
   position: Vec3;
   rotation: Vec3;
-  scale: number;
+  /** Uniform, or per axis (scene.mesh, #132). */
+  scale: number | Vec3;
 }
 
+/** The smallest scale magnitude scene.mesh keeps (#132): a scale of 0 makes a singular matrix. */
+export const MIN_SCALE = 1e-6;
+/** A scale component at least MIN_SCALE in magnitude, with its sign (0 gives MIN_SCALE). */
+export const nonZeroScale = (s: number): number => (Math.abs(s) < MIN_SCALE ? (s < 0 ? -MIN_SCALE : MIN_SCALE) : s);
+
 /** Column-major T · Rx · Ry · Rz · S. */
-export function transformMatrix({ position: [x, y, z], rotation, scale: s }: Transform): number[] {
+export function transformMatrix({ position: [x, y, z], rotation, scale }: Transform): number[] {
   const [a, b, c] = rotation.map((deg) => deg * DEG);
   const [cx, sx, cy, sy, cz, sz] = [Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b), Math.cos(c), Math.sin(c)];
+  const [p, q, r] = typeof scale === 'number' ? [scale, scale, scale] : scale;
   // prettier-ignore
   return [
-    s * cy * cz,                  s * (cx * sz + sx * sy * cz), s * (sx * sz - cx * sy * cz), 0,
-    -s * cy * sz,                 s * (cx * cz - sx * sy * sz), s * (sx * cz + cx * sy * sz), 0,
-    s * sy,                       -s * sx * cy,                 s * cx * cy,                  0,
+    p * cy * cz,                  p * (cx * sz + sx * sy * cz), p * (sx * sz - cx * sy * cz), 0,
+    -q * cy * sz,                 q * (cx * cz - sx * sy * sz), q * (sx * cz + cx * sy * sz), 0,
+    r * sy,                       -r * sx * cy,                 r * cx * cy,                  0,
     x,                            y,                            z,                            1,
   ];
 }

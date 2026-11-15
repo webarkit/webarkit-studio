@@ -361,9 +361,11 @@ for (const engine of ENGINES) {
     const doc = JSON.parse(readFileSync(`public/graphs/${demo}.json`, 'utf8'));
     doc.name = `${doc.name} (animated)`;
     // Without the demo's own cube, which appears when the tracker finds the marker.
-    const own = doc.nodes.find((n: { type: string }) => n.type === 'scene.primitive').id;
-    doc.nodes = doc.nodes.filter((n: { id: string }) => n.id !== own);
-    doc.edges = doc.edges.filter((e: { from: { node: string }; to: { node: string } }) => e.from.node !== own && e.to.node !== own);
+    const mesh = doc.nodes.find((n: { type: string }) => n.type === 'scene.mesh').id;
+    const geometry = doc.edges.find((e: { to: { node: string; port: string } }) => e.to.node === mesh && e.to.port === 'geometry').from.node;
+    const gone = [mesh, geometry];
+    doc.nodes = doc.nodes.filter((n: { id: string }) => !gone.includes(n.id));
+    doc.edges = doc.edges.filter((e: { from: { node: string }; to: { node: string } }) => !gone.includes(e.from.node) && !gone.includes(e.to.node));
     doc.nodes.push({ id: 'model', type: 'scene.gltf', params: { url: 'models/cube-animated.glb', scale: 100, position: [0, -50, -400], autoplay }, position: { x: 900, y: 900 } });
     doc.edges.push(
       { id: 'e-model-scene', from: { node: 'scene', port: 'scene' }, to: { node: 'model', port: 'scene' } },

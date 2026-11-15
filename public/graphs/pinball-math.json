@@ -1,6 +1,6 @@
 {
   "format": "webarkit-studio/graph",
-  "version": 5,
+  "version": 6,
   "name": "Pinball NFT · math and colour: a bobbing, fading cube (Three.js)",
   "plugins": [
     {
@@ -194,10 +194,8 @@
     },
     {
       "id": "prim_pinball",
-      "type": "scene.primitive",
+      "type": "scene.mesh",
       "params": {
-        "shape": "box",
-        "size": 60,
         "color": "#ff0055",
         "spin": true,
         "position": [
@@ -209,7 +207,13 @@
           0,
           0,
           0
-        ]
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "rest": true
       },
       "position": {
         "x": 1130,
@@ -299,6 +303,19 @@
       "position": {
         "x": 810,
         "y": 1560
+      }
+    },
+    {
+      "id": "prim_pinball_geometry",
+      "type": "geometry.box",
+      "params": {
+        "width": 60,
+        "depth": 60,
+        "height": 60
+      },
+      "position": {
+        "x": 890,
+        "y": 535
       }
     }
   ],
@@ -642,6 +659,28 @@
       "to": {
         "node": "prim_pinball",
         "port": "color"
+      }
+    },
+    {
+      "id": "migrated_edge",
+      "from": {
+        "node": "scene",
+        "port": "scene"
+      },
+      "to": {
+        "node": "prim_pinball_geometry",
+        "port": "scene"
+      }
+    },
+    {
+      "id": "migrated_edge_2",
+      "from": {
+        "node": "prim_pinball_geometry",
+        "port": "geometry"
+      },
+      "to": {
+        "node": "prim_pinball",
+        "port": "geometry"
       }
     }
   ]

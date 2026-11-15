@@ -39,6 +39,10 @@ describe('catalog_list', () => {
     const colour = (await call(client, 'catalog_list', { category: 'color' })) as { value: any };
     expect(colour.value.nodes.length).toBeGreaterThanOrEqual(7);
     expect(colour.value.nodes.every((n: { type: string; category: string }) => n.category === 'color' && n.type.startsWith('color.'))).toBe(true);
+    // So do the geometry nodes (#132): seven, all geometry.*.
+    const geometry = (await call(client, 'catalog_list', { category: 'geometry' })) as { value: any };
+    expect(geometry.value.nodes).toHaveLength(7);
+    expect(geometry.value.nodes.every((n: { type: string; category: string }) => n.category === 'geometry' && n.type.startsWith('geometry.'))).toBe(true);
     const math = (await call(client, 'catalog_list', { category: 'math' })) as { value: any };
     expect(math.value.nodes.some((n: { type: string }) => n.type.startsWith('color.'))).toBe(false);
     const byType = (await call(client, 'catalog_list', { types: ['math.add'] })) as { value: any };

@@ -4,10 +4,12 @@
  */
 import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/color';
 import type { ParamValue } from '../../core/graph';
-import { markerOffset } from '../../core/math';
-import { transformMatrix, type LightSpec, type PrimitiveSpec } from '../renderers/adapter';
+import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
+import { markerOffset, nonZeroScale } from '../../core/math';
+import { transformMatrix, type LightSpec } from '../renderers/adapter';
 import type {
   CameraValue,
+  GeometryValue,
   MarkerInfoValue,
   NodeFactory,
   PortValues,
@@ -124,49 +126,98 @@ function drivenColor(params: Record<string, ParamValue>) {
   };
 }
 
-/** scene.primitive — a mesh resting on the marker plane (units: millimetres). */
-export const primitive: NodeFactory = (params) => {
+/**
+ * geometry.* — a shape made in the connected scene (#132). Every param is live: a change rebuilds the geometry in place
+ * (SceneHandle.setGeometry), so every mesh made from it follows, and outputs a new value with the new bounds, so those
+ * meshes rest again.
+ */
+export const geometryNode =
+  (shape: GeometryShape): NodeFactory =>
+  (params) => {
+    let scene: SceneValue | null = null;
+    let value: GeometryValue | null = null;
+    const build = (): GeometryValue['spec'] => geometrySpec(shape, params);
+    return {
+      init(inputs) {
+        scene = inputs.scene as SceneValue;
+        const spec = build();
+        value = { handle: scene.createGeometry(spec), spec, bounds: geometryBounds(spec) };
+        return { geometry: value };
+      },
+      onParamChange() {
+        if (!scene || !value) return;
+        const spec = build();
+        scene.setGeometry(value.handle, spec);
+        value = { handle: value.handle, spec, bounds: geometryBounds(spec) };
+        return { geometry: value };
+      },
+    };
+  };
+
+/**
+ * scene.mesh — a mesh of the connected geometry (#132). Rest puts its geometry's bottom on the marker plane, scaled
+ * along Z, before its rotation (restLift: a tilted mesh keeps its height, a spinning one does not bob); position (mm),
+ * rotation (degrees, X then Y then Z) and scale apply from there, and spin turns it about its own Z axis last.
+ * Connected position, rotation, scale and colour inputs override the params.
+ */
+export const mesh: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
-  let mesh: SceneObjectValue | null = null;
+  let object: SceneObjectValue | null = null;
+  let geometry: GeometryValue | null = null;
   /** Spin angle so far (degrees), about the mesh's own Z axis. */
   let spun = 0;
-  const size = Number(params.size); // not live: a change restarts the graph
-  /** The `position` input while it carries a vector: it overrides the param. */
-  let driven: [number, number, number] | null = null;
+  /** The vector inputs while they carry a vector: they override the params. */
+  const driven: Record<'position' | 'rotation' | 'scale', [number, number, number] | null> = { position: null, rotation: null, scale: null };
   const colour = drivenColor(params);
-  // Rests on the marker (lifted by half its size), then moved and rotated by its
-  // params; spinning last in Rx · Ry · Rz turns it about its own Z axis.
+  // A scale of 0 makes a singular matrix, which the adapters read differently (three's Matrix4.decompose returns scale 1
+  // and no rotation for it; Babylon.js flattens): each component is kept at least MIN_SCALE in magnitude, with its sign,
+  // so a flattened mesh is flat on both (scene.gltf keeps its scale above 1e-6 the same way).
+  const scaleOf = (): [number, number, number] => {
+    const s = driven.scale ?? vec3OrNull(params.scale) ?? [1, 1, 1];
+    return [nonZeroScale(s[0]), nonZeroScale(s[1]), nonZeroScale(s[2])];
+  };
   const applyTransform = () => {
-    if (!scene || !mesh) return;
-    const [x, y, z] = driven ?? vec3(params.position);
-    const [rx, ry, rz] = vec3(params.rotation);
-    scene.setMatrix(mesh, transformMatrix({ position: [x, y, z + size / 2], rotation: [rx, ry, rz + spun], scale: 1 }));
+    if (!scene || !object) return;
+    const [x, y, z] = driven.position ?? vec3(params.position);
+    const [rx, ry, rz] = driven.rotation ?? vec3(params.rotation);
+    const scale = scaleOf();
+    const lift = params.rest && geometry ? restLift(geometry.bounds, scale[2]) : 0;
+    scene.setMatrix(object, transformMatrix({ position: [x, y, z + lift], rotation: [rx, ry, rz + spun], scale }));
+  };
+  const readInputs = (inputs: PortValues) => {
+    let changed = false;
+    for (const key of ['position', 'rotation', 'scale'] as const) {
+      const next = vec3OrNull(inputs[key]);
+      if (!sameVec3(next, driven[key])) changed = true;
+      driven[key] = next;
+    }
+    const next = (inputs.geometry as GeometryValue | undefined) ?? null;
+    // A live geometry change arrives as a new value: rest on its new bounds.
+    if (next !== geometry) changed = true;
+    geometry = next;
+    return changed;
   };
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
-      driven = vec3OrNull(inputs.position);
-      mesh = scene.createPrimitive({
-        shape: String(params.shape) as PrimitiveSpec['shape'],
-        size,
-        color: colour.hex(),
-      });
+      readInputs(inputs);
+      object = scene.createMesh((inputs.geometry as GeometryValue).handle);
+      // createMesh makes a white mesh: the param colour first, as drivenColor expects of a new engine object.
+      scene.setColor(object, hexToRgba(colour.hex()));
+      colour.init(inputs, (c) => scene!.setColor(object!, c));
       applyTransform();
-      colour.init(inputs, (c) => scene!.setColor(mesh!, c));
-      return { object: mesh };
+      return { object };
     },
     update(inputs, frame) {
       colour.update(inputs);
-      const next = vec3OrNull(inputs.position);
-      const moved = !sameVec3(next, driven);
-      driven = next;
+      const changed = readInputs(inputs);
       // `params` is updated in place by live changes, so `spin` is read each frame.
       if (params.spin) spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
-      if (params.spin || moved) applyTransform();
+      if (params.spin || changed) applyTransform();
     },
     onParamChange(key) {
       if (key === 'color') colour.paramChanged();
-      if (key === 'position' || key === 'rotation') applyTransform();
+      if (key === 'position' || key === 'rotation' || key === 'scale' || key === 'rest') applyTransform();
     },
   };
 };
@@ -275,7 +326,7 @@ export const gltf: NodeFactory = (params, ctx) => {
     },
     update(inputs) {
       if (!scene || !model) return;
-      // Applied again only when a driven value changes, as scene.primitive does with its position.
+      // Applied again only when a driven value changes, as scene.mesh does with its position.
       if (readInputs(inputs)) applyTransform();
       if (!clips.length) return;
       const state = scene.animationState(model);

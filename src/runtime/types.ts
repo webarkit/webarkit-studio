@@ -1,6 +1,7 @@
 import type { Rgba } from '../core/color';
 import type { ParamValue } from '../core/graph';
-import type { RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
+import type { Bounds, GeometrySpec } from '../core/geometry';
+import type { GeometryObject, RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
 import type { PoseFilterConfig } from './filters/pose-filter';
 import type { TraceHeader, TraceRecord } from './trackers/trace';
 
@@ -80,6 +81,15 @@ export interface CameraValue {
 export type RendererValue = RendererAdapter;
 export type SceneValue = SceneHandle;
 export type SceneObjectValue = SceneObject;
+/**
+ * geometry (#132): a geometry made in a scene, with the normalized spec it was last built from and its bounds (the
+ * core's, src/core/geometry.ts). A new value on every live change, so a mesh reading it sees the new bounds.
+ */
+export interface GeometryValue {
+  handle: GeometryObject;
+  spec: GeometrySpec;
+  bounds: Bounds;
+}
 
 export type PortValues = Record<string, unknown>;
 
