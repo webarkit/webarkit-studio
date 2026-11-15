@@ -20,6 +20,11 @@ export interface PortSpec {
   multiple?: boolean;
   /** Inputs only: the node works without it. Required inputs are checked by validateGraph(). */
   optional?: boolean;
+  /**
+   * Inputs only: params of the node this input sets aside while it is wired, beside the one of its own name (the inputs
+   * override params rule): the editor shows them disabled. scene.mesh's material input sets its colour aside (#133).
+   */
+  overrides?: readonly string[];
 }
 
 interface ParamBase {
@@ -601,7 +606,8 @@ export const CORE_NODES: NodeDefinition[] = [
       'A mesh of the connected geometry, created in the connected scene, with a default physically based material. Rest puts ' +
       'it on the marker (its geometry\'s bottom on the marker plane, before its rotation); position (mm), rotation (degrees, X ' +
       'then Y then Z) and scale (per axis) apply from there. Spin turns it about its own Z axis. Connected inputs override ' +
-      'the params; a colour with alpha below 1 makes it transparent.',
+      'the params; a colour with alpha below 1 makes it transparent. A connected Material replaces the default one: the ' +
+      "mesh's colour, param and input, is then set aside.",
     inputs: {
       scene: { type: 'scene', label: 'Scene' },
       geometry: { type: 'geometry', label: 'Geometry' },
@@ -609,6 +615,7 @@ export const CORE_NODES: NodeDefinition[] = [
       rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
       scale: { type: 'vector3', label: 'Scale', optional: true },
       color: { type: 'color', label: 'Color', optional: true },
+      material: { type: 'material', label: 'Material', optional: true, overrides: ['color'] },
     },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
@@ -618,6 +625,54 @@ export const CORE_NODES: NodeDefinition[] = [
       scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
       rest: { kind: 'boolean', label: 'Rest on the marker', default: true, live: true },
       spin: { kind: 'boolean', label: 'Spin', default: false, live: true },
+    },
+  },
+  {
+    type: 'scene.material',
+    label: 'Material',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A physically based material for meshes (their Material input), shared by every mesh it is connected to: colour, ' +
+      'metalness, roughness, emissive glow, opacity, the sides drawn, and Unlit (the colour and map as they are, no light ' +
+      'and no emissive). A Texture on Map multiplies the colour; a transparent material uses the map\'s alpha too. ' +
+      "Connected colour and emissive inputs override the params; the colour input's alpha multiplies the opacity.",
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      color: { type: 'color', label: 'Color', optional: true },
+      emissive: { type: 'color', label: 'Emissive', optional: true },
+      map: { type: 'texture', label: 'Map', optional: true },
+    },
+    outputs: { material: { type: 'material', label: 'Material' } },
+    params: {
+      color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
+      metalness: { kind: 'number', label: 'Metalness', default: 0, min: 0, max: 1, step: 0.05, live: true },
+      roughness: { kind: 'number', label: 'Roughness', default: 1, min: 0, max: 1, step: 0.05, live: true },
+      emissive: { kind: 'color', label: 'Emissive', default: '#000000', live: true },
+      emissiveIntensity: { kind: 'number', label: 'Emissive intensity', default: 1, min: 0, max: 100, step: 0.1, live: true },
+      opacity: { kind: 'number', label: 'Opacity', default: 1, min: 0, max: 1, step: 0.05, live: true },
+      side: { kind: 'select', label: 'Side', default: 'front', options: { Front: 'front', Back: 'back', Double: 'double' }, live: true },
+      unlit: { kind: 'boolean', label: 'Unlit', default: false, live: true },
+    },
+  },
+  {
+    type: 'scene.texture',
+    label: 'Texture',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'An image, or a connected video, as a texture for a Material\'s map: sRGB, the same way up on both renderers. A ' +
+      'connected Video wins over the URL. Wrap and repeat apply along U and V; the URL applies on the next Run.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      video: { type: 'video', label: 'Video', optional: true },
+    },
+    outputs: { texture: { type: 'texture', label: 'Texture' } },
+    params: {
+      url: { kind: 'string', label: 'Image URL', default: '', asset: 'file' },
+      wrap: { kind: 'select', label: 'Wrap', default: 'repeat', options: { Clamp: 'clamp', Repeat: 'repeat', Mirror: 'mirror' }, live: true },
+      repeatU: { kind: 'number', label: 'Repeat U', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },
+      repeatV: { kind: 'number', label: 'Repeat V', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },
     },
   },
   {

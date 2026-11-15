@@ -7,6 +7,8 @@
  */
 import type { GeometryValue, NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
+import { rgbaToHex } from '../../core/color';
+import type { MaterialSpec, TextureSpec } from '../../core/material';
 
 const REPORT_INTERVAL_MS = 200;
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
@@ -64,6 +66,17 @@ export function formatValue(value: unknown): string {
     if (isGeometryValue(o)) {
       const { min, max } = o.bounds;
       return `${o.spec.shape} ${[0, 1, 2].map((k) => num(max[k] - min[k])).join(' × ')} mm`;
+    }
+    // A material or a texture (#133): their values as text, never their handles (engine objects, circular on Babylon.js).
+    const kind = (o.handle as { kind?: unknown } | null | undefined)?.kind;
+    if (kind === 'material' && o.spec && typeof o.spec === 'object') {
+      const s = o.spec as MaterialSpec;
+      const extras = [s.unlit ? 'unlit' : `metal ${num(s.metalness)} rough ${num(s.roughness)}`, s.opacity < 1 ? `opacity ${num(s.opacity)}` : '', s.side !== 'front' ? s.side : ''];
+      return `material ${rgbaToHex(s.color)} ${extras.filter(Boolean).join(' ')}`;
+    }
+    if (kind === 'texture' && o.spec && typeof o.spec === 'object') {
+      const s = o.spec as TextureSpec;
+      return `${o.video ? 'video' : 'image'} texture ${o.width}×${o.height} · ${s.wrap} ${num(s.repeatU)}×${num(s.repeatV)}`;
     }
     if ('scene' in o && 'native' in o) return 'scene object';
     // Video values: by tag name, not instanceof, so this also runs outside a browser.

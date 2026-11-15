@@ -5,11 +5,14 @@
 import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/color';
 import type { ParamValue } from '../../core/graph';
 import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
+import { materialSpec, textureSpec, type MaterialSpec } from '../../core/material';
 import { markerOffset, nonZeroScale } from '../../core/math';
-import { transformMatrix, type LightSpec } from '../renderers/adapter';
+import { transformMatrix, type LightSpec, type MaterialSetup, type TextureSource } from '../renderers/adapter';
+import { LOAD_HINT, sourceUrl } from './sources';
 import type {
   CameraValue,
   GeometryValue,
+  MaterialValue,
   MarkerInfoValue,
   NodeFactory,
   PortValues,
@@ -18,6 +21,8 @@ import type {
   RendererValue,
   SceneObjectValue,
   SceneValue,
+  TextureValue,
+  VideoValue,
 } from '../types';
 
 /** scene.scene — a scene of the connected renderer. */
@@ -169,6 +174,18 @@ export const mesh: NodeFactory = (params) => {
   /** The vector inputs while they carry a vector: they override the params. */
   const driven: Record<'position' | 'rotation' | 'scale', [number, number, number] | null> = { position: null, rotation: null, scale: null };
   const colour = drivenColor(params);
+  /** The material connected now (#133): the mesh draws with it, and its own colour is set aside. */
+  let material: MaterialValue | null = null;
+  const readMaterial = (inputs: PortValues) => {
+    const next = isMaterialValue(inputs.material) ? inputs.material : null;
+    // A live change gives a new value with the same handle: nothing to do for the mesh.
+    if (next?.handle === material?.handle) {
+      material = next;
+      return;
+    }
+    material = next;
+    if (scene && object) scene.setMeshMaterial(object, material?.handle ?? null);
+  };
   // A scale of 0 makes a singular matrix, which the adapters read differently (three's Matrix4.decompose returns scale 1
   // and no rotation for it; Babylon.js flattens): each component is kept at least MIN_SCALE in magnitude, with its sign,
   // so a flattened mesh is flat on both (scene.gltf keeps its scale above 1e-6 the same way).
@@ -205,11 +222,14 @@ export const mesh: NodeFactory = (params) => {
       // createMesh makes a white mesh: the param colour first, as drivenColor expects of a new engine object.
       scene.setColor(object, hexToRgba(colour.hex()));
       colour.init(inputs, (c) => scene!.setColor(object!, c));
+      readMaterial(inputs);
       applyTransform();
       return { object };
     },
     update(inputs, frame) {
+      // The colour keeps driving the mesh's own material, which shows again if the material goes.
       colour.update(inputs);
+      readMaterial(inputs);
       const changed = readInputs(inputs);
       // `params` is updated in place by live changes, so `spin` is read each frame.
       if (params.spin) spun = (spun + ((frame.delta * 0.0005) * 180) / Math.PI) % 360;
@@ -218,6 +238,114 @@ export const mesh: NodeFactory = (params) => {
     onParamChange(key) {
       if (key === 'color') colour.paramChanged();
       if (key === 'position' || key === 'rotation' || key === 'scale' || key === 'rest') applyTransform();
+    },
+  };
+};
+
+const isMaterialValue = (v: unknown): v is MaterialValue => !!v && typeof v === 'object' && (v as MaterialValue).handle?.kind === 'material';
+const isTextureValue = (v: unknown): v is TextureValue => !!v && typeof v === 'object' && (v as TextureValue).handle?.kind === 'texture';
+/** Two specs the same, value by value (a spec holds numbers, strings, booleans and arrays of numbers). */
+const sameSpec = (a: MaterialSpec, b: MaterialSpec) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * scene.material — a material made in the connected scene (#133), shared by every mesh its output reaches. Every param
+ * is live, and the colour and emissive inputs override their params; a change rewrites the material in place
+ * (SceneHandle.setMaterial), so every mesh follows. The scene's teardown frees it.
+ */
+export const materialNode: NodeFactory = (params) => {
+  let scene: SceneValue | null = null;
+  let value: MaterialValue | null = null;
+  /** The map the material was last written with (a texture's live change keeps its handle: nothing to rewrite). */
+  let written: MaterialSetup['map'] = null;
+  /** The inputs as last read, compared by reference: a frame with nothing new costs nothing. */
+  let inputs: PortValues = {};
+  const setupOf = (): MaterialSetup => ({
+    ...materialSpec(params, { color: inputs.color, emissive: inputs.emissive }),
+    map: isTextureValue(inputs.map) ? inputs.map.handle : null,
+  });
+  const rewrite = () => {
+    if (!scene || !value) return;
+    const setup = setupOf();
+    const { map, ...spec } = setup;
+    if (map === written && sameSpec(spec, value.spec)) return;
+    scene.setMaterial(value.handle, setup);
+    written = map;
+    value = { handle: value.handle, spec };
+    return { material: value };
+  };
+  return {
+    init(given) {
+      scene = given.scene as SceneValue;
+      inputs = given;
+      const { map, ...spec } = setupOf();
+      value = { handle: scene.createMaterial({ ...spec, map }), spec };
+      written = map;
+      return { material: value };
+    },
+    update(given) {
+      if (given.color === inputs.color && given.emissive === inputs.emissive && given.map === inputs.map) return;
+      inputs = given;
+      return rewrite();
+    },
+    onParamChange() {
+      return rewrite();
+    },
+  };
+};
+
+/**
+ * scene.texture — an image, or the connected video, as a texture made in the connected scene (#133). A connected video
+ * wins over the URL; the `video` socket can carry a still image too (source.image), shown as one. Wrap and repeat are
+ * live; the URL applies on the next Run. The scene's teardown frees it.
+ */
+export const textureNode: NodeFactory = (params, ctx) => {
+  let image: HTMLImageElement | null = null;
+  let scene: SceneValue | null = null;
+  let value: TextureValue | null = null;
+  let disposed = false;
+  return {
+    async init(inputs) {
+      scene = inputs.scene as SceneValue;
+      const spec = textureSpec(params);
+      const video = inputs.video as VideoValue | undefined;
+      let source: TextureSource;
+      let size: [number, number];
+      if (video?.element) {
+        // The element's own tag, not instanceof: the adapters and tests run where there is no HTMLVideoElement.
+        const isVideo = video.element.tagName === 'VIDEO';
+        source = isVideo ? { kind: 'video', element: video.element as HTMLVideoElement } : { kind: 'image', element: video.element as HTMLImageElement };
+        size = [video.width, video.height];
+      } else {
+        const url = sourceUrl(params.url, ctx.baseUrl, 'image');
+        image = document.createElement('img');
+        image.crossOrigin = 'anonymous';
+        image.src = url;
+        try {
+          await image.decode();
+        } catch (err) {
+          throw new Error(`could not load image ${url} (${LOAD_HINT}): ${(err as Error).message}`);
+        }
+        source = { kind: 'image', element: image };
+        size = [image.naturalWidth, image.naturalHeight];
+      }
+      // A Stop while the image loaded: nothing is made (AGENTS.md, "An async init checks …").
+      if (disposed) return;
+      const handle = await scene.createTexture(source, spec);
+      if (disposed) return;
+      value = { handle, spec, width: size[0], height: size[1], video: source.kind === 'video' };
+      return { texture: value };
+    },
+    onParamChange() {
+      if (!scene || !value) return;
+      const spec = textureSpec(params);
+      scene.setTexture(value.handle, spec);
+      value = { ...value, spec };
+      return { texture: value };
+    },
+    dispose() {
+      disposed = true;
+      image?.removeAttribute('src');
+      image = null;
     },
   };
 };
