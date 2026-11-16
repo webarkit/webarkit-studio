@@ -122,7 +122,8 @@ key by key; a renamed key looks like one removal plus one addition.
 - A Babylon.js feature that needs an engine extension imports it for its side effects. `VideoTexture` needs
   `@babylonjs/core/Engines/Extensions/engine.dynamicTexture` and
   `@babylonjs/core/Engines/Extensions/engine.videoTexture`, both imported for their side effects; a `ShadowGenerator`
-  needs `@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent` (#134). A Node test with `NullEngine` does not
+  needs `@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent` (#134); an `HDRCubeTexture` needs
+  `@babylonjs/core/Engines/Extensions/engine.rawTexture` (#135). A Node test with `NullEngine` does not
   show a missing one: the browser cases do.
 - Releasing one object never frees, or keeps updating, a resource other objects share (a geometry; a material or a
   texture next, #133): a Node conformance case releases one user, directly and under a released group, and checks that
