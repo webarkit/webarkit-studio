@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { normalizeGeometry, TORUS_KNOT_TUBE_SEGMENTS, type GeometrySpec } from '../../core/geometry';
+import type { GeometrySpec } from '../../core/geometry';
 import { normalizeMaterial, normalizeTexture, type MaterialSide, type TextureSpec, type TextureWrap } from '../../core/material';
 import {
   assertOwned,
@@ -21,31 +21,10 @@ import {
 } from './adapter';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
+import { threeShape } from './three-shapes';
 
-/**
- * A core shape as a Three.js geometry, in marker space (#132; the report's "Geometry"): Three.js builds the sphere,
- * cylinder and capsule along +Y, turned +90° about X onto +Z here; a box's height is the core's Z; the plane, torus and
- * torus knot already lie in XY. The capsule's middle section is the total height less its two caps.
- */
-export function threeGeometry(given: GeometrySpec): THREE.BufferGeometry {
-  const spec = normalizeGeometry(given);
-  switch (spec.shape) {
-    case 'box':
-      return new THREE.BoxGeometry(spec.width, spec.depth, spec.height);
-    case 'sphere':
-      return new THREE.SphereGeometry(spec.radius, spec.detail, spec.detail / 2).rotateX(Math.PI / 2);
-    case 'cylinder':
-      return new THREE.CylinderGeometry(spec.radiusTop, spec.radiusBottom, spec.height, spec.detail).rotateX(Math.PI / 2);
-    case 'plane':
-      return new THREE.PlaneGeometry(spec.width, spec.depth); // PlaneGeometry's height is its Y extent: the core's depth
-    case 'torus':
-      return new THREE.TorusGeometry(spec.radius, spec.tube, spec.detail, spec.detail);
-    case 'torusKnot':
-      return new THREE.TorusKnotGeometry(spec.radius, spec.tube, spec.detail, TORUS_KNOT_TUBE_SEGMENTS, spec.p, spec.q);
-    case 'capsule':
-      return new THREE.CapsuleGeometry(spec.radius, spec.height - 2 * spec.radius, spec.detail / 4, spec.detail).rotateX(Math.PI / 2);
-  }
-}
+/** A core shape as a Three.js geometry, in marker space: the generators both adapters build with (three-shapes.ts). */
+export const threeGeometry = (spec: GeometrySpec): THREE.BufferGeometry => threeShape(spec, THREE);
 
 /** A geometry handle's own state: the geometry its meshes use now, and those meshes (setGeometry swaps it on each). */
 export interface ThreeGeometryState {

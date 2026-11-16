@@ -17,14 +17,17 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   based surface: colour, metalness, roughness, emissive glow, opacity, front, back or both sides, and Unlit; one
   material can dress several meshes, and every param changes live. Texture puts an image, or a playing video, on a
   material's map, with wrap (clamp, repeat, mirror) and repeat live. A material and a texture look the same on
-  Three.js and Babylon.js, except that on Babylon.js a texture lies differently on every shape but the plane (#162
-  fixes it). The source code export writes them (an image texture; a video one is refused by name).
+  Three.js and Babylon.js, on every shape (#162). The source code export writes them (an image texture; a video one is
+  refused by name).
   A new demo, "pinball · a textured poster and a chrome knot", shows both.
 - Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
   editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
 
 ### Changed
 
+- Babylon.js builds every geometry node's shape from Three.js's own generators (#162), so both renderers draw the same
+  mesh: the same size and outline as before, and now the same texture coordinates, so a texture lies the same way on
+  a box, sphere, cylinder, torus, torus knot or capsule. The Babylon.js renderer downloads about 16 KB more (gzipped).
 - **Graph format v6** (#132): the Primitive node is replaced by a geometry node wired into a Mesh. Older graphs
   upgrade when they are opened: each Primitive becomes a Mesh with the same id, wires and params, and a Box, Sphere
   or Torus Knot of the same size. A new Mesh does not spin unless Spin is on; an upgraded one keeps its spin. A

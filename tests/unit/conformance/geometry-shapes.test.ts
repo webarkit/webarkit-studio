@@ -3,7 +3,8 @@
  * each core shape built by both real adapters
  * (createGeometry), its vertices' bounds read back from the engine and compared with the core's geometryBounds(), within
  * the report's 1e-4 mm, over a sweep of params and details, the off-step ones included (normalizeGeometry rounds them).
- * The tessellations differ between the engines: only the bounds and axes are compared, never vertex counts. Runs in
+ * Since #162 both adapters build the same mesh from Three.js's generators (geometry-uvs.test.ts compares it array for
+ * array); here the bounds and axes are read back through each engine. Runs in
  * Node, as tests/unit/conformance/transforms.test.ts does: a WebGLRenderer that draws nothing, Babylon's NullEngine, a
  * minimal document.
  */
@@ -149,7 +150,7 @@ describe.each(Object.keys(ENGINES) as Engine[])('%s: createGeometry builds the c
       const p = positions(scene.createGeometry({ shape: 'cylinder', radiusTop: 0, radiusBottom: 10, height: 30, detail: 32 }), engine);
       for (let i = 0; i < p.length; i += 3) {
         const r = Math.hypot(p[i], p[i + 1]);
-        // The top ring (Babylon.js keeps a tiny radius there to keep its normals).
+        // The top ring, if the generator writes one at a radius of 0.
         if (Math.abs(p[i + 2] - 15) < 1e-6) expect(r).toBeLessThan(1e-3);
       }
     });
