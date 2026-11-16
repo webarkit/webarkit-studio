@@ -20,18 +20,21 @@ function demo(params: Record<string, unknown> = {}, wiredTo: 'anchor' | 'none' =
 const main = (doc: GraphDocument) => generateSource(doc, 'three', codeEmittersFor('three')).files['src/main.js'];
 
 /** Runs the exported per-frame rotation for an environment under `parent` (or at the root) and reads it back. */
-function exportedRotation(code: string, parent: THREE.Matrix4 | null) {
+/** `parent`: the matrix of the group the environment is in, or a chain of them (outermost first); null at the root. */
+function exportedRotation(code: string, parent: THREE.Matrix4 | THREE.Matrix4[] | null) {
   const start = code.indexOf('const environment_turn');
   const block = code.slice(start, code.indexOf('};\n', code.indexOf('.onBeforeRender', start)) + 2);
   const scene = new THREE.Scene();
   const environment = new THREE.Object3D();
-  if (parent) {
-    const anchor = new THREE.Group();
-    anchor.matrixAutoUpdate = false;
-    anchor.matrix.copy(parent);
-    anchor.add(environment);
-    scene.add(anchor);
-  } else scene.add(environment);
+  let holder: THREE.Object3D = scene;
+  for (const m of parent === null ? [] : Array.isArray(parent) ? parent : [parent]) {
+    const group = new THREE.Group();
+    group.matrixAutoUpdate = false;
+    group.matrix.copy(m);
+    holder.add(group);
+    holder = group;
+  }
+  holder.add(environment);
   scene.updateMatrixWorld(true);
   const order: string[] = [];
   scene.onBeforeRender = () => void order.push('before');
@@ -86,6 +89,25 @@ describe('the exported environment (#135)', () => {
     const got = exportedRotation(code, new THREE.Matrix4().fromArray(mirrored));
     expect(new THREE.Matrix4().fromArray(Array.from(got)).determinant()).toBeCloseTo(1, 9);
     expect(near(got, environmentRotation(15, mirrored))).toBe(true);
+  });
+
+  it('a turned child under a parent scaled differently per axis (a sheared world matrix): the studio\'s Gram–Schmidt rotation', () => {
+    const code = main(demo({ rotation: 40 }));
+    const parent = transformMatrix({ position: [0, 0, -400], rotation: [0, 0, 0], scale: [3, 1, 0.5] });
+    const child = transformMatrix({ position: [5, 0, 0], rotation: [35, -20, 50], scale: 1 });
+    const world = new THREE.Matrix4().fromArray(parent).multiply(new THREE.Matrix4().fromArray(child)).elements;
+    const m = (a: number[]) => new THREE.Matrix4().fromArray(a);
+    expect(near(exportedRotation(code, [m(parent), m(child)]), environmentRotation(40, world))).toBe(true);
+    // Mirrored as well as sheared.
+    const mirroredParent = transformMatrix({ position: [0, 0, -400], rotation: [0, 0, 0], scale: [-2, 1, 0.5] });
+    const mirroredWorld = new THREE.Matrix4().fromArray(mirroredParent).multiply(new THREE.Matrix4().fromArray(child)).elements;
+    expect(near(exportedRotation(code, [m(mirroredParent), m(child)]), environmentRotation(40, mirroredWorld))).toBe(true);
+  });
+
+  it('a degenerate parent (a zero scale): the identity, as the studio falls back to', () => {
+    const code = main(demo({ rotation: 0 }));
+    const flat = new THREE.Matrix4().makeScale(0, 0, 0);
+    expect(near(exportedRotation(code, flat), environmentRotation(0, flat.elements))).toBe(true);
   });
 
   it("turns under a turned anchor as the studio does (the anchor's rotation, never its scale)", () => {

@@ -359,6 +359,7 @@ const environment: CodeEmitter = (ctx) => {
   if (sceneOutputs.environment) throw new Error(`its scene already has an Environment (${sceneOutputs.environment}): one per scene`);
   sceneOutputs.environment = v;
   const [turn, up, rotation, before] = [name('turn'), name('up'), name('rotation'), name('before')];
+  const [ax, ay, az] = [name('x'), name('y'), name('z')];
   const load =
     spec.source === 'hdr'
       ? `  const equirect = await new HDRLoader().loadAsync(${literal(url)});
@@ -382,20 +383,27 @@ ${s}.environmentIntensity = ${decimal(spec.intensity)};
 const ${turn} = new THREE.Matrix4().makeRotationY(${decimal((spec.rotation * Math.PI) / 180)});
 const ${up} = new THREE.Matrix4().makeRotationX(Math.PI / 2);
 const ${rotation} = new THREE.Matrix4();
+const [${ax}, ${ay}, ${az}] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 const ${before} = ${s}.onBeforeRender;
 ${s}.onBeforeRender = (...args) => {
   ${before}.apply(${s}, args);
   const parent = ${v}.parent;
   if (parent && parent !== ${s}) {
-    ${rotation}.extractRotation(parent.matrixWorld);
-    // A mirrored parent: its third axis flipped, so the environment still turns without a reflection, as in the studio.
-    if (${rotation}.determinant() < 0) for (const i of [8, 9, 10]) ${rotation}.elements[i] *= -1;
+    // The parent's rotation as the studio takes it (rotationOf, src/core/environment.ts): its X axis, its Y axis made
+    // square to it, Z their cross product, so scale, shear and a mirror are left out; the identity if it has none.
+    const e = parent.matrixWorld.elements;
+    ${ax}.set(e[0], e[1], e[2]).normalize();
+    ${ay}.set(e[4], e[5], e[6]);
+    ${ay}.addScaledVector(${ax}, -${ay}.dot(${ax})).normalize();
+    const valid = [${ax}.x, ${ax}.y, ${ax}.z, ${ay}.x, ${ay}.y, ${ay}.z].every(Number.isFinite) && ${ax}.lengthSq() > 0 && ${ay}.lengthSq() > 0;
+    if (valid) ${rotation}.makeBasis(${ax}, ${ay}, ${az}.crossVectors(${ax}, ${ay}));
+    else ${rotation}.identity();
     ${rotation}.multiply(${up}).multiply(${turn});
   } else ${rotation}.copy(${turn});
   ${s}.environmentRotation.setFromRotationMatrix(${rotation});
 };
 ${s}.add(${v}); // camera space, until an anchor takes it`,
-    locals: ['pmrem', 'equirect', 'parent', 'args', 'i'],
+    locals: ['pmrem', 'equirect', 'parent', 'args', 'e', 'valid'],
     outputs: { object: v },
   };
 };
