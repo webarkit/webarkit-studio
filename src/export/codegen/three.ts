@@ -298,6 +298,27 @@ ${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}${shadowCod
   };
 };
 
+/** scene.group (#136): a THREE.Group with the mesh's transform (no rest, no spin), its children added once. */
+const group: CodeEmitter = (ctx) => {
+  const { name, params, inputs } = ctx;
+  required(ctx, 'scene');
+  paramsOnly(ctx, 'position', 'rotation', 'scale');
+  const g = name();
+  // As scene.group (and scene.mesh): each scale component at least MIN_SCALE in magnitude, with its sign.
+  const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
+  const [x, y, z] = vec3(params.position);
+  const children = list(inputs.children);
+  return {
+    imports: [THREE_IMPORT],
+    setup: `// Moves, turns, scales and hides its children together.
+const ${g} = new THREE.Group();
+${g}.position.set(${decimal(x)}, ${decimal(y)}, ${decimal(z)});
+${g}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');
+${g}.scale.set(${scale.map(decimal).join(', ')});${children.length ? `\n${g}.add(${children.join(', ')});` : ''}`,
+    outputs: { object: g },
+  };
+};
+
 /** castShadow and receiveShadow, as the adapter's setShadowCasting: on the mesh, or on every mesh of a model. */
 function shadowCode(v: string, params: Record<string, unknown>, model = false): string {
   const [cast, receive] = [params.castShadow === true, params.receiveShadow === true];
@@ -600,6 +621,7 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'scene.gltf': gltf,
   'scene.shadowCatcher': shadowCatcher,
   'scene.environment': environment,
+  'scene.group': group,
   'scene.anchor': anchor,
   'output.arView': arView,
   'tracking.selectMarker': selectMarker,
