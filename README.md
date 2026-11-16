@@ -716,6 +716,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.shadowCatcher` | ✅ ⚡ | scene, markerInfo? → sceneObject (a plane on the marker showing only the shadows cast on it; width, depth, opacity; the marker's size when markerInfo is wired) |
 | `scene.environment` | ✅ ⚡ | scene → sceneObject (image-based lighting and reflections, never drawn; neutral (a soft room made offline) or an uploaded `.hdr`; intensity and rotation; camera space, or following the marker when wired into a Marker Anchor; one per scene) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
+| `scene.group` | ✅ ⚡ | scene, children[]?, position?, rotation?, scale? → sceneObject (moves, turns, scales and hides its children together; position mm, rotation degrees X then Y then Z, scale per axis; connected inputs override the params; an object has one parent) |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |
 | `math.number` | ✅ ⚡ | → number |
