@@ -9,7 +9,7 @@ import type { GraphDocument } from '../../src/core/graph';
 import { codeEmittersFor, generateSource } from '../../src/export/codegen';
 import { threeLightCode } from '../../src/export/codegen/three';
 import { createThreeAdapter } from '../../src/runtime/renderers/three-adapter';
-import { normalizeLight, type LightSpec } from '../../src/core/light';
+import { lightSpec, normalizeLight, type LightSpec } from '../../src/core/light';
 
 const { FakeRenderer } = vi.hoisted(() => ({
   FakeRenderer: class {
@@ -76,6 +76,27 @@ describe('threeLightCode: the exported light is the adapter\'s (#134)', () => {
     const spec = normalizeLight(SPECS[3][1]);
     const exported = new Function('THREE', `${threeLightCode('light', spec, "'#ffffff'").code}\nreturn light;`)(THREE) as THREE.SpotLight;
     expect(describeLight(exported)).toMatchObject({ distance: 220, far: 3000 });
+  });
+});
+
+describe("the exported light's colour is the runtime's (#134)", () => {
+  it.each([
+    ['a short colour', '#f80'],
+    ['an 8-digit colour', '#33669980'],
+    ['an invalid colour', 'nope'],
+  ])('%s', (_, color) => {
+    const doc = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as GraphDocument;
+    const node = doc.nodes.find((n) => n.type === 'scene.light' && n.params?.kind === 'directional')!;
+    node.params = { ...node.params, color };
+    const main = generateSource(doc, 'three', codeEmittersFor('three')).files['src/main.js'];
+    const exported = new RegExp(`const ${node.id} = new THREE\\.DirectionalLight\\(["']([^"']*)["']`).exec(main)?.[1];
+    const adapter = createThreeAdapter({ antialias: false });
+    try {
+      const made = adapter.createScene({ defaultLights: false }).createLight(lightSpec(node.params as Record<string, unknown>)).native as THREE.Light;
+      expect(exported).toBe(`#${made.color.getHexString()}`);
+    } finally {
+      adapter.dispose();
+    }
   });
 });
 

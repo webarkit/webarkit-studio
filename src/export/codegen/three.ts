@@ -164,7 +164,8 @@ const light: CodeEmitter = (ctx) => {
   paramsOnly(ctx, 'color');
   const v = name();
   const spec = lightSpec(params);
-  const { code, locals } = threeLightCode(v, spec, literal(String(params.color)));
+  // The colour the runtime uses (lightSpec: #rrggbb, a short or 8-digit one read, a malformed one white).
+  const { code, locals } = threeLightCode(v, spec, literal(spec.color));
   return {
     imports: [THREE_IMPORT],
     setup: `${code}
