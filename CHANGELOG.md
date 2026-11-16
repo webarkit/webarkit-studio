@@ -20,6 +20,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Three.js and Babylon.js, on every shape (#162). The source code export writes them (an image texture; a video one is
   refused by name).
   A new demo, "pinball · a textured poster and a chrome knot", shows both.
+- An Environment node (#135): image-based lighting that gives metallic and glossy surfaces something to reflect,
+  never drawn over the camera video. Neutral is a soft room made offline on each renderer (alike, not the same); HDR
+  uses an uploaded equirectangular `.hdr`, which the upload button now offers and which project files and exported apps
+  carry. Intensity and rotation change live. Left unconnected it stays with the camera; wired into a Marker Anchor it
+  follows the marker. The source code export writes it, and the "materials and a texture" demo uses one.
 - Point and spot lights, shadows and a Shadow Catcher (#134). The Light node gains Point and Spot, with a position,
   a target, a distance, and a spot's angle and penumbra; point and spot intensities are in candela at 1 m. Directional
   and spot lights can cast shadows (map size and bias), on meshes and glTF models that receive them and on the new

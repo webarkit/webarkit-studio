@@ -9,7 +9,8 @@ import { assetSize, type AssetStore } from '../assets/asset-store';
 
 /** What the upload picker offers: the plugins' files, then the built-in ones. */
 export const uploadAccept = () =>
-  [...pluginAssetKinds().flatMap((k) => k.extensions), ...MODEL_EXTENSIONS].map((ext) => `.${ext}`).concat('image/*', 'video/*', 'audio/*', '.dat').join(',');
+  // .hdr: an environment's equirectangular image (#135), a `file` asset.
+  [...pluginAssetKinds().flatMap((k) => k.extensions), ...MODEL_EXTENSIONS].map((ext) => `.${ext}`).concat('image/*', 'video/*', 'audio/*', '.dat', '.hdr').join(',');
 
 /** ".a", ".a and .b", ".a, .b and .c" */
 const extensionList = (extensions: readonly string[]) => {
@@ -19,7 +20,7 @@ const extensionList = (extensions: readonly string[]) => {
 
 /** The upload button's tooltip. */
 export const uploadHint = () =>
-  `Images, videos, sounds, glTF / GLB models${pluginAssetKinds()
+  `Images, videos, sounds, .hdr environments, glTF / GLB models${pluginAssetKinds()
     .map((k) => ` and ${k.label}s (select the ${extensionList(k.extensions)} files together)`)
     .join('')}`;
 

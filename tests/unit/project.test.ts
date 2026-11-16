@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { isProjectFile, packProject, unpackProject } from '../../src/export/project';
 import { assetRef } from '../../src/core/assets';
-import type { StoredAsset } from '../../src/assets/asset';
+import { assetKindOf, type StoredAsset } from '../../src/assets/asset';
+import { readFileSync } from 'node:fs';
 import type { GraphDocument } from '../../src/core/graph';
 
 const graph: GraphDocument = {
@@ -38,6 +39,18 @@ describe('project file', () => {
       ['d1', 'pinball', 'nftDataset', ['fset', 'fset3', 'iset']],
     ]);
     expect(await back.assets[1].files.fset3.text()).toBe('F3');
+  });
+
+  it('carries an uploaded .hdr (a file asset, #135) byte for byte, with the Environment that uses it', async () => {
+    const bytes = readFileSync('tests/unit/data/environment.hdr');
+    const name = 'environment.hdr';
+    const hdr: StoredAsset = { id: 'e1', name, kind: assetKindOf(name), files: { '': new Blob([bytes]) } };
+    expect(hdr.kind).toBe('file');
+    const doc: GraphDocument = { ...graph, nodes: [{ id: 'env', type: 'scene.environment', params: { source: 'hdr', url: assetRef('e1', name) } }] };
+    const back = await unpackProject(await packProject(doc, [hdr]));
+    expect(back.graph).toEqual(doc);
+    expect(back.assets.map((a) => [a.id, a.name, a.kind])).toEqual([['e1', name, 'file']]);
+    expect(new Uint8Array(await back.assets[0].files[''].arrayBuffer())).toEqual(new Uint8Array(bytes));
   });
 
   describe('MIME types', () => {

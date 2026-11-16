@@ -10,6 +10,7 @@ import { MAX_SIZE, MIN_SIZE } from '../../core/geometry';
 import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type TextureWrap } from '../../core/material';
 import { rgbaToHex } from '../../core/color';
 import { DIRECTIONAL_SHADOW_NEAR, directionalShadowFar, engineIntensity, lightSpec, normalizeLight, shadowCatcherSpec, SHADOW_EXTENT, SPOT_SHADOW_FAR, SPOT_SHADOW_NEAR, type NormalLight } from '../../core/light';
+import { environmentSpec } from '../../core/environment';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -338,6 +339,81 @@ ${c}.receiveShadow = true;${sized}`,
   };
 };
 
+/**
+ * scene.environment (#135): RoomEnvironment or the .hdr through PMREMGenerator, as the Three.js adapter makes it. Its
+ * rotation is set in the scene's onBeforeRender, which three calls after updating the world matrices and before
+ * drawing: an anchor moved this frame turns it this frame (per-frame code runs in graph order, the anchor's after it).
+ */
+const environment: CodeEmitter = (ctx) => {
+  const { name, params, literal, from } = ctx;
+  const s = required(ctx, 'scene');
+  const r = from('scene')?.renderer;
+  if (!r) throw new Error('its scene has no renderer');
+  const spec = environmentSpec(params);
+  const url = String(params.url ?? '').trim();
+  if (spec.source === 'hdr' && !url) throw new Error('its source is HDR, but it has no .hdr URL');
+  const v = name();
+  // One per scene, refused by name here, as the studio refuses it at init: the Scene's outputs record the first one (the
+  // emitters see the graph only through what is wired to them).
+  const sceneOutputs = from('scene')!;
+  if (sceneOutputs.environment) throw new Error(`its scene already has an Environment (${sceneOutputs.environment}): one per scene`);
+  sceneOutputs.environment = v;
+  const [turn, up, rotation, before] = [name('turn'), name('up'), name('rotation'), name('before')];
+  const [ax, ay, az] = [name('x'), name('y'), name('z')];
+  const load =
+    spec.source === 'hdr'
+      ? `  const equirect = await new HDRLoader().loadAsync(${literal(url)});
+  ${s}.environment = pmrem.fromEquirectangular(equirect).texture;
+  equirect.dispose();`
+      : `  // The room's geometries and materials are freed once it is prefiltered, as the Three.js adapter frees them.
+  const room = new RoomEnvironment();
+  try {
+    ${s}.environment = pmrem.fromScene(room, 0.04).texture;
+  } finally {
+    room.dispose();
+  }`;
+  return {
+    imports: [
+      THREE_IMPORT,
+      spec.source === 'hdr' ? "import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';" : "import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';",
+    ],
+    setup: `// Lights and reflects every PBR surface; never drawn (the camera video is the background). One per scene.
+const ${v} = new THREE.Object3D(); // where it is: camera space, or the anchor it is wired into
+{
+  const pmrem = new THREE.PMREMGenerator(${r});
+${load}
+  pmrem.dispose();
+}
+${s}.environmentIntensity = ${decimal(spec.intensity)};
+// Its up: the view's vertical in camera space, the marker's +Z under an anchor; turned ${decimal(spec.rotation)}° about it.
+const ${turn} = new THREE.Matrix4().makeRotationY(${decimal((spec.rotation * Math.PI) / 180)});
+const ${up} = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+const ${rotation} = new THREE.Matrix4();
+const [${ax}, ${ay}, ${az}] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const ${before} = ${s}.onBeforeRender;
+${s}.onBeforeRender = (...args) => {
+  ${before}.apply(${s}, args);
+  const parent = ${v}.parent;
+  if (parent && parent !== ${s}) {
+    // The parent's rotation as the studio takes it (rotationOf, src/core/environment.ts): its X axis, its Y axis made
+    // square to it, Z their cross product, so scale, shear and a mirror are left out; the identity if it has none.
+    const e = parent.matrixWorld.elements;
+    ${ax}.set(e[0], e[1], e[2]).normalize();
+    ${ay}.set(e[4], e[5], e[6]);
+    ${ay}.addScaledVector(${ax}, -${ay}.dot(${ax})).normalize();
+    const valid = [${ax}.x, ${ax}.y, ${ax}.z, ${ay}.x, ${ay}.y, ${ay}.z].every(Number.isFinite) && ${ax}.lengthSq() > 0 && ${ay}.lengthSq() > 0;
+    if (valid) ${rotation}.makeBasis(${ax}, ${ay}, ${az}.crossVectors(${ax}, ${ay}));
+    else ${rotation}.identity();
+    ${rotation}.multiply(${up}).multiply(${turn});
+  } else ${rotation}.copy(${turn});
+  ${s}.environmentRotation.setFromRotationMatrix(${rotation});
+};
+${s}.add(${v}); // camera space, until an anchor takes it`,
+    locals: ['pmrem', 'equirect', 'room', 'parent', 'args', 'e', 'valid'],
+    outputs: { object: v },
+  };
+};
+
 const gltf: CodeEmitter = (ctx) => {
   const { name, params, literal } = ctx;
   required(ctx, 'scene');
@@ -523,6 +599,7 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,
   'scene.shadowCatcher': shadowCatcher,
+  'scene.environment': environment,
   'scene.anchor': anchor,
   'output.arView': arView,
   'tracking.selectMarker': selectMarker,

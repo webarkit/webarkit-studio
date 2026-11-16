@@ -319,6 +319,20 @@
     "x": 720,
     "y": 760
    }
+  },
+  {
+   "id": "environment",
+   "type": "scene.environment",
+   "params": {
+    "source": "neutral",
+    "url": "",
+    "intensity": 1,
+    "rotation": 0
+   },
+   "position": {
+    "x": 640,
+    "y": 1290
+   }
   }
  ],
  "edges": [
@@ -705,6 +719,28 @@
    "to": {
     "node": "prim_pinball",
     "port": "material"
+   }
+  },
+  {
+   "id": "e-environment-scene",
+   "from": {
+    "node": "scene",
+    "port": "scene"
+   },
+   "to": {
+    "node": "environment",
+    "port": "scene"
+   }
+  },
+  {
+   "id": "e-environment-anchor",
+   "from": {
+    "node": "environment",
+    "port": "object"
+   },
+   "to": {
+    "node": "anchor_pinball",
+    "port": "children"
    }
   }
  ]

@@ -738,6 +738,27 @@ export const CORE_NODES: NodeDefinition[] = [
     },
   },
   {
+    type: 'scene.environment',
+    label: 'Environment',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'Image-based lighting: lights every metallic and glossy surface of the scene and gives it something to reflect. ' +
+      'It is never drawn: the camera video stays the background. Left unconnected (or wired to AR View) it lives in ' +
+      "camera space, its up the view's vertical; wired into a Marker Anchor's children it follows the marker, its up " +
+      'out of the marker (+Z), and keeps its last turn while the marker is lost. Rotation turns it about its up. ' +
+      'Neutral is a soft room made offline, alike on both renderers but not the same; HDR uses an uploaded equirectangular ' +
+      '.hdr file. Intensity looks the same on both renderers up to 1. One per scene.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Environment' } },
+    params: {
+      source: { kind: 'select', label: 'Source', default: 'neutral', options: { Neutral: 'neutral', HDR: 'hdr' }, live: true },
+      url: { kind: 'string', label: '.hdr URL', default: '', asset: 'file' },
+      intensity: { kind: 'number', label: 'Intensity', default: 1, min: 0, max: 10, step: 0.1, live: true },
+      rotation: { kind: 'number', label: 'Rotation (°)', default: 0, min: 0, max: 360, step: 1, live: true },
+    },
+  },
+  {
     type: 'scene.anchor',
     label: 'Marker Anchor',
     category: 'scene',

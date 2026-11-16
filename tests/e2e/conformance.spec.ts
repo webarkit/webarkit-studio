@@ -18,6 +18,7 @@ import { resolve } from 'node:path';
 import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
 import type { MaterialSpec, TextureSpec } from '../../src/core/material';
 import type { LightSpec } from '../../src/core/light';
+import type { EnvironmentSpec } from '../../src/core/environment';
 import type { GeometrySpec } from '../../src/core/geometry';
 import { nonZeroScale, transformMatrix } from '../../src/core/math';
 
@@ -536,6 +537,13 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     | { bounds: string; min: V3; max: V3 }
     /** Per engine: RGBA within SAME of another region of the same frame (a live change against a fresh object, #133). */
     | { region: string; is: 'matches'; other: string }
+    /**
+     * #135: across engines, each colour channel within LOOK, where the report measured a residual (the environment):
+     * only channels Three.js renders in 30..225 count (the report's clipping rule), and at least one must.
+     */
+    | { region: string; is: 'look' }
+    /** #135, a control: per engine, the region differs by more than LOOK from the same region in frame `from`. */
+    | { region: string; is: 'changed'; from: string }
   ) & {
     /** The frame the rule reads: a `render` operation's `capture`; the final frame when omitted. */
     frame?: string;
@@ -628,6 +636,26 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     { region: 'L', is: 'matches', other: 'R' },
     { region: 'L', is: 'same' },
   ];
+
+  // #135: a sphere 80 mm across, 70 mm away, lit by the environment only. Mirror (metalness 1, roughness 0.05): what it
+  // reflects to its left and right is the room beside the viewer, so the four longitude bands show there. Rough white
+  // (metalness 0, roughness 1): the diffuse light, by latitude. The report's regions and tolerance (look).
+  const ENV_REGIONS: Record<string, Region> = { left: [36, 64, 4, 4], right: [88, 64, 4, 4], top: [62, 36, 4, 4], bottom: [62, 90, 4, 4] };
+  const envSphere = (metalness: number, roughness: number, grey = 1): AdapterOp[] => [
+    { op: 'createMaterial', id: 'env_m', spec: mat({ unlit: false, metalness, roughness, color: [grey, grey, grey] }) },
+    ...meshOps('ball', { shape: 'sphere', radius: 40, detail: 64 }, [0, 0, -70], false, false, 'env_m'),
+  ];
+  const ENV = (over: Partial<EnvironmentSpec> = {}): EnvironmentSpec => ({ source: 'hdr', intensity: 1, rotation: 0, ...over });
+  const drawnEverywhere = (frame?: string): Rule[] => Object.keys(ENV_REGIONS).map((region) => ({ region, is: 'drawn', ...(frame ? { frame } : {}) }));
+  /** A marker anchor whose +Z is the view's +Y (turned -90 deg about X): the environment under it stands as in camera space. */
+  const UPRIGHT = rotX(-90, [0, 0, -300]);
+  /** The same anchor turned a further quarter turn about the marker's +Z. */
+  const UPRIGHT_TURNED = (() => {
+    const z = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; // 90 deg about +Z
+    const out = new Array<number>(16).fill(0);
+    for (let col = 0; col < 4; col++) for (let row = 0; row < 4; row++) for (let k = 0; k < 4; k++) out[col * 4 + row] += UPRIGHT[k * 4 + row] * z[col * 4 + k];
+    return out;
+  })();
 
   const CASES: Case[] = [
     ...(['box', 'sphere', 'torusKnot'] as const).map(
@@ -1249,6 +1277,96 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       regions: GRID,
       rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID), { row: 40, is: 'edges', channel: 0, threshold: 64 }],
     },
+    {
+      // The report's "longitude with Babylon.js rotationY 90 deg", now the adapter's own quarter turn.
+      name: 'a mirror sphere under an .hdr, in camera space: the same bands left and right on both (#135)',
+      ops: [...envSphere(1, 0.05), { op: 'createEnvironment', id: 'env', spec: ENV(), hdr: 'bands' }, { op: 'addRoot', id: 'env' }],
+      regions: ENV_REGIONS,
+      rules: [...drawnEverywhere(), { region: 'left', is: 'look' }, { region: 'right', is: 'look' }],
+    },
+    {
+      name: 'a rough sphere under an .hdr, red above and blue below: the same diffuse light on both (#135)',
+      ops: [...envSphere(0, 1), { op: 'createEnvironment', id: 'env', spec: ENV(), hdr: 'latitude' }, { op: 'addRoot', id: 'env' }],
+      regions: ENV_REGIONS,
+      rules: [...drawnEverywhere(), ...Object.keys(ENV_REGIONS).map((region): Rule => ({ region, is: 'look' }))],
+    },
+    {
+      // The same scale on both, the same look up to 1 (the ruling); 0.5 first, then 1, live.
+      name: 'the intensity scales the environment alike, live: 0.5 then 1 (#135)',
+      ops: [
+        ...envSphere(0, 1),
+        { op: 'createEnvironment', id: 'env', spec: ENV({ intensity: 0.5 }), hdr: 'latitude' },
+        { op: 'addRoot', id: 'env' },
+        { op: 'render', capture: 'half' },
+        { op: 'setEnvironment', id: 'env', spec: ENV({ intensity: 1 }) },
+      ],
+      regions: ENV_REGIONS,
+      rules: [...drawnEverywhere('half'), { frame: 'half', region: 'top', is: 'look' }, ...drawnEverywhere(), { region: 'top', is: 'look' }, { region: 'top', is: 'changed', from: 'half' }],
+    },
+    {
+      name: "rotation turns the environment about the view's vertical, the same way on both (#135)",
+      ops: [
+        ...envSphere(1, 0.05),
+        { op: 'createEnvironment', id: 'env', spec: ENV(), hdr: 'bands' },
+        { op: 'addRoot', id: 'env' },
+        { op: 'render', capture: 'still' },
+        { op: 'setEnvironment', id: 'env', spec: ENV({ rotation: 90 }) },
+      ],
+      regions: ENV_REGIONS,
+      rules: [...drawnEverywhere('still'), ...drawnEverywhere(), { region: 'left', is: 'look' }, { region: 'right', is: 'look' }, { region: 'left', is: 'changed', from: 'still' }],
+    },
+    {
+      // The ruling on the environment's space: under an anchor (here two nested groups) it follows the anchor's world
+      // rotation. Upright, it stands as in camera space; the anchor turned about the marker's +Z, the reflection turns.
+      name: 'under an anchor, the environment turns with the marker, the same way on both (#135)',
+      ops: [
+        ...envSphere(1, 0.05),
+        { op: 'createGroup', id: 'anchor' },
+        { op: 'setMatrix', id: 'anchor', matrix: UPRIGHT },
+        { op: 'addRoot', id: 'anchor' },
+        { op: 'createGroup', id: 'content' },
+        { op: 'addChild', parent: 'anchor', child: 'content' },
+        { op: 'createEnvironment', id: 'env', spec: ENV(), hdr: 'bands' },
+        { op: 'addChild', parent: 'content', child: 'env' },
+        { op: 'render', capture: 'upright' },
+        { op: 'setMatrix', id: 'anchor', matrix: UPRIGHT_TURNED },
+        // The marker lost: the anchor hidden; the environment keeps lighting, with its last turn.
+        { op: 'setVisible', id: 'anchor', visible: false },
+      ],
+      regions: ENV_REGIONS,
+      rules: [
+        ...drawnEverywhere('upright'),
+        { frame: 'upright', region: 'left', is: 'look' },
+        { frame: 'upright', region: 'right', is: 'look' },
+        ...drawnEverywhere(),
+        { region: 'left', is: 'look' },
+        { region: 'right', is: 'look' },
+        { region: 'left', is: 'changed', from: 'upright' },
+      ],
+    },
+    {
+      // A tilted marker, the usual AR pose: its +Z towards the viewer, turned 30 deg about the view's X; the environment
+      // turned 50 deg about the marker's +Z. A rotation that is not about the view's vertical does not commute with Babylon.js's quarter turn
+      // about Y, so an inverse or a product taken in the wrong order shows here (the graph reviewer on #135).
+      name: 'under a tilted anchor, the environment turns with the marker, the same on both (#135)',
+      ops: [
+        ...envSphere(1, 0.05),
+        { op: 'createGroup', id: 'anchor' },
+        { op: 'setMatrix', id: 'anchor', matrix: UPRIGHT },
+        { op: 'addRoot', id: 'anchor' },
+        { op: 'createEnvironment', id: 'env', spec: ENV({ rotation: 50 }), hdr: 'bands' },
+        { op: 'addChild', parent: 'anchor', child: 'env' },
+        { op: 'render', capture: 'upright' },
+        { op: 'setMatrix', id: 'anchor', matrix: transformMatrix({ position: [0, 0, -300], rotation: [30, 0, 0], scale: 1 }) },
+      ],
+      regions: ENV_REGIONS,
+      rules: [
+        ...drawnEverywhere('upright'),
+        ...drawnEverywhere(),
+        ...Object.keys(ENV_REGIONS).map((region): Rule => ({ region, is: 'look' })),
+        { region: 'top', is: 'changed', from: 'upright' },
+      ],
+    },
   ];
 
   const FINAL = 'final';
@@ -1268,6 +1386,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       const n = (needs[frameOf(r)] ??= { rows: [], ids: [] });
       if ('row' in r) n.rows.push([r.row, r.channel ?? 3]);
       if ('bounds' in r) n.ids.push(r.bounds);
+      if ('is' in r && r.is === 'changed') needs[r.from] ??= { rows: [], ids: [] };
     }
     return onBoth(
       page,
@@ -1339,6 +1458,17 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
           const [x, y] = [r[engine].regions[rule.region], r[engine].regions[rule.other]];
           expect(Math.max(maxDiff(x, y), Math.abs(x[3] - y[3])), `${engine} ${rule.region} / ${rule.other}${at}: ${x} / ${y}`).toBeLessThanOrEqual(SAME);
         }
+      } else if (rule.is === 'look') {
+        const judged = [0, 1, 2].filter((ch) => t[ch] >= 30 && t[ch] <= 225);
+        expect(judged.length, `${rule.region}${at}: no channel in 30..225 on Three.js (${t})`).toBeGreaterThan(0);
+        expect(Math.max(...judged.map((ch) => Math.abs(b[ch] - t[ch]))), `${rule.region}${at} look: ${t} / ${b}`).toBeLessThanOrEqual(LOOK);
+      } else if (rule.is === 'changed') {
+        for (const engine of ENGINES) {
+          const before = r[engine] && all[engine][rule.from]?.regions[rule.region];
+          expect(before, `${engine}: frame "${rule.from}" was read`).toBeDefined();
+          const now = r[engine].regions[rule.region];
+          expect(maxDiff(now, before!), `${engine} ${rule.region}${at} against "${rule.from}": ${before} → ${now}`).toBeGreaterThan(LOOK);
+        }
       } else if (rule.is === 'sameAlpha') expect(Math.abs(b[3] - t[3]), `${rule.region}${at} alpha: ${t[3]} / ${b[3]}`).toBeLessThanOrEqual(SAME);
       else expect(Math.max(maxDiff(b, t), Math.abs(b[3] - t[3])), `${rule.region}${at}: ${t} / ${b}`).toBeLessThanOrEqual(SAME);
     }
@@ -1355,7 +1485,8 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       if (kinds.has('empty') && !kinds.has('drawn')) throw new Error(`case "${c.name}", frame "${frame}": an empty rule needs a drawn one in the same frame`);
     }
     for (const r of [...c.rules, ...(c.known?.rules ?? [])])
-      if (frameOf(r) !== FINAL && !captures.includes(frameOf(r))) throw new Error(`case "${c.name}": no render captures frame "${frameOf(r)}"`);
+      for (const f of [frameOf(r), ...('is' in r && r.is === 'changed' ? [r.from] : [])])
+        if (f !== FINAL && !captures.includes(f)) throw new Error(`case "${c.name}": no render captures frame "${f}"`);
     test(c.known ? `pinned: ${c.name}` : c.name, async ({ page }) => {
       const r = await measure(page, c);
       console.log('scene handle', c.name, JSON.stringify(r.three), JSON.stringify(r.babylon));
@@ -1374,6 +1505,43 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       });
     }
   }
+
+  // The ruling on #135: the neutral source promises an offline, room-like soft light on both engines, not the same look.
+  // Three.js's RoomEnvironment against the room the studio writes for Babylon.js: measured and logged here (the report
+  // records it), not asserted.
+  test('the neutral environment works offline on both: ready, lit, and its intensity scales (#135)', async ({ page }) => {
+    const outside: string[] = [];
+    await page.route('**/*', (route) => {
+      const url = route.request().url();
+      if (url.startsWith('http') && !/^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(url)) {
+        outside.push(url);
+        return route.abort();
+      }
+      return route.continue();
+    });
+    const at = (metalness: number, roughness: number, intensity: number): Case => ({
+      name: 'neutral',
+      // A mid-grey rough sphere, so that intensity 2 stays below white on both.
+      ops: [...envSphere(metalness, roughness, metalness ? 1 : 0.5), { op: 'createEnvironment', id: 'env', spec: { source: 'neutral', intensity, rotation: 0 } }, { op: 'addRoot', id: 'env' }],
+      regions: ENV_REGIONS,
+      rules: [],
+    });
+    const dim = await measure(page, at(0, 1, 0.5));
+    const one = await measure(page, at(0, 1, 1));
+    const bright = await measure(page, at(0, 1, 2));
+    const mirror = await measure(page, at(1, 0.05, 1));
+    const residual = (r: typeof one) => Object.fromEntries(Object.keys(ENV_REGIONS).map((k) => [k, maxDiff(r.three[FINAL].regions[k], r.babylon[FINAL].regions[k])]));
+    console.log('neutral environment', JSON.stringify({ dim, one, bright, mirror, residual: { rough: residual(one), mirror: residual(mirror) } }));
+    for (const engine of ENGINES)
+      for (const k of Object.keys(ENV_REGIONS)) {
+        const [d, o, b] = [dim, one, bright].map((r) => r[engine][FINAL].regions[k]);
+        expect(o[3], `${engine} ${k} drawn`).toBeGreaterThanOrEqual(250);
+        expect(Math.max(...o.slice(0, 3)), `${engine} ${k}: lit (${o})`).toBeGreaterThan(30);
+        expect(Math.min(o[0] - d[0], b[0] - o[0]), `${engine} ${k}: 0.5 ${d}, 1 ${o}, 2 ${b}`).toBeGreaterThan(0);
+        expect(maxDiff(b, d), `${engine} ${k}: 2 against 0.5`).toBeGreaterThan(LOOK);
+      }
+    expect(outside, 'nothing fetched from the network').toEqual([]);
+  });
 });
 
 test.describe('conformance: materials (MeshStandardMaterial against PBRMaterial, exact sRGB, k = 1)', () => {

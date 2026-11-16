@@ -7,6 +7,7 @@ import type { ParamValue } from '../../core/graph';
 import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
 import { materialSpec, textureSpec, type MaterialSpec } from '../../core/material';
 import { lightSpec, shadowCatcherSpec } from '../../core/light';
+import { environmentSpec, ONE_ENVIRONMENT } from '../../core/environment';
 import { markerOffset, nonZeroScale } from '../../core/math';
 import { transformMatrix, type MaterialSetup, type TextureSource } from '../renderers/adapter';
 import { LOAD_HINT, sourceUrl } from './sources';
@@ -380,6 +381,67 @@ export const shadowCatcher: NodeFactory = (params) => {
     },
     onParamChange() {
       if (scene && object) scene.setShadowCatcher(object, spec());
+    },
+  };
+};
+
+/**
+ * scene.environment — image-based lighting for its scene (#135). In camera space at the root until an anchor adopts it
+ * as a child; then it follows the marker's rotation, and stays (never hidden) while the marker is lost. Source,
+ * intensity and rotation are live; the .hdr URL applies on the next Run. One per scene: the adapter refuses a second.
+ */
+export const environment: NodeFactory = (params, ctx) => {
+  let scene: SceneValue | null = null;
+  let handle: SceneObjectValue | null = null;
+  let hdr: ArrayBuffer | undefined;
+  let disposed = false;
+  return {
+    async init(inputs) {
+      scene = inputs.scene as SceneValue;
+      const url = String(params.url ?? '').trim();
+      let failed: string | null = null;
+      if (url) {
+        // Fetched whatever the source, so a live switch to HDR has the file; it fails the node only when it is used.
+        const href = new URL(url, ctx.baseUrl).href;
+        try {
+          const res = await fetch(href);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          hdr = await res.arrayBuffer();
+        } catch (err) {
+          failed = `cannot load the environment ${href} (${LOAD_HINT}): ${(err as Error).message}`;
+        }
+      }
+      // The params as they are once the fetch settles: a Source edited meanwhile decides (HDR to Neutral during a
+      // failing fetch starts Neutral, not a failed node). Live edits during createEnvironment are reconciled below.
+      const spec = environmentSpec(params);
+      if (failed) {
+        if (spec.source === 'hdr') throw new Error(failed);
+        ctx.log(`environment: ${failed.replace(/^cannot load the environment /, '')} not loaded; the neutral source does not need it`);
+      }
+      if (spec.source === 'hdr' && !hdr) throw new Error('the source is HDR, but no .hdr URL is set');
+      // A Stop during the fetch: nothing is made (AGENTS.md, "An async init checks …").
+      if (disposed) return;
+      try {
+        handle = await scene.createEnvironment(spec, hdr);
+      } catch (err) {
+        if ((err as Error).message === ONE_ENVIRONMENT) throw new Error('this scene already has an Environment: one per scene, so this one is refused');
+        throw err;
+      }
+      if (disposed) return;
+      // In the scene root (camera space) until something adopts it, e.g. an anchor.
+      scene.addRoot(handle);
+      // A live edit made while it loaded found no environment to change: applied now.
+      const latest = environmentSpec(params);
+      if (JSON.stringify(latest) !== JSON.stringify(spec))
+        await scene.setEnvironment(handle, latest, hdr).catch((err: Error) => ctx.log(`✗ environment: ${err.message}`)); // as onParamChange
+      return { object: handle };
+    },
+    onParamChange() {
+      if (!scene || !handle) return;
+      scene.setEnvironment(handle, environmentSpec(params), hdr).catch((err: Error) => ctx.log(`✗ environment: ${err.message}`));
+    },
+    dispose() {
+      disposed = true;
     },
   };
 };

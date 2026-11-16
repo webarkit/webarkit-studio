@@ -6,7 +6,7 @@ import { slugify, type ExportContext } from '../../src/export/exporters';
 import { exportSourceCode } from '../../src/export/codegen/export';
 import { unzipSync } from 'fflate';
 import { assetRef } from '../../src/core/assets';
-import type { StoredAsset } from '../../src/assets/asset';
+import { assetKindOf, type StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
 import { WORKER_DIR } from '../../plugins/jsartoolkit-nft/worker-files';
 
@@ -324,6 +324,17 @@ describe('collectAssets', () => {
     expect(text(files['data/assets/d1/pinball.fset3'])).toBe('F3');
     expect(g.nodes[0].params.url).toBe('data/assets/c1/my_camera__1.dat');
     expect(g.nodes[1].params.url).toBe('data/assets/d1/pinball');
+  });
+
+  it("bundles an uploaded .hdr (#135) byte for byte under data/assets/<id>/, and points the Environment's URL at it", async () => {
+    const bytes = new Uint8Array(readFileSync('tests/unit/data/environment.hdr'));
+    const hdr: StoredAsset = { id: 'e1', name: 'studio room.hdr', kind: assetKindOf('studio room.hdr'), files: { '': new Blob([bytes]) } };
+    const withHdr: ExportContext = { ...ctx, assets: { get: (id) => (id === 'e1' ? hdr : undefined), list: () => [hdr] } };
+    const g = doc([['scene.environment', { source: 'hdr', url: assetRef('e1', 'studio room.hdr') }]]);
+    const files = await collectAssets(g, base, withHdr);
+    expect(Object.keys(files)).toEqual(['data/assets/e1/studio_room.hdr']);
+    expect(files['data/assets/e1/studio_room.hdr']).toEqual(bytes);
+    expect(g.nodes[0].params.url).toBe('data/assets/e1/studio_room.hdr');
   });
 
   it('never writes "." or ".." as a bundle file name', async () => {
