@@ -20,6 +20,13 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Three.js and Babylon.js, on every shape (#162). The source code export writes them (an image texture; a video one is
   refused by name).
   A new demo, "pinball · a textured poster and a chrome knot", shows both.
+- Point and spot lights, shadows and a Shadow Catcher (#134). The Light node gains Point and Spot, with a position,
+  a target, a distance, and a spot's angle and penumbra; point and spot intensities are in candela at 1 m. Directional
+  and spot lights can cast shadows (map size and bias), on meshes and glTF models that receive them and on the new
+  Shadow Catcher, a plane on the marker that shows only shadows, sized from the marker. Every new param changes live.
+  Both renderers draw the same light and the same shadows; a spot's penumbra fades differently on each (the cone's edge
+  is the same). The source code export writes them. A new demo, "pinball · a model standing on the poster, with its
+  shadow", shows it. Saved graphs keep their lights as they were.
 - Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
   editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
 
