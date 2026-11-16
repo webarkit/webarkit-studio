@@ -678,6 +678,9 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           afterTeardown(texture);
         } catch (err) {
           if (environment === state && state.load === load) state.wanted = state.shown; // still showing the old one
+          // The rest of this call (its intensity, its rotation) still applies to the texture shown: with Source on HDR and
+          // no file, an Intensity edit would otherwise do nothing.
+          if (environment === state && state.texture && !scene.isDisposed) writeEnvironment(state.texture, state.spec);
           throw err;
         }
         // Removed meanwhile, or a newer change is loading: this one is dropped.

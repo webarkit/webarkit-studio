@@ -135,6 +135,19 @@ describe('babylon: scene.environment (#135)', () => {
     });
   });
 
+  test('a source switch that fails still applies the intensity of the same call, and keeps the old texture', async () => {
+    await withScene(async (scene, native) => {
+      const env = await scene.createEnvironment(NEUTRAL);
+      const shown = native.environmentTexture;
+      // HDR with no file: the switch fails; the intensity edited with it must not be lost.
+      await expect(scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr', intensity: 3 })).rejects.toThrow(/no \.hdr file/);
+      expect([native.environmentTexture, native.environmentIntensity]).toEqual([shown, 3]);
+      // And a further intensity edit while Source is still HDR with no file applies too.
+      await expect(scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr', intensity: 0.5 })).rejects.toThrow(/no \.hdr file/);
+      expect([native.environmentTexture, native.environmentIntensity]).toEqual([shown, 0.5]);
+    });
+  });
+
   test('released, it leaves the scene, and another can be made', async () => {
     await withScene(async (scene, native) => {
       const env = await scene.createEnvironment(NEUTRAL);
