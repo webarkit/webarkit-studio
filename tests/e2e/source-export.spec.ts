@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { exportZip, loadDemo, openStudio, serveDir } from './helpers';
+import { overWhite, shadowThenLost } from './shadow-helpers';
 
 const NEXT = { timeout: 30_000 };
 type Doc = { nodes: Array<{ id: string; type: string; params: Record<string, unknown> }> };
@@ -128,6 +129,31 @@ test('pinball-material as source code (#133): the texture ships, the project bui
     expect((await loaded).status()).toBe(200);
     expect(errors).toEqual([]);
     expect(missing).toEqual([]);
+    await app.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test('pinball-shadow as source code (#134): built and served, the cube casts its shadow on the poster', async ({ page, browser }) => {
+  test.setTimeout(240_000);
+  await loadDemo(page, 'pinball-shadow');
+  const { dir } = await exportZip(page, 'source-code');
+  const main = readFileSync(join(dir, 'src/main.js'), 'utf8');
+  expect(main).toContain('keylight.castShadow = true;');
+  expect(main).toContain('new THREE.ShadowMaterial(');
+  const dist = buildProject(dir);
+  const server = await serveDir(dist);
+  try {
+    const app = await browser.newPage();
+    const errors: string[] = [];
+    app.on('pageerror', (e) => errors.push(e.message));
+    await app.goto(server.url);
+    await expect(app.locator('.ar-view canvas')).toHaveCount(1, NEXT);
+    await overWhite(app);
+    // The generated app's stats box is grey and has no class to hide: a baseline of up to 1 % of the view.
+    await shadowThenLost(app, undefined, 0.01);
+    expect(errors).toEqual([]);
     await app.close();
   } finally {
     await server.close();

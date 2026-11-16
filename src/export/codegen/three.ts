@@ -349,8 +349,10 @@ const ${model} = new THREE.Group();
 ${model}.add(${upright});
 ${model}.position.set(${x}, ${y}, ${z});
 ${model}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');
-${model}.scale.setScalar(${scale});${autoplay}`,
+${model}.scale.setScalar(${scale});${autoplay}${shadowCode(model, params, true)}`,
     frame: params.autoplay ? `${mixer}.update(delta / 1000);` : undefined,
+    // The callback's parameter of the shadow code (shadowCode): no node is given it as its name.
+    locals: params.castShadow || params.receiveShadow ? ['part'] : undefined,
     outputs: { object: model },
   };
 };

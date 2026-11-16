@@ -105,6 +105,10 @@ describe('the exported project with shadows (#134)', () => {
     expect(main).toContain('spot.castShadow = true;');
     expect(main).toContain('spot.shadow.updateMatrices = (shadowLight) => {');
     expect(main).toContain('prim_pinball.castShadow = true;');
+    // A model casts with every mesh in it (#134).
+    const model = generateSource(JSON.parse(readFileSync('public/graphs/pinball-shadow.json', 'utf8')) as GraphDocument, 'three', codeEmittersFor('three')).files['src/main.js'];
+    expect(() => parse(model, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow();
+    expect(model).toContain('model.traverse((part) => {\n  if (!part.isMesh) return;\n  part.castShadow = true;\n  part.receiveShadow = false;\n});');
     expect(main).toMatch(/const catcher = new THREE\.Mesh\(new THREE\.PlaneGeometry\(300, 300\), new THREE\.ShadowMaterial\(\{ opacity: 0\.4 \}\)\);/);
     expect(main).toMatch(/if \(select_pinball\?\.info\) catcher\.geometry = new THREE\.PlaneGeometry\(select_pinball\?\.info\.widthMM, select_pinball\?\.info\.heightMM\);/);
   });
