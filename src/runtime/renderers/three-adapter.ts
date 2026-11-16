@@ -208,9 +208,11 @@ function createThreeScene(
     try {
       if (room) {
         const roomScene = new room();
-        const texture = pmrem.fromScene(roomScene, 0.04).texture;
-        roomScene.dispose();
-        return texture;
+        try {
+          return pmrem.fromScene(roomScene, 0.04).texture;
+        } finally {
+          roomScene.dispose();
+        }
       }
       const parsed = new loader!().parse(hdr!);
       const equirect = new THREE.DataTexture(parsed.data, parsed.width, parsed.height, THREE.RGBAFormat, parsed.type);

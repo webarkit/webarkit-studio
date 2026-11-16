@@ -50,11 +50,17 @@ describe('the exported environment (#135)', () => {
     expect(() => parse(code, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow();
     expect(code).toContain("import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';");
     expect(code).not.toContain('HDRLoader');
-    expect(code).toMatch(/const pmrem = new THREE\.PMREMGenerator\(renderer\);\n {2}scene\.environment = pmrem\.fromScene\(new RoomEnvironment\(\), 0\.04\)\.texture;/);
+    expect(code).toContain('const pmrem = new THREE.PMREMGenerator(renderer);');
     expect(code).toContain('scene.environmentIntensity = 0.7;');
     expect(code).not.toMatch(/scene\.background =/);
     // Wired into the anchor's children, as the graph says.
     expect(code).toMatch(/content\.add\([^)]*\benvironment\b/);
+  });
+
+  it('neutral: the room is disposed of once prefiltered, whatever happens (a finally), as the adapter does', () => {
+    const code = main(demo());
+    expect(code).toContain('const room = new RoomEnvironment();');
+    expect(code).toMatch(/try \{\n {4}scene\.environment = pmrem\.fromScene\(room, 0\.04\)\.texture;\n {2}\} finally \{\n {4}room\.dispose\(\);\n {2}\}/);
   });
 
   it('hdr: the file through HDRLoader and PMREM', () => {

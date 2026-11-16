@@ -365,7 +365,13 @@ const environment: CodeEmitter = (ctx) => {
       ? `  const equirect = await new HDRLoader().loadAsync(${literal(url)});
   ${s}.environment = pmrem.fromEquirectangular(equirect).texture;
   equirect.dispose();`
-      : `  ${s}.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;`;
+      : `  // The room's geometries and materials are freed once it is prefiltered, as the Three.js adapter frees them.
+  const room = new RoomEnvironment();
+  try {
+    ${s}.environment = pmrem.fromScene(room, 0.04).texture;
+  } finally {
+    room.dispose();
+  }`;
   return {
     imports: [
       THREE_IMPORT,
@@ -403,7 +409,7 @@ ${s}.onBeforeRender = (...args) => {
   ${s}.environmentRotation.setFromRotationMatrix(${rotation});
 };
 ${s}.add(${v}); // camera space, until an anchor takes it`,
-    locals: ['pmrem', 'equirect', 'parent', 'args', 'e', 'valid'],
+    locals: ['pmrem', 'equirect', 'room', 'parent', 'args', 'e', 'valid'],
     outputs: { object: v },
   };
 };
