@@ -12,6 +12,13 @@ import { Scene } from '@babylonjs/core/scene';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
+import { PointLight } from '@babylonjs/core/Lights/pointLight';
+import { SpotLight } from '@babylonjs/core/Lights/spotLight';
+import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
+// The scene's shadow pass is a scene component, registered by this import for its side effect: without it a
+// ShadowGenerator renders nothing (AGENTS.md lists Babylon.js's side-effect imports).
+import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent';
+import { BackgroundMaterial } from '@babylonjs/core/Materials/Background/backgroundMaterial';
 import { Light } from '@babylonjs/core/Lights/light';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
@@ -39,6 +46,20 @@ import { CapsuleGeometry } from 'three/src/geometries/CapsuleGeometry.js';
 import type { GeometrySpec } from '../../core/geometry';
 import { threeShape } from './three-shapes';
 import { normalizeMaterial, normalizeTexture, type TextureSpec, type TextureWrap } from '../../core/material';
+import {
+  DIRECTIONAL_SHADOW_NEAR,
+  directionalShadowFar,
+  engineIntensity,
+  normalizeIntensity,
+  catcherSize,
+  normalizeLight,
+  normalizeShadowCatcher,
+  SHADOW_EXTENT,
+  SPOT_SHADOW_NEAR,
+  SPOT_SHADOW_FAR,
+  type LightKind,
+  type NormalLight,
+} from '../../core/light';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
 // VideoTexture calls engine methods its extensions add: imported for their side effects (AGENTS.md).
@@ -62,7 +83,6 @@ import {
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
-  lightKind,
 } from './adapter';
 
 /**
@@ -70,7 +90,14 @@ import {
  * directional light matches Three.js's at the same intensity, while its hemispheric light (hemisphere and ambient) adds
  * mix(ground, sky, NdotL) with no division by π: k = 1/π (docs/proposals/scene-nodes-equivalence.md, "Lights", #131).
  */
-const intensityScale = (kind: LightSpec['kind']) => (kind === 'directional' ? 1 : 1 / Math.PI);
+const intensityScale = (kind: LightKind) => (kind === 'hemisphere' || kind === 'ambient' ? 1 / Math.PI : engineIntensity(kind, 1));
+
+/**
+ * Lights a material takes (#134). Babylon.js's materials take 4 by default (pbrBaseMaterial.pure.js,
+ * _maxSimultaneousLights) and leave out the rest; Three.js takes every light.
+ */
+const MAX_LIGHTS = 16;
+const DEG = Math.PI / 180;
 
 /**
  * Colours are sRGB in the graph (`#rrggbb`, or 0–1). Three.js converts them to linear; Babylon.js takes Color3 values
@@ -116,6 +143,7 @@ function threeLikePbr(name: string, scene: Scene): PBRMaterial {
   material.roughness = 1;
   material.useSpecularOverAlpha = false;
   material.useRadianceOverAlpha = false;
+  material.maxSimultaneousLights = MAX_LIGHTS;
   blendLikeThree(material);
   return material;
 }
@@ -215,6 +243,70 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const geometryOf = (g: GeometryObject) => (assertOwned(handle, g), g.native as Geometry);
   /** The geometries createGeometry made: a release never disposes one, the scene's teardown does (#132). */
   const sharedGeometries = new WeakSet<Geometry>();
+  /** Each light's kind (setLight keeps it), its shadow generator if it casts, and the meshes that cast (#134). */
+  const lightKinds = new WeakMap<Light, LightKind>();
+  const generators = new Map<Light, ShadowGenerator>();
+  const casters = new Set<AbstractMesh>();
+  /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
+   * leaves them as they are (they receive, never cast). */
+  const catchers = new WeakMap<BabylonNode, string>();
+  /** The meshes of a node and its descendants. */
+  const meshesOf = (n: BabylonNode) => [n, ...n.getDescendants(false)].filter((m): m is AbstractMesh => 'receiveShadows' in m && !catchers.has(m));
+  /**
+   * A light's live values written in, with the report's translations (#134): a spot's full cone is twice Three.js's
+   * half-angle, its penumbra the inner cone, no exponent, the glTF falloff (Three.js's window by distance), decay 2; no
+   * distance is the largest range. A casting light gets a ShadowGenerator with every caster, its camera set for mm.
+   * Like Three.js, it draws the casters' back faces into the map (forceBackFacesOnly; Three.js renders the side opposite
+   * to the material's, WebGLShadowMap.js, shadowSide).
+   */
+  const writeLight = (light: Light, spec: NormalLight) => {
+    const position = new Vector3(...spec.position);
+    const toward = new Vector3(...spec.target).subtract(position);
+    const range = spec.distance > 0 ? spec.distance : Number.MAX_VALUE;
+    if (light instanceof DirectionalLight) {
+      light.position = position;
+      light.direction = toward.normalize();
+      light.autoUpdateExtends = false;
+      Object.assign(light, { orthoLeft: -SHADOW_EXTENT, orthoRight: SHADOW_EXTENT, orthoTop: SHADOW_EXTENT, orthoBottom: -SHADOW_EXTENT });
+      light.shadowMinZ = DIRECTIONAL_SHADOW_NEAR;
+      light.shadowMaxZ = directionalShadowFar(spec);
+    } else if (light instanceof SpotLight) {
+      light.position = position;
+      light.direction = toward.normalize();
+      light.angle = 2 * spec.angle * DEG;
+      light.innerAngle = 2 * spec.angle * (1 - spec.penumbra) * DEG;
+      light.exponent = 0;
+      light.range = range;
+      light.falloffType = Light.FALLOFF_GLTF;
+      light.shadowMinZ = SPOT_SHADOW_NEAR;
+      light.shadowMaxZ = SPOT_SHADOW_FAR;
+    } else if (light instanceof PointLight) {
+      light.position = position;
+      light.range = range;
+      light.falloffType = Light.FALLOFF_GLTF;
+    }
+    if (!(light instanceof DirectionalLight || light instanceof SpotLight)) return;
+    let generator = generators.get(light);
+    // No shadow any more, or a map of another size (a generator's size is set when it is made): the old one is freed.
+    if (generator && (!spec.castShadow || generator.getShadowMap()!.getSize().width !== spec.shadowMapSize)) {
+      generator.dispose();
+      generators.delete(light);
+      generator = undefined;
+    }
+    if (!spec.castShadow) return;
+    if (!generator) {
+      generator = new ShadowGenerator(spec.shadowMapSize, light);
+      generator.forceBackFacesOnly = true;
+      for (const mesh of casters) generator.addShadowCaster(mesh, false);
+      generators.set(light, generator);
+    }
+    // Three.js adds its bias to the receiver's depth (shadowmap_pars_fragment, `shadowCoord.z += shadowBias`: negative
+    // keeps a lit face out of its own shadow); Babylon.js adds its own to the caster's depth in the map
+    // (shadowMapVertexMetric, `+ biasAndScaleSM.x`: positive does). Both on the depth normalised over the shadow camera's
+    // near..far, linear for a directional light: the same offset, the other way.
+    generator.bias = -spec.shadowBias;
+    generator.normalBias = 0;
+  };
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
   const ownMaterial = new WeakMap<BabylonNode, PBRMaterial>();
   const materialOf = (m: MaterialObject) => (assertOwned(handle, m), m.native as PBRMaterial);
@@ -386,7 +478,10 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           },
         },
       });
-      for (const material of container.materials) blendLikeThree(material);
+      for (const material of container.materials) {
+        blendLikeThree(material);
+        if ('maxSimultaneousLights' in material) (material as PBRMaterial).maxSimultaneousLights = MAX_LIGHTS;
+      }
       container.addAllToScene();
       // The scene is right-handed, so the loader adds no handedness conversion: only glTF's Y-up remains.
       const upright = new TransformNode('gltf-upright', scene);
@@ -414,7 +509,13 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       // A mesh of a createGeometry geometry, or one under the released node, leaves it first (#132): Mesh.dispose
       // would release it with shouldDispose, which disposes the geometry with its last mesh (geometry.js,
       // releaseForMesh), and a geometry node keeps building on it. The scene's teardown frees it.
+      // A released light's generator goes with it; a released caster leaves every generator (#134).
       for (const m of [n, ...n.getDescendants(false)]) {
+        if (m instanceof Light) {
+          generators.get(m)?.dispose();
+          generators.delete(m);
+        }
+        if (casters.delete(m as AbstractMesh)) for (const generator of generators.values()) generator.removeShadowCaster(m as AbstractMesh, false);
         const geometry = (m as Mesh).geometry;
         if (geometry && sharedGeometries.has(geometry)) geometry.releaseForMesh(m as Mesh, false);
         // A mesh with a shared material (#133) goes with its own: dispose(false, true) would dispose the shared one and
@@ -425,11 +526,24 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       n.dispose(false, true);
     },
     createLight(given: LightSpec) {
-      const spec = { ...given, kind: lightKind(given.kind) };
-      const light: Light =
-        spec.kind === 'directional'
-          ? new DirectionalLight('directional', new Vector3(-0.2, 0.3, -1), scene)
-          : new HemisphericLight(spec.kind, new Vector3(0, 0, 1), scene);
+      const spec = normalizeLight(given);
+      let light: Light;
+      switch (spec.kind) {
+        case 'point':
+          light = new PointLight('point', Vector3.Zero(), scene);
+          break;
+        case 'spot':
+          light = new SpotLight('spot', Vector3.Zero(), new Vector3(0, 0, -1), Math.PI / 3, 0, scene);
+          break;
+        case 'hemisphere':
+        case 'ambient':
+          light = new HemisphericLight(spec.kind, new Vector3(0, 0, 1), scene);
+          break;
+        default:
+          light = new DirectionalLight('directional', new Vector3(0, 0, -1), scene);
+      }
+      lightKinds.set(light, spec.kind);
+      writeLight(light, spec);
       light.diffuse = linearHex(spec.color);
       light.specular = light.diffuse.clone();
       scales.set(light, intensityScale(spec.kind));
@@ -442,6 +556,47 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         if (spec.kind === 'ambient') ambients.add(light);
       }
       return wrap(light);
+    },
+    setLight(o, given) {
+      const light = node(o) as Light;
+      writeLight(light, normalizeLight({ ...given, kind: lightKinds.get(light) ?? given.kind }));
+    },
+    setShadowCasting(o, cast, receive) {
+      for (const mesh of meshesOf(node(o))) {
+        mesh.receiveShadows = receive;
+        if (cast && !casters.has(mesh)) {
+          casters.add(mesh);
+          for (const generator of generators.values()) generator.addShadowCaster(mesh, false);
+        } else if (!cast && casters.delete(mesh)) {
+          for (const generator of generators.values()) generator.removeShadowCaster(mesh, false);
+        }
+      }
+    },
+    createShadowCatcher(given) {
+      const spec = normalizeShadowCatcher(given);
+      const mesh = new Mesh('shadow-catcher', scene);
+      babylonVertexData({ shape: 'plane', width: spec.width, depth: spec.depth }).applyToMesh(mesh, true);
+      // The report's translation: BackgroundMaterial with shadowOnly draws only the shadows, once its primaryColor is
+      // black (a grey shadow otherwise); alpha is how dark a full one is. Blended as Three.js does (#155).
+      const material = new BackgroundMaterial('shadow-catcher', scene);
+      material.shadowOnly = true;
+      material.primaryColor = Color3.Black();
+      material.alpha = spec.opacity;
+      material.maxSimultaneousLights = MAX_LIGHTS;
+      blendLikeThree(material);
+      mesh.material = material;
+      mesh.receiveShadows = true;
+      catchers.set(mesh, catcherSize(spec));
+      return wrap(mesh);
+    },
+    setShadowCatcher(o, given) {
+      const spec = normalizeShadowCatcher(given);
+      const mesh = node(o) as Mesh;
+      if (catchers.get(mesh) !== catcherSize(spec)) {
+        babylonVertexData({ shape: 'plane', width: spec.width, depth: spec.depth }).applyToMesh(mesh, true);
+        catchers.set(mesh, catcherSize(spec));
+      }
+      (mesh.material as BackgroundMaterial).alpha = spec.opacity;
     },
     addChild(parent, child) {
       const c = node(child);
@@ -487,7 +642,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     setIntensity(o, i) {
       const light = node(o) as Light;
       // Every light comes from createLight, which records its scale: the fallback is never reached.
-      light.intensity = i * (scales.get(light) ?? 1);
+      light.intensity = normalizeIntensity(i) * (scales.get(light) ?? 1);
     },
 
     animations: (o) => [...(modelClips.get(node(o))?.names ?? [])],

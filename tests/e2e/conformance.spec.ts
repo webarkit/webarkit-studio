@@ -17,6 +17,8 @@ import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import type { AdapterOp, Harness, SceneDesc, V3 } from './harness/conformance-harness';
 import type { MaterialSpec, TextureSpec } from '../../src/core/material';
+import type { LightSpec } from '../../src/core/light';
+import type { GeometrySpec } from '../../src/core/geometry';
 import { nonZeroScale, transformMatrix } from '../../src/core/math';
 
 const ENGINES = ['three', 'babylon'] as const;
@@ -529,7 +531,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
      * each within EDGE px; something drawn on both. A hole is two transitions, so a filled shape with the same outline
      * fails.
      */
-    | { row: number; is: 'edges' }
+    | { row: number; is: 'edges'; /** #134: a colour channel (0–2) instead of alpha, lit above `threshold` (128). */ channel?: number; threshold?: number }
     /** Per engine: the object's world bounds, within the report's 1e-4 mm. */
     | { bounds: string; min: V3; max: V3 }
     /** Per engine: RGBA within SAME of another region of the same frame (a live change against a fresh object, #133). */
@@ -583,6 +585,39 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     { op: 'setMeshMaterial', mesh: id, material },
   ];
   const SUN: AdapterOp[] = [{ op: 'createLight', id: 'sun', spec: { kind: 'directional', color: '#ffffff', intensity: 1 } }, { op: 'addRoot', id: 'sun' }];
+
+  // #134: lights and shadows. A lit grey material; a shadow catcher 300 mm square, 200 mm away, at opacity 0.8 (so a
+  // shadow's alpha, 204, is past the edges rule's 128); a 50 mm cube standing on it to the right of the centre
+  // (x 15..65 mm). A light from the right at 45° throws the cube's shadow to its left, on the catcher: x −35..15 mm, at
+  // 0.32 px per mm there px 53..69 (region S); the cube's front face is px 70..92 (C); far left, no shadow (O).
+  const LIT_OPS: AdapterOp[] = [{ op: 'createMaterial', id: 'lit', spec: mat({ unlit: false, color: [0.7, 0.7, 0.7] }) }];
+  const lightOps = (spec: LightSpec, id = 'l'): AdapterOp[] => [{ op: 'createLight', id, spec }, { op: 'addRoot', id }];
+  const meshOps = (id: string, shape: GeometrySpec, at: V3, cast = false, receive = false, material = 'lit'): AdapterOp[] => [
+    { op: 'createGeometry', id: `${id}_g`, spec: shape },
+    { op: 'createMesh', id, geometry: `${id}_g` },
+    { op: 'setPosition', id, position: at },
+    { op: 'addRoot', id },
+    { op: 'setMeshMaterial', mesh: id, material },
+    { op: 'setShadowCasting', id, cast, receive },
+  ];
+  const catcherOps = (opacity = 0.8, size = 300): AdapterOp[] => [
+    { op: 'createShadowCatcher', id: 'c', spec: { width: size, depth: size, opacity } },
+    { op: 'setPosition', id: 'c', position: [0, 0, -200] },
+    { op: 'addRoot', id: 'c' },
+  ];
+  const STANDING_CUBE = meshOps('cube', { shape: 'box', width: 50, depth: 50, height: 50 }, [40, 0, -175], true);
+  const SIDE_SUN: LightSpec = { kind: 'directional', color: '#ffffff', intensity: 2, position: [300, 0, 100], target: [0, 0, -200], castShadow: true };
+  const SIDE_SPOT: LightSpec = { kind: 'spot', color: '#ffffff', intensity: 0.5, position: [150, 0, -50], target: [0, 0, -200], angle: 40, castShadow: true };
+  const SHADOW_REGIONS: Record<string, Region> = { S: [56, 62, 8, 4], C: [78, 62, 4, 4], O: [20, 62, 4, 4] };
+  const shadowRules = (alpha = 204): Rule[] => [
+    { region: 'C', is: 'drawn' },
+    { region: 'O', is: 'empty' },
+    { region: 'S', is: 'alpha', value: alpha },
+    { region: 'S', is: 'same' },
+    { region: 'C', is: 'same' },
+    { row: 64, is: 'edges' },
+    { row: 60, is: 'edges' },
+  ];
   /** The whole frame in a grid of 4 px regions, 8 × 8: g<i>_<j> at x 6 + 16 i, y 6 + 16 j. */
   const GRID: Record<string, Region> = Object.fromEntries([...Array(64)].map((_, k) => [`g${k % 8}_${(k / 8) | 0}`, [6 + 16 * (k % 8), 6 + 16 * ((k / 8) | 0), 4, 4] as Region]));
   const sameEverywhere = (regions: Record<string, Region>): Rule[] => Object.keys(regions).map((region) => ({ region, is: 'same' }));
@@ -1121,23 +1156,117 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ],
       }),
     ),
+
+    // #134: shadows on the catcher, where they fall and how dark, on both engines.
+    ...(
+      [
+        ['a directional light', SIDE_SUN],
+        ['a spot light', SIDE_SPOT],
+      ] as const
+    ).map(
+      ([what, spec]): Case => ({
+        name: `${what}: a cube's shadow on the catcher, in the same place on both (#134)`,
+        ops: [...LIT_OPS, ...lightOps(spec), ...catcherOps(), ...STANDING_CUBE],
+        regions: SHADOW_REGIONS,
+        rules: shadowRules(),
+      }),
+    ),
+    {
+      name: 'a hidden caster casts nothing (#134)',
+      ops: [...LIT_OPS, ...lightOps(SIDE_SUN), ...catcherOps(), ...STANDING_CUBE, { op: 'setVisible', id: 'cube', visible: false }, ...meshOps('n', { shape: 'box', width: 20, depth: 20, height: 20 }, [0, 60, -150])],
+      regions: { ...SHADOW_REGIONS, N: [62, 38, 4, 4] },
+      rules: [{ region: 'N', is: 'drawn' }, { region: 'S', is: 'empty' }, { region: 'C', is: 'empty' }, { region: 'N', is: 'same' }],
+    },
+    {
+      // Measured: a single-sided plane facing the light casts nothing, on both engines.
+      name: 'a single-sided plane facing the light casts no shadow, on both (#134)',
+      ops: [...LIT_OPS, ...lightOps({ ...SIDE_SUN, position: [0, 0, 100], target: [0, 0, -200] }), ...catcherOps(), ...meshOps('p', { shape: 'plane', width: 60, depth: 60 }, [0, 0, -150], true)],
+      regions: { P: [62, 62, 4, 4], below: [62, 30, 4, 4] },
+      rules: [{ region: 'P', is: 'drawn' }, { region: 'below', is: 'empty' }, { region: 'P', is: 'same' }],
+    },
+    {
+      // A mesh that casts and receives: no shadow acne on its lit faces, the same on both (the bias translated: Babylon.js
+      // adds its own to the caster's depth, Three.js to the receiver's).
+      name: 'a cube that casts and receives, over a floor that does too: no acne, the same on both (#134)',
+      ops: [...LIT_OPS, ...lightOps(SIDE_SUN), ...meshOps('floor', { shape: 'plane', width: 300, depth: 300 }, [0, 0, -200], true, true), ...meshOps('cube', { shape: 'box', width: 50, depth: 50, height: 50 }, [40, 0, -175], true, true)],
+      regions: GRID,
+      rules: [{ region: 'g4_3', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    {
+      name: 'a sphere that casts and receives, under a spot: its own shadow the same on both (#134)',
+      ops: [...LIT_OPS, ...lightOps({ ...SIDE_SPOT, position: [100, 100, -60], target: [0, 0, -200] }), ...meshOps('s', { shape: 'sphere', radius: 50, detail: 64 }, [0, 0, -200], true, true)],
+      regions: GRID,
+      rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    {
+      // An unlit receiver shows no shadow on either engine (Three.js's MeshBasicMaterial has no lighting at all).
+      name: 'an unlit mesh shows no shadow, on both (#134)',
+      ops: [{ op: 'createMaterial', id: 'u', spec: mat({ unlit: true, color: [0.7, 0.7, 0.7] }) }, ...LIT_OPS, ...lightOps(SIDE_SUN), ...meshOps('floor', { shape: 'plane', width: 300, depth: 300 }, [0, 0, -200], false, true, 'u'), ...STANDING_CUBE],
+      regions: SHADOW_REGIONS,
+      rules: [{ region: 'S', is: 'drawn' }, { region: 'S', is: 'same' }, { region: 'O', is: 'same' }],
+    },
+    {
+      name: 'a point light, no distance and distance 150: the same falloff on both (#134)',
+      ops: [
+        ...LIT_OPS,
+        ...lightOps({ kind: 'point', color: '#ffffff', intensity: 0.02, position: [-100, 0, 0] }, 'p1'),
+        ...lightOps({ kind: 'point', color: '#ffffff', intensity: 0.02, position: [100, 0, 0], distance: 150 }, 'p2'),
+        ...meshOps('floor', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -100]),
+      ],
+      regions: GRID,
+      rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    {
+      // Babylon.js's materials take 4 lights by default; the adapter's take 16, as Three.js's take every light.
+      name: 'five point lights at once: all of them light the floor, the same on both (#134)',
+      ops: [
+        ...LIT_OPS,
+        ...([[-60, -60], [60, -60], [-60, 60], [60, 60], [0, 0]] as const).flatMap(([x, y], i) => lightOps({ kind: 'point', color: '#ffffff', intensity: 0.004, position: [x, y, -150] }, `p${i}`)),
+        ...meshOps('floor', { shape: 'plane', width: 300, depth: 300 }, [0, 0, -200]),
+      ],
+      regions: GRID,
+      rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID)],
+    },
+    {
+      // A hard cone (penumbra 0): its edge where the red channel crosses 64, the same within 1 px on both.
+      name: 'a spot, hard cone: the same edges on both (#134)',
+      ops: [...LIT_OPS, ...lightOps({ kind: 'spot', color: '#ffffff', intensity: 0.08, position: [0, 0, 0], target: [0, 0, -200], angle: 15 }), ...meshOps('floor', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200])],
+      regions: { c: [62, 62, 4, 4] },
+      rules: [{ region: 'c', is: 'drawn' }, { region: 'c', is: 'same' }, { row: 64, is: 'edges', channel: 0, threshold: 64 }, { row: 56, is: 'edges', channel: 0, threshold: 64 }],
+    },
+    {
+      // A spot on a group turned 90° about Z: it follows its parent on both.
+      name: 'a spot under a turned group follows it, the same on both (#134)',
+      ops: [
+        ...LIT_OPS,
+        { op: 'createGroup', id: 'grp' },
+        { op: 'setMatrix', id: 'grp', matrix: RZ90_AT_80 },
+        { op: 'addRoot', id: 'grp' },
+        { op: 'createLight', id: 'l', spec: { kind: 'spot', color: '#ffffff', intensity: 0.08, position: [60, 0, 100], target: [60, 0, -100], angle: 15 } },
+        { op: 'addChild', parent: 'grp', child: 'l' },
+        ...meshOps('floor', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200]),
+      ],
+      regions: GRID,
+      rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID), { row: 40, is: 'edges', channel: 0, threshold: 64 }],
+    },
   ];
 
   const FINAL = 'final';
   const frameOf = (r: Rule) => r.frame ?? FINAL;
   interface Shot {
     regions: Record<string, number[]>;
-    rows: Record<number, number[]>;
+    /** By `<row>/<channel>`. */
+    rows: Record<string, number[]>;
     bounds: Record<string, { min: V3; max: V3 }>;
   }
   /** One engine's frames, by name: FINAL and each capture. */
   type Shots = Record<string, Shot>;
   const measure = (page: Page, c: Case) => {
     // What each frame reads: every region; the rows and bounds its rules name.
-    const needs: Record<string, { rows: number[]; ids: string[] }> = {};
+    const needs: Record<string, { rows: Array<[number, number]>; ids: string[] }> = {};
     for (const r of [...c.rules, ...(c.known?.rules ?? [])]) {
       const n = (needs[frameOf(r)] ??= { rows: [], ids: [] });
-      if ('row' in r) n.rows.push(r.row);
+      if ('row' in r) n.rows.push([r.row, r.channel ?? 3]);
       if ('bounds' in r) n.ids.push(r.bounds);
     }
     return onBoth(
@@ -1151,7 +1280,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
             const read = (frame: string) => {
               const shot: Shot = { regions: {}, rows: {}, bounds: {} };
               for (const [k, [x, y, w, h]] of Object.entries(regions)) shot.regions[k] = H.region(x, y, w, h);
-              for (const y of needs[frame]?.rows ?? []) shot.rows[y] = H.alphaRow(y);
+              for (const [y, c] of needs[frame]?.rows ?? []) shot.rows[`${y}/${c}`] = H.channelRow(y, c);
               for (const id of needs[frame]?.ids ?? []) shot.bounds[id] = H.adapterBounds(id);
               out[frame] = shot;
             };
@@ -1166,9 +1295,9 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
   };
 
   /** Where the row turns lit (alpha > 128) or unlit: the first pixel after the change, the row's length if it ends lit. */
-  const transitionsOf = (row: number[]) => {
+  const transitionsOf = (row: number[], threshold = 128) => {
     const out: number[] = [];
-    for (let i = 0; i <= row.length; i++) if ((i < row.length && row[i] > 128) !== (i > 0 && row[i - 1] > 128)) out.push(i);
+    for (let i = 0; i <= row.length; i++) if ((i < row.length && row[i] > threshold) !== (i > 0 && row[i - 1] > threshold)) out.push(i);
     return out;
   };
   function check(all: Record<Engine, Shots>, rule: Rule) {
@@ -1177,8 +1306,9 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     for (const engine of ENGINES) expect(r[engine], `${engine}: frame "${frame}" was read`).toBeDefined();
     const at = frame === FINAL ? '' : ` (frame "${frame}")`;
     if ('row' in rule) {
-      const t = transitionsOf(r.three.rows[rule.row]);
-      const b = transitionsOf(r.babylon.rows[rule.row]);
+      const key = `${rule.row}/${rule.channel ?? 3}`;
+      const t = transitionsOf(r.three.rows[key], rule.threshold);
+      const b = transitionsOf(r.babylon.rows[key], rule.threshold);
       const msg = `row ${rule.row}${at} transitions: three ${t} / babylon ${b}`;
       expect(t.length, `${msg}: something drawn on Three.js`).toBeGreaterThan(0);
       expect(b.length, `${msg}: something drawn on Babylon.js`).toBeGreaterThan(0);
@@ -1592,6 +1722,188 @@ test.describe('conformance: a video texture keeps its wrap (#133)', () => {
     for (const engine of ENGINES) expect(r[engine], engine).toEqual({ before: 'clamp', afterOne: 'clamp', afterThree: 'clamp' });
   });
 });
+
+test.describe('conformance: lights and shadows beyond the table (#134)', () => {
+  const LIT: AdapterOp = { op: 'createMaterial', id: 'lit', spec: { color: [0.7, 0.7, 0.7], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: false } };
+  const mesh = (id: string, shape: object, at: V3, cast = false, receive = false): AdapterOp[] => [
+    { op: 'createGeometry', id: `${id}_g`, spec: shape as never },
+    { op: 'createMesh', id, geometry: `${id}_g` },
+    { op: 'setPosition', id, position: at },
+    { op: 'addRoot', id },
+    { op: 'setMeshMaterial', mesh: id, material: 'lit' },
+    { op: 'setShadowCasting', id, cast, receive },
+  ];
+  const STAGE: AdapterOp[] = [
+    LIT,
+    { op: 'createShadowCatcher', id: 'c', spec: { width: 300, depth: 300, opacity: 0.8 } },
+    { op: 'setPosition', id: 'c', position: [0, 0, -200] },
+    { op: 'addRoot', id: 'c' },
+    ...mesh('cube', { shape: 'box', width: 50, depth: 50, height: 50 }, [40, 0, -175], true),
+  ];
+  const GRID: Record<string, [number, number, number, number]> = Object.fromEntries([...Array(64)].map((_, k) => [`g${k % 8}_${(k / 8) | 0}`, [6 + 16 * (k % 8), 6 + 16 * ((k / 8) | 0), 4, 4]]));
+  const SUN: LightSpec = { kind: 'directional', color: '#ffffff', intensity: 2, position: [300, 0, 100], target: [0, 0, -200], castShadow: true, shadowMapSize: 1024, shadowBias: -0.0005 };
+  const SPOT: LightSpec = { kind: 'spot', color: '#ffffff', intensity: 0.5, position: [150, 0, -50], target: [0, 0, -200], angle: 40, penumbra: 0, castShadow: true, distance: 0 };
+
+  /** Builds `ops` and returns the grid of the frame after them. */
+  const grid = (page: Page, ops: AdapterOp[]) =>
+    page.evaluate(
+      async ([o, g]) => {
+        const H = (window as never as { H: Harness }).H;
+        await H.buildAdapterScene(o);
+        H.render();
+        return Object.fromEntries(Object.entries(g).map(([k, [x, y, w, h]]) => [k, H.region(x, y, w, h)]));
+      },
+      [ops, GRID] as const,
+    );
+  const largest = (a: Record<string, number[]>, b: Record<string, number[]>) => Math.max(...Object.keys(a).map((k) => Math.max(...a[k].map((v, i) => Math.abs(v - b[k][i])))));
+
+  // Each light change made live on a running scene against the same scene made with it: per engine, and across them.
+  const LIVE: Array<[string, LightSpec, LightSpec]> = [
+    ['directional position and target', SUN, { ...SUN, position: [-300, 0, 100], target: [20, 0, -200] }],
+    ['spot position', SPOT, { ...SPOT, position: [-150, 40, -50] }],
+    ['spot angle', SPOT, { ...SPOT, angle: 20 }],
+    ['spot penumbra', SPOT, { ...SPOT, penumbra: 0.6 }],
+    ['spot distance', SPOT, { ...SPOT, distance: 220 }],
+    ['casting off', SUN, { ...SUN, castShadow: false }],
+    ['casting on', { ...SUN, castShadow: false }, SUN],
+    ['map size', SUN, { ...SUN, shadowMapSize: 512 }],
+    ['bias', SUN, { ...SUN, shadowBias: -0.003 }],
+  ];
+  for (const [what, from, to] of LIVE) {
+    test(`live equals fresh: ${what}`, async ({ page }) => {
+      const r = await onBoth(page, 128, async () => {
+        const live = await grid(page, [...STAGE, { op: 'createLight', id: 'l', spec: from }, { op: 'addRoot', id: 'l' }, { op: 'render' }, { op: 'setLight', id: 'l', spec: to }]);
+        const fresh = await grid(page, [...STAGE, { op: 'createLight', id: 'l', spec: to }, { op: 'addRoot', id: 'l' }]);
+        return { live, fresh };
+      });
+      for (const engine of ENGINES) expect(largest(r[engine].live, r[engine].fresh), `${engine}: live against fresh`).toBeLessThanOrEqual(SAME);
+      const differ = Object.keys(r.three.live).filter((k) => maxDiff(r.three.live[k], r.babylon.live[k]) > SAME || Math.abs(r.three.live[k][3] - r.babylon.live[k][3]) > SAME);
+      console.log('live', what, differ.map((k) => `${k} t${r.three.live[k].map(Math.round)} b${r.babylon.live[k].map(Math.round)}`).join(' | '));
+      // Across engines, a grid cell that straddles a shadow's edge can differ by a few levels (measured 5): the table's
+      // cases hold the shadows' insides to SAME and their edges to 1 px.
+      expect(largest(r.three.live, r.babylon.live), 'three against babylon').toBeLessThanOrEqual(LOOK);
+      expect(Object.values(r.three.fresh).some((v) => v[3] > 250), 'something drawn').toBe(true);
+    });
+  }
+
+  test('live equals fresh: a mesh stops and starts receiving, and the catcher changes size and opacity', async ({ page }) => {
+    const base = [...STAGE, { op: 'createLight', id: 'l', spec: SUN } as AdapterOp, { op: 'addRoot', id: 'l' } as AdapterOp, ...mesh('floor', { shape: 'plane', width: 120, depth: 120 }, [-120, 0, -199], false, true)];
+    const r = await onBoth(page, 128, async () => {
+      const live = await grid(page, [...base, { op: 'render' }, { op: 'setShadowCasting', id: 'floor', cast: false, receive: false }, { op: 'setShadowCatcher', id: 'c', spec: { width: 200, depth: 250, opacity: 0.5 } }]);
+      const fresh = await grid(page, [
+        LIT,
+        { op: 'createShadowCatcher', id: 'c', spec: { width: 200, depth: 250, opacity: 0.5 } },
+        { op: 'setPosition', id: 'c', position: [0, 0, -200] },
+        { op: 'addRoot', id: 'c' },
+        ...mesh('cube', { shape: 'box', width: 50, depth: 50, height: 50 }, [40, 0, -175], true),
+        { op: 'createLight', id: 'l', spec: SUN },
+        { op: 'addRoot', id: 'l' },
+        ...mesh('floor', { shape: 'plane', width: 120, depth: 120 }, [-120, 0, -199], false, false),
+      ]);
+      return { live, fresh };
+    });
+    for (const engine of ENGINES) expect(largest(r[engine].live, r[engine].fresh), engine).toBeLessThanOrEqual(SAME);
+    expect(largest(r.three.live, r.babylon.live)).toBeLessThanOrEqual(SAME);
+  });
+
+  // The ruling on #134: penumbra is common; the cone's outer edge agrees on both engines, the falloff inside the
+  // penumbra does not (Three.js smoothstep, Babylon.js's glTF falloff, up to 22 levels apart, as the report measured).
+  // The edges are asserted; each engine's profile is pinned (within 1 level), so a change on either shows here.
+  test('a spot with penumbra 0.5: the same outer edge; each engine\'s profile pinned', async ({ page }) => {
+    const ops: AdapterOp[] = [LIT, { op: 'createLight', id: 'l', spec: { kind: 'spot', color: '#ffffff', intensity: 0.08, position: [0, 0, 0], target: [0, 0, -200], angle: 15, penumbra: 0.5 } }, { op: 'addRoot', id: 'l' }, ...mesh('floor', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200])];
+    const r = await onBoth(page, 128, () =>
+      page.evaluate(async (o) => {
+        const H = (window as never as { H: Harness }).H;
+        await H.buildAdapterScene(o);
+        H.render();
+        return H.channelRow(64, 0);
+      }, ops),
+    );
+    console.log('penumbra profile', JSON.stringify(r));
+    const outer = (row: number[]) => [row.findIndex((v) => v > 4), row.length - 1 - [...row].reverse().findIndex((v) => v > 4)];
+    const [t, b] = [outer(r.three), outer(r.babylon)];
+    expect(Math.abs(t[0] - b[0]), `outer edge, left: ${t} / ${b}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(t[1] - b[1]), `outer edge, right: ${t} / ${b}`).toBeLessThanOrEqual(1);
+    // Pinned: the red channel at the centre, and 3 px inside the outer edge, in the penumbra (the profiles differ most
+    // there: Three.js 100, Babylon.js 71).
+    const at = (row: number[]) => [row[64], row[t[1] - 3]];
+    expect(at(r.three)).toEqual(PENUMBRA_PINNED.three.map((v) => expect.closeTo(v, 1)) as never);
+    expect(at(r.babylon)).toEqual(PENUMBRA_PINNED.babylon.map((v) => expect.closeTo(v, 1)) as never);
+  });
+
+  // The catcher over the camera: the page composites its premultiplied pixels as it does a half-transparent mesh's
+  // (#144), on both; a half-transparent sphere standing in the shadow draws over it the same way (two transparent
+  // things, the catcher first: it is farther).
+  test('the catcher over the page, with a half-transparent sphere in the shadow: the same on both', async ({ page }) => {
+    const BG = [0x40, 0x80, 0xc0];
+    const ops: AdapterOp[] = [
+      ...STAGE,
+      { op: 'createLight', id: 'l', spec: SUN },
+      { op: 'addRoot', id: 'l' },
+      { op: 'createMaterial', id: 'half', spec: { color: [0.75, 0.5, 0.25], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 0.5, side: 'front', unlit: true } },
+      { op: 'createGeometry', id: 'sg', spec: { shape: 'sphere', radius: 6, detail: 32 } },
+      { op: 'createMesh', id: 'sph', geometry: 'sg' },
+      { op: 'setPosition', id: 'sph', position: [-10, -15, -190] },
+      { op: 'addRoot', id: 'sph' },
+      { op: 'setMeshMaterial', mesh: 'sph', material: 'half' },
+    ];
+    const spots = { shadow: [56, 62, 6, 3], sphere: [60, 68, 3, 3], none: [20, 62, 4, 4] } as const;
+    const r = await onBoth(page, 128, async () => {
+      const framebuffer = await page.evaluate(
+        async ([o, sp]) => {
+          const H = (window as never as { H: Harness }).H;
+          await H.buildAdapterScene(o);
+          H.render();
+          return Object.fromEntries(Object.entries(sp).map(([k, [x, y, w, h]]) => [k, H.region(x, y, w, h)]));
+        },
+        [ops, spots] as const,
+      );
+      await page.evaluate((bg) => {
+        const back = document.createElement('div');
+        back.style.cssText = `position:absolute;left:0;top:0;width:128px;height:128px;background:rgb(${bg.join(',')})`;
+        document.body.prepend(back);
+        document.querySelector('canvas')!.style.zIndex = '1';
+      }, BG);
+      await page.evaluate(() => (window as never as { H: Harness }).H.render());
+      const screen: Record<string, number[]> = {};
+      for (const [k, [x, y, w, h]] of Object.entries(spots)) {
+        const png = await page.screenshot({ clip: { x, y, width: w, height: h } });
+        screen[k] = await page.evaluate(
+          async ([b64, n]) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${b64}`;
+            await img.decode();
+            const c = document.createElement('canvas');
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext('2d')!;
+            g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, img.width, img.height).data;
+            const sum = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) for (let q = 0; q < 3; q++) sum[q] += d[i + q];
+            return sum.map((v) => v / n);
+          },
+          [png.toString('base64'), w * h] as const,
+        );
+      }
+      return { framebuffer, screen };
+    });
+    console.log('catcher over the page', JSON.stringify(r));
+    const composite = (px: number[]) => [0, 1, 2].map((k) => px[k] + BG[k] * (1 - px[3] / 255));
+    for (const engine of ENGINES) {
+      expect(r[engine].framebuffer.shadow[3], `${engine}: a shadow`).toBeGreaterThan(150);
+      expect(r[engine].framebuffer.none[3], `${engine}: no shadow`).toBeLessThanOrEqual(2);
+      for (const k of Object.keys(spots)) expect(maxDiff(r[engine].screen[k], composite(r[engine].framebuffer[k])), `${engine} ${k}`).toBeLessThanOrEqual(SAME);
+    }
+    for (const k of Object.keys(spots)) {
+      expect(maxDiff(r.babylon.framebuffer[k], r.three.framebuffer[k]), `${k} framebuffer: ${r.three.framebuffer[k]} / ${r.babylon.framebuffer[k]}`).toBeLessThanOrEqual(SAME);
+      expect(maxDiff(r.babylon.screen[k], r.three.screen[k]), `${k} screen`).toBeLessThanOrEqual(SAME);
+    }
+  });
+});
+
+/** The penumbra's profile, as each engine draws it (#134's ruling): the red channel at the centre and in the penumbra. */
+const PENUMBRA_PINNED = { three: [144, 100], babylon: [144, 71] };
 
 test.describe('conformance: textures', () => {
   // The harness's 64 px canvas: top left red, top right green, bottom left blue, bottom right white, an sRGB 128 grey

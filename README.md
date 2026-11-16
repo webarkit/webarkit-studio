@@ -699,8 +699,8 @@ Planned split once the format stabilises (npm workspaces):
 | `babylon.renderer` | ✅ | → renderer |
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
-| `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
-| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color?, material? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; a connected material replaces it and sets the colour aside; connected inputs override the params) |
+| `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient / point / spot; position, target, distance, spot angle and penumbra; point and spot intensity in candela at 1 m; directional and spot cast shadows, map size and bias) |
+| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color?, material? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; a connected material replaces it and sets the colour aside; casts and receives shadows; connected inputs override the params) |
 | `scene.material` | ✅ ⚡ | scene, color?, emissive?, map? → material (PBR: colour, metalness, roughness, emissive and its intensity, opacity, side front / back / double, unlit; shared by every mesh it reaches; connected colour and emissive override the params) |
 | `scene.texture` | ✅ ⚡ | scene, video? → texture (an image URL or upload, or a connected video, which wins; sRGB, the same way up on both renderers; wrap clamp / repeat / mirror and repeat U, V live, the URL on the next Run) |
 | `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |
@@ -712,7 +712,8 @@ Planned split once the format stabilises (npm workspaces):
 | `geometry.capsule` | ✅ ⚡ | scene → geometry (radius, total height, detail; along Z) |
 | `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
 | `three.renderScript` | ✅ ⚡ | video, pose, found, projection, markerInfo, the inputs its script's header declares → — (a three.js script with its own renderer, scene and camera over the video; asks before running a script from someone else; see "three.js Render Script") |
-| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
+| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; casts and receives shadows; connected position and rotation override the params) |
+| `scene.shadowCatcher` | ✅ ⚡ | scene, markerInfo? → sceneObject (a plane on the marker showing only the shadows cast on it; width, depth, opacity; the marker's size when markerInfo is wired) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |

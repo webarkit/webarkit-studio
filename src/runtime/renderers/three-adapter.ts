@@ -2,6 +2,20 @@ import * as THREE from 'three';
 import type { GeometrySpec } from '../../core/geometry';
 import { normalizeMaterial, normalizeTexture, type MaterialSide, type TextureSpec, type TextureWrap } from '../../core/material';
 import {
+  DIRECTIONAL_SHADOW_NEAR,
+  directionalShadowFar,
+  engineIntensity,
+  normalizeIntensity,
+  catcherSize,
+  normalizeLight,
+  normalizeShadowCatcher,
+  SHADOW_EXTENT,
+  SPOT_SHADOW_NEAR,
+  SPOT_SHADOW_FAR,
+  type LightKind,
+  type NormalLight,
+} from '../../core/light';
+import {
   assertOwned,
   checkAnimationSpeed,
   gltfClipNames,
@@ -17,7 +31,6 @@ import {
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
-  lightKind,
 } from './adapter';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
@@ -58,6 +71,54 @@ function applyTexture(texture: THREE.Texture, given: TextureSpec) {
   texture.repeat.set(spec.repeatU, spec.repeatV);
 }
 
+const DEG = Math.PI / 180;
+
+/**
+ * A light's live values written in (#134): where it is and shines to, its reach and cone, its shadow. The target of a
+ * directional or spot light is its child, so the direction is in the light's own space and follows any parent (an
+ * anchor). Decay is 2 on both engines (the ruling: no common decay param).
+ */
+function writeLight(light: THREE.Light, spec: NormalLight) {
+  const [x, y, z] = spec.position;
+  if (light instanceof THREE.DirectionalLight || light instanceof THREE.SpotLight) {
+    light.position.set(x, y, z);
+    light.target.position.set(spec.target[0] - x, spec.target[1] - y, spec.target[2] - z);
+  } else if (light instanceof THREE.PointLight) {
+    light.position.set(x, y, z);
+  }
+  if (light instanceof THREE.PointLight || light instanceof THREE.SpotLight) {
+    light.distance = spec.distance;
+    light.decay = 2;
+  }
+  if (light instanceof THREE.SpotLight) {
+    light.angle = spec.angle * DEG;
+    light.penumbra = spec.penumbra;
+  }
+  if (light instanceof THREE.DirectionalLight || light instanceof THREE.SpotLight) {
+    const shadow = light.shadow;
+    // A map of another size, or no shadow any more: the old map is freed (WebGLShadowMap makes a new one when needed).
+    if (!spec.castShadow || shadow.mapSize.x !== spec.shadowMapSize) {
+      shadow.map?.dispose();
+      shadow.map = null;
+    }
+    light.castShadow = spec.castShadow;
+    shadow.mapSize.set(spec.shadowMapSize, spec.shadowMapSize);
+    shadow.bias = spec.shadowBias;
+    shadow.normalBias = 0;
+    const camera = shadow.camera as THREE.OrthographicCamera & THREE.PerspectiveCamera;
+    if (light instanceof THREE.DirectionalLight) {
+      Object.assign(camera, { left: -SHADOW_EXTENT, right: SHADOW_EXTENT, top: SHADOW_EXTENT, bottom: -SHADOW_EXTENT });
+      camera.near = DIRECTIONAL_SHADOW_NEAR;
+      camera.far = directionalShadowFar(spec);
+    } else {
+      // SpotLightShadow sets the camera's field of view from the cone, and its far from the light's distance when set.
+      camera.near = SPOT_SHADOW_NEAR;
+      camera.far = SPOT_SHADOW_FAR;
+    }
+    camera.updateProjectionMatrix();
+  }
+}
+
 /** "Sky" of a hemisphere light in its own space: +Z, out of the marker plane. */
 const SKY = new THREE.Vector3(0, 0, 1);
 
@@ -73,6 +134,13 @@ export function createThreeAdapter(opts: { antialias: boolean }): RendererAdapte
   const canvas = document.createElement('canvas');
   // setSize() receives device pixels (AR View multiplies by devicePixelRatio).
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: opts.antialias });
+  // Shadow maps on from the start (#134): a program reads it only when a light casts (WebGLPrograms.js, shadowMapEnabled
+  // is `shadowMap.enabled && shadows.length > 0`), so a scene without one draws as before. PCF, as the report measured.
+  // (A renderer stand-in in Node tests may have no shadowMap.)
+  if (renderer.shadowMap) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+  }
   const disposables = new Set<{ dispose(): void }>();
 
   const adapter: RendererAdapter = {
@@ -109,6 +177,11 @@ function createThreeScene(
   const meshGeometry = new WeakMap<THREE.Object3D, ThreeGeometryState>();
   /** The geometries createGeometry made and keeps: a release never disposes one, the scene's teardown does. */
   const sharedGeometries = new WeakSet<THREE.BufferGeometry>();
+  /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
+   * leaves them as they are (they receive, never cast). */
+  const catchers = new WeakMap<THREE.Object3D, string>();
+  /** Each light's kind (setLight keeps it) and its intensity scale (setIntensity: engineIntensity, #134). */
+  const lightKinds = new WeakMap<THREE.Light, LightKind>();
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
   const ownMaterial = new WeakMap<THREE.Object3D, THREE.MeshStandardMaterial>();
   /** Each mesh given a createMaterial material, and that material's state. */
@@ -281,6 +354,16 @@ function createThreeScene(
       const root = obj(o);
       // A released mesh, or one under a released group, leaves its geometry's meshes: setGeometry no longer touches it.
       root.traverse((x) => {
+        // A light's shadow map is freed with it (#134).
+        if ((x as THREE.Light).isLight) {
+          (x as THREE.Light).dispose();
+          disposables.delete(x as THREE.Light);
+        }
+        // A catcher's plane and material leave the set: disposeObject3D frees them below, once.
+        if (catchers.has(x)) {
+          disposables.delete((x as THREE.Mesh).geometry);
+          disposables.delete((x as THREE.Mesh).material as THREE.Material);
+        }
         meshGeometry.get(x)?.meshes.delete(x as THREE.Mesh);
         meshGeometry.delete(x);
         // A mesh with a shared material (#133) leaves it and goes with its own: the shared one and its map stay, for the
@@ -296,21 +379,86 @@ function createThreeScene(
       disposeObject3D(root, (geometry) => sharedGeometries.has(geometry));
     },
     createLight(given: LightSpec) {
-      const spec = { ...given, kind: lightKind(given.kind) };
+      const spec = normalizeLight(given);
       const color = new THREE.Color(spec.color);
-      if (spec.kind === 'ambient') return wrap(new THREE.AmbientLight(color, spec.intensity));
-      if (spec.kind === 'hemisphere') {
-        const h = new THREE.HemisphereLight(color, 0x444444, spec.intensity);
-        h.position.copy(SKY); // Three uses the light's world position as the "sky" direction
-        return wrap(h);
+      const intensity = engineIntensity(spec.kind, spec.intensity);
+      let light: THREE.Light;
+      switch (spec.kind) {
+        case 'ambient':
+          light = new THREE.AmbientLight(color, intensity);
+          break;
+        case 'hemisphere':
+          light = new THREE.HemisphereLight(color, 0x444444, intensity);
+          light.position.copy(SKY); // Three uses the light's world position as the "sky" direction
+          break;
+        case 'point':
+          light = new THREE.PointLight(color, intensity);
+          break;
+        case 'spot': {
+          const spot = new THREE.SpotLight(color, intensity);
+          spot.add(spot.target);
+          // SpotLightShadow ends its camera at the light's distance when it has one (`light.distance || camera.far`,
+          // SpotLightShadow.js, updateMatrices); Babylon.js's shadow does not stop there. Both keep SPOT_SHADOW_FAR: the
+          // distance is hidden from that one call, so a shadow past the light's reach falls the same on both.
+          const update = spot.shadow.updateMatrices.bind(spot.shadow);
+          spot.shadow.updateMatrices = (l: THREE.Light) => {
+            const distance = spot.distance;
+            spot.distance = 0;
+            try {
+              update(l);
+            } finally {
+              spot.distance = distance;
+            }
+          };
+          light = spot;
+          break;
+        }
+        default:
+          light = new THREE.DirectionalLight(color, intensity);
+          light.add((light as THREE.DirectionalLight).target);
       }
-      // Directional: the target is a child of the light, so the direction is
-      // expressed in the light's own space and follows any parent (anchor).
-      const d = new THREE.DirectionalLight(color, spec.intensity);
-      d.position.set(200, -300, 1000);
-      d.add(d.target);
-      d.target.position.set(-200, 300, -1000);
-      return wrap(d);
+      lightKinds.set(light, spec.kind);
+      writeLight(light, spec);
+      // Its shadow map, if it casts, is freed with it (Light.dispose) at the scene's teardown.
+      disposables.add(light);
+      return wrap(light);
+    },
+    setLight(o, given) {
+      const light = obj(o) as THREE.Light;
+      writeLight(light, normalizeLight({ ...given, kind: lightKinds.get(light) ?? given.kind }));
+    },
+    setShadowCasting(o, cast, receive) {
+      obj(o).traverse((x) => {
+        const mesh = x as THREE.Mesh;
+        if (!mesh.isMesh || catchers.has(mesh)) return;
+        mesh.castShadow = cast;
+        mesh.receiveShadow = receive;
+      });
+    },
+    createShadowCatcher(given) {
+      const spec = normalizeShadowCatcher(given);
+      // ShadowMaterial draws only the shadows falling on it, `opacity` dark; it is transparent, so it blends over the
+      // camera as a half-transparent mesh does.
+      const mesh = new THREE.Mesh(threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth }), new THREE.ShadowMaterial({ opacity: spec.opacity }));
+      // The scene's teardown frees them, even for a catcher never added; release takes them out of the set first.
+      disposables.add(mesh.geometry);
+      disposables.add(mesh.material as THREE.Material);
+      mesh.receiveShadow = true;
+      catchers.set(mesh, catcherSize(spec));
+      return wrap(mesh);
+    },
+    setShadowCatcher(o, given) {
+      const spec = normalizeShadowCatcher(given);
+      const mesh = obj(o) as THREE.Mesh;
+      if (catchers.get(mesh) !== catcherSize(spec)) {
+        const old = mesh.geometry;
+        mesh.geometry = threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth });
+        disposables.add(mesh.geometry);
+        disposables.delete(old);
+        old.dispose();
+        catchers.set(mesh, catcherSize(spec));
+      }
+      (mesh.material as THREE.ShadowMaterial).opacity = spec.opacity;
     },
     addChild(parent, child) {
       const p = obj(parent);
@@ -355,7 +503,10 @@ function createThreeScene(
       material.opacity = a;
       material.depthWrite = !transparent;
     },
-    setIntensity: (o, i) => void ((obj(o) as THREE.Light).intensity = i),
+    setIntensity(o, i) {
+      const light = obj(o) as THREE.Light;
+      light.intensity = engineIntensity(lightKinds.get(light) ?? 'directional', normalizeIntensity(i));
+    },
 
     animations: (o) => [...(modelClips.get(obj(o))?.names ?? [])],
     playAnimation(o, clip, { loop = true, speed = 1 }: AnimationOptions = {}) {

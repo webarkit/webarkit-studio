@@ -15,6 +15,7 @@
  */
 import type { GeometrySpec } from '../../core/geometry';
 import type { MaterialSpec, TextureSpec } from '../../core/material';
+import type { LightSpec, ShadowCatcherSpec } from '../../core/light';
 import { transformMatrix } from '../../core/math';
 
 export interface SceneObject {
@@ -60,20 +61,8 @@ export type TextureSource = { kind: 'image'; element: HTMLImageElement | HTMLCan
 /** A material's values (normalised by the adapter with normalizeMaterial) and its map, or none. */
 export type MaterialSetup = MaterialSpec & { map: TextureObject | null };
 
-export interface LightSpec {
-  kind: 'directional' | 'hemisphere' | 'ambient';
-  color: string;
-  intensity: number;
-}
-
-const LIGHT_KINDS: Record<LightSpec['kind'], true> = { directional: true, hemisphere: true, ambient: true };
-
-/**
- * A light's kind as both adapters read it (#110): one they know, or `directional` (scene.light's default) for
- * anything else, which reaches an adapter only on a path that skips validation. Both engines then build the same light.
- */
-export const lightKind = (kind: unknown): LightSpec['kind'] =>
-  typeof kind === 'string' && Object.hasOwn(LIGHT_KINDS, kind) ? (kind as LightSpec['kind']) : 'directional';
+// The light spec and its kinds live in the core (#134): both adapters normalise with normalizeLight().
+export { lightKind, type LightSpec, type ShadowCatcherSpec } from '../../core/light';
 
 /** A glTF 2.0 model, as scene.gltf fetched it. */
 export interface ModelSpec {
@@ -193,7 +182,25 @@ export interface SceneHandle {
    * mixer, which this would not stop.
    */
   release(object: SceneObject): void;
+  /**
+   * A light (src/core/light.ts, normalised by the adapter): directional, hemisphere, ambient, point or spot, with
+   * the report's translations (#131, #134). Point and spot intensities are candela at metres (engineIntensity()).
+   * A directional or spot light that casts shadows uses a shadow camera set for millimetres, the same on both engines.
+   */
   createLight(spec: LightSpec): SceneObject;
+  /**
+   * Changes a light in place (live params): position, target, distance, angle, penumbra, shadows. Its kind stays the
+   * one it was made with; its colour and intensity have setColor and setIntensity.
+   */
+  setLight(light: SceneObject, spec: LightSpec): void;
+  /**
+   * Whether a mesh or a model (every mesh in it) casts shadows from the lights that cast them, and shows the shadows
+   * that fall on it.
+   */
+  setShadowCasting(object: SceneObject, cast: boolean, receive: boolean): void;
+  /** A plane on the marker (XY, facing +Z) that shows only the shadows falling on it, `opacity` dark at full shadow. */
+  createShadowCatcher(spec: ShadowCatcherSpec): SceneObject;
+  setShadowCatcher(catcher: SceneObject, spec: ShadowCatcherSpec): void;
   /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;
   /** Adds a top-level object (anchor, light…) to the rendered scene. */

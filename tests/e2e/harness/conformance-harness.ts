@@ -47,6 +47,7 @@ import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-ada
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
 import type { GeometryObject, LightSpec, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from '../../../src/runtime/renderers/adapter';
 import type { MaterialSpec, TextureSpec } from '../../../src/core/material';
+import type { ShadowCatcherSpec } from '../../../src/core/light';
 import type { GeometrySpec } from '../../../src/core/geometry';
 import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
@@ -172,6 +173,11 @@ export type AdapterOp =
   | { op: 'createTexture'; id: string; source: 'quadrants' | 'alphaQuadrants' | 'video'; spec: TextureSpec }
   | { op: 'setTexture'; id: string; spec: TextureSpec }
   | { op: 'setMeshMaterial'; mesh: string; material: string | null }
+  /** #134: a light's live change, a mesh's or model's shadow casting, and the shadow catcher (an object, made and changed). */
+  | { op: 'setLight'; id: string; spec: LightSpec }
+  | { op: 'setShadowCasting'; id: string; cast: boolean; receive: boolean }
+  | { op: 'createShadowCatcher'; id: string; spec: ShadowCatcherSpec }
+  | { op: 'setShadowCatcher'; id: string; spec: ShadowCatcherSpec }
   /**
    * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
    * a case can check it; otherwise what is read back is the frame after the last operation.
@@ -306,6 +312,8 @@ export interface Harness {
   row(y: number): number[];
   /** One row of the alpha channel, after a render. */
   alphaRow(y: number): number[];
+  /** #134: one channel (0 red, 1 green, 2 blue, 3 alpha) of a row of the last frame read. */
+  channelRow(y: number, channel: number): number[];
   /** Two renders of the same frame give the same bytes. */
   repeatIdentical(): boolean;
   /** Renderer state that decides colours: output colour space, tone mapping, exposure, alpha. */
@@ -968,6 +976,18 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           case 'setMeshMaterial':
             handle.setMeshMaterial(get(step.mesh), step.material === null ? null : materialNamed(step.material));
             break;
+          case 'setLight':
+            handle.setLight(get(step.id), step.spec);
+            break;
+          case 'setShadowCasting':
+            handle.setShadowCasting(get(step.id), step.cast, step.receive);
+            break;
+          case 'createShadowCatcher':
+            create(step.id, handle.createShadowCatcher(step.spec));
+            break;
+          case 'setShadowCatcher':
+            handle.setShadowCatcher(get(step.id), step.spec);
+            break;
           case 'render':
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.
             await babylonReady();
@@ -1023,6 +1043,11 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
     alphaRow(y) {
       const out: number[] = [];
       for (let i = 0; i < size; i++) out.push(last[((size - 1 - y) * size + i) * 4 + 3]);
+      return out;
+    },
+    channelRow(y, channel) {
+      const out: number[] = [];
+      for (let i = 0; i < size; i++) out.push(last[((size - 1 - y) * size + i) * 4 + channel]);
       return out;
     },
     repeatIdentical() {

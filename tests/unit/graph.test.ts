@@ -231,7 +231,7 @@ describe('resolveParams', () => {
   it('fills defaults and keeps explicit values', () => {
     const def = NODE_CATALOG['scene.mesh'];
     const params = resolveParams(def, { spin: true });
-    expect(params).toEqual({ color: '#ff0055', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], rest: true, spin: true });
+    expect(params).toEqual({ color: '#ff0055', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], rest: true, spin: true, castShadow: false, receiveShadow: false });
   });
 
   it('copies array values, so a node changing one never changes the default or the document', () => {
