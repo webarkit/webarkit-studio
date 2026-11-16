@@ -359,6 +359,11 @@ function createThreeScene(
           (x as THREE.Light).dispose();
           disposables.delete(x as THREE.Light);
         }
+        // A catcher's plane and material leave the set: disposeObject3D frees them below, once.
+        if (catchers.has(x)) {
+          disposables.delete((x as THREE.Mesh).geometry);
+          disposables.delete((x as THREE.Mesh).material as THREE.Material);
+        }
         meshGeometry.get(x)?.meshes.delete(x as THREE.Mesh);
         meshGeometry.delete(x);
         // A mesh with a shared material (#133) leaves it and goes with its own: the shared one and its map stay, for the
@@ -435,6 +440,9 @@ function createThreeScene(
       // ShadowMaterial draws only the shadows falling on it, `opacity` dark; it is transparent, so it blends over the
       // camera as a half-transparent mesh does.
       const mesh = new THREE.Mesh(threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth }), new THREE.ShadowMaterial({ opacity: spec.opacity }));
+      // The scene's teardown frees them, even for a catcher never added; release takes them out of the set first.
+      disposables.add(mesh.geometry);
+      disposables.add(mesh.material as THREE.Material);
       mesh.receiveShadow = true;
       catchers.set(mesh, catcherSize(spec));
       return wrap(mesh);
@@ -445,6 +453,8 @@ function createThreeScene(
       if (catchers.get(mesh) !== catcherSize(spec)) {
         const old = mesh.geometry;
         mesh.geometry = threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth });
+        disposables.add(mesh.geometry);
+        disposables.delete(old);
         old.dispose();
         catchers.set(mesh, catcherSize(spec));
       }

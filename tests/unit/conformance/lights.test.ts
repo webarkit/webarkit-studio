@@ -263,3 +263,39 @@ describe.each(ENGINES)('%s: lights (#134)', (engine) => {
     });
   });
 });
+
+describe("three: the shadow catcher's geometry and material are the adapter's to free (#134)", () => {
+  /** A catcher with its geometry's and material's dispose counted. */
+  function counted(scene: SceneHandle) {
+    const catcher = scene.createShadowCatcher({ width: 100, depth: 100, opacity: 0.5 });
+    const mesh = catcher.native as THREE.Mesh;
+    return { catcher, mesh, geometry: vi.spyOn(mesh.geometry, 'dispose'), material: vi.spyOn(mesh.material as THREE.Material, 'dispose') };
+  }
+
+  test("a catcher made and never added is freed by the adapter's dispose", () => {
+    const adapter = createThreeAdapter({ antialias: false });
+    const c = counted(adapter.createScene({ defaultLights: false }));
+    adapter.dispose();
+    expect([c.geometry.mock.calls.length, c.material.mock.calls.length]).toEqual([1, 1]);
+  });
+
+  test('a resized catcher frees its old plane once and its new one at teardown', () => {
+    const adapter = createThreeAdapter({ antialias: false });
+    const scene = adapter.createScene({ defaultLights: false });
+    const c = counted(scene);
+    scene.setShadowCatcher(c.catcher, { width: 50, depth: 50, opacity: 0.5 });
+    expect(c.geometry.mock.calls.length).toBe(1);
+    const next = vi.spyOn(c.mesh.geometry, 'dispose');
+    adapter.dispose();
+    expect([c.geometry.mock.calls.length, next.mock.calls.length, c.material.mock.calls.length]).toEqual([1, 1, 1]);
+  });
+
+  test('a released catcher is freed once, not again at teardown', () => {
+    const adapter = createThreeAdapter({ antialias: false });
+    const scene = adapter.createScene({ defaultLights: false });
+    const c = counted(scene);
+    scene.release(c.catcher);
+    adapter.dispose();
+    expect([c.geometry.mock.calls.length, c.material.mock.calls.length]).toEqual([1, 1]);
+  });
+});
