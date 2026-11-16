@@ -485,6 +485,50 @@ export const anchor: NodeFactory = (params) => {
   };
 };
 
+/**
+ * scene.group — moves, turns, scales and hides its children together (#136). It adopts them once, at init, as the
+ * anchor does, and sets its matrix as scene.mesh does (no rest, no spin). The scene's teardown frees its children: the
+ * group releases nothing (release() is for a script's own groups).
+ */
+export const group: NodeFactory = (params) => {
+  let scene: SceneValue | null = null;
+  let object: SceneObjectValue | null = null;
+  /** The vector inputs while they carry a vector: they override the params. */
+  const driven: Record<'position' | 'rotation' | 'scale', [number, number, number] | null> = { position: null, rotation: null, scale: null };
+  const applyTransform = () => {
+    if (!scene || !object) return;
+    const s = driven.scale ?? vec3OrNull(params.scale) ?? [1, 1, 1];
+    // A scale of 0 is kept at MIN_SCALE, with its sign, as the mesh keeps it (a singular matrix reads differently).
+    const scale: [number, number, number] = [nonZeroScale(s[0]), nonZeroScale(s[1]), nonZeroScale(s[2])];
+    scene.setMatrix(object, transformMatrix({ position: driven.position ?? vec3(params.position), rotation: driven.rotation ?? vec3(params.rotation), scale }));
+  };
+  const readInputs = (inputs: PortValues) => {
+    let changed = false;
+    for (const key of ['position', 'rotation', 'scale'] as const) {
+      const next = vec3OrNull(inputs[key]);
+      if (!sameVec3(next, driven[key])) changed = true;
+      driven[key] = next;
+    }
+    return changed;
+  };
+  return {
+    init(inputs) {
+      scene = inputs.scene as SceneValue;
+      object = scene.createGroup();
+      for (const child of (inputs.children as SceneObjectValue[]) ?? []) scene.addChild(object, child);
+      readInputs(inputs);
+      applyTransform();
+      return { object };
+    },
+    update(inputs) {
+      if (readInputs(inputs)) applyTransform();
+    },
+    onParamChange(key) {
+      if (key === 'position' || key === 'rotation' || key === 'scale') applyTransform();
+    },
+  };
+};
+
 /** True for a GLB container ("glTF" magic), false for glTF JSON. */
 export const isGlb = (data: ArrayBuffer) => data.byteLength >= 4 && new DataView(data).getUint32(0, true) === 0x46546c67;
 
