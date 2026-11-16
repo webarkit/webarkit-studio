@@ -8,6 +8,7 @@ import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLi
 import { nonZeroScale } from '../../core/math';
 import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type TextureWrap } from '../../core/material';
 import { rgbaToHex } from '../../core/color';
+import { DIRECTIONAL_SHADOW_NEAR, directionalShadowFar, engineIntensity, lightSpec, normalizeLight, shadowCatcherSpec, SHADOW_EXTENT, SPOT_SHADOW_FAR, SPOT_SHADOW_NEAR, type NormalLight } from '../../core/light';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -55,22 +56,77 @@ const renderer: CodeEmitter = ({ name, params }) => {
   return {
     imports: [THREE_IMPORT],
     setup: `// Transparent: the camera video shows through.
-const ${r} = new THREE.WebGLRenderer({ alpha: true, antialias: ${Boolean(params.antialias)} });`,
+const ${r} = new THREE.WebGLRenderer({ alpha: true, antialias: ${Boolean(params.antialias)} });
+// Shadow maps, as the studio's renderer: used only when a light casts.
+${r}.shadowMap.enabled = true;
+${r}.shadowMap.type = THREE.PCFShadowMap;`,
     outputs: { renderer: r },
   };
 };
 
 /** The Three.js adapter's lights (createLight). */
-function lightCode(v: string, kind: string, color: string, intensity: string): string {
-  if (kind === 'ambient') return `const ${v} = new THREE.AmbientLight(${color}, ${intensity});`;
-  if (kind === 'hemisphere')
-    return `const ${v} = new THREE.HemisphereLight(${color}, 0x444444, ${intensity});
-${v}.position.set(0, 0, 1); // the sky: +Z, out of the marker plane`;
-  return `// Directional: its target is its child, so the direction follows the light (and any anchor it is on).
-const ${v} = new THREE.DirectionalLight(${color}, ${intensity});
-${v}.position.set(200, -300, 1000);
-${v}.add(${v}.target);
-${v}.target.position.set(-200, 300, -1000);`;
+/**
+ * scene.light as three.js statements (#134), as the Three.js adapter builds it: point and spot intensities in candela at
+ * 1 m, times 10⁶ for millimetres; a directional or spot light's target is its child, so its direction follows the
+ * light (and any anchor it is on); shadows with the camera set for millimetres. A directional light with the default
+ * position and target is written as before #134.
+ */
+export function threeLightCode(v: string, spec: NormalLight, color: string): { code: string; locals: string[] } {
+  const intensity = decimal(engineIntensity(spec.kind, spec.intensity));
+  const v3 = (p: readonly number[]) => p.map(decimal).join(', ');
+  const toward = (p: readonly number[], t: readonly number[]) => v3([t[0] - p[0], t[1] - p[1], t[2] - p[2]]);
+  if (spec.kind === 'ambient') return { code: `const ${v} = new THREE.AmbientLight(${color}, ${intensity});`, locals: [] };
+  if (spec.kind === 'hemisphere')
+    return {
+      code: `const ${v} = new THREE.HemisphereLight(${color}, 0x444444, ${intensity});
+${v}.position.set(0, 0, 1); // the sky: +Z, out of the marker plane`,
+      locals: [],
+    };
+  const lines: string[] = [];
+  const locals: string[] = [];
+  if (spec.kind === 'point') {
+    lines.push(`// Point: candela at 1 m, times 10⁶ for mm; inverse square${spec.distance ? `, none past ${decimal(spec.distance)} mm` : ''}.`);
+    lines.push(`const ${v} = new THREE.PointLight(${color}, ${intensity}, ${decimal(spec.distance)}, 2);`);
+    lines.push(`${v}.position.set(${v3(spec.position)});`);
+    return { code: lines.join('\n'), locals };
+  }
+  if (spec.kind === 'spot') {
+    lines.push(`// Spot: candela at 1 m, times 10⁶ for mm; its target is its child, so it follows any anchor it is on.`);
+    lines.push(`const ${v} = new THREE.SpotLight(${color}, ${intensity}, ${decimal(spec.distance)}, THREE.MathUtils.degToRad(${decimal(spec.angle)}), ${decimal(spec.penumbra)}, 2);`);
+  } else {
+    lines.push(`// Directional: its target is its child, so the direction follows the light (and any anchor it is on).`);
+    lines.push(`const ${v} = new THREE.DirectionalLight(${color}, ${intensity});`);
+  }
+  lines.push(`${v}.position.set(${v3(spec.position)});`);
+  lines.push(`${v}.add(${v}.target);`);
+  lines.push(`${v}.target.position.set(${toward(spec.position, spec.target)});`);
+  if (spec.castShadow) {
+    lines.push(`// Shadows, the camera set for millimetres as in the studio.`);
+    lines.push(`${v}.castShadow = true;`);
+    lines.push(`${v}.shadow.mapSize.set(${spec.shadowMapSize}, ${spec.shadowMapSize});`);
+    lines.push(`${v}.shadow.bias = ${decimal(spec.shadowBias)};`);
+    if (spec.kind === 'directional') {
+      lines.push(`Object.assign(${v}.shadow.camera, { left: -${SHADOW_EXTENT}, right: ${SHADOW_EXTENT}, top: ${SHADOW_EXTENT}, bottom: -${SHADOW_EXTENT}, near: ${DIRECTIONAL_SHADOW_NEAR}, far: ${directionalShadowFar(spec)} });`);
+    } else {
+      lines.push(`Object.assign(${v}.shadow.camera, { near: ${SPOT_SHADOW_NEAR}, far: ${SPOT_SHADOW_FAR} });`);
+      if (spec.distance) {
+        // As the Three.js adapter: SpotLightShadow ends its camera at the light's distance; the studio keeps 3 m.
+        lines.push(`{
+  // The shadow camera keeps its ${SPOT_SHADOW_FAR} mm far plane, as in the studio (three ends it at the light's distance).
+  const updateShadow = ${v}.shadow.updateMatrices.bind(${v}.shadow);
+  ${v}.shadow.updateMatrices = (shadowLight) => {
+    const reach = ${v}.distance;
+    ${v}.distance = 0;
+    updateShadow(shadowLight);
+    ${v}.distance = reach;
+  };
+}`);
+        locals.push('updateShadow', 'shadowLight', 'reach');
+      }
+    }
+    lines.push(`${v}.shadow.camera.updateProjectionMatrix();`);
+  }
+  return { code: lines.join('\n'), locals };
 }
 
 const scene: CodeEmitter = (ctx) => {
@@ -78,7 +134,7 @@ const scene: CodeEmitter = (ctx) => {
   const r = required(ctx, 'renderer');
   const s = name();
   const lights = params.defaultLights
-    ? `\n// Default lights.\n${lightCode(name('sky'), 'hemisphere', "'#ffffff'", '2.5')}\n${lightCode(name('sun'), 'directional', "'#ffffff'", '1.5')}\n${s}.add(${name('sky')}, ${name('sun')});`
+    ? `\n// Default lights.\n${threeLightCode(name('sky'), normalizeLight({ kind: 'hemisphere', color: '#ffffff', intensity: 2.5 }), "'#ffffff'").code}\n${threeLightCode(name('sun'), normalizeLight({ kind: 'directional', color: '#ffffff', intensity: 1.5 }), "'#ffffff'").code}\n${s}.add(${name('sky')}, ${name('sun')});`
     : '';
   return {
     imports: [THREE_IMPORT],
@@ -106,12 +162,15 @@ const light: CodeEmitter = (ctx) => {
   const s = required(ctx, 'scene');
   paramsOnly(ctx, 'color');
   const v = name();
+  const spec = lightSpec(params);
+  const { code, locals } = threeLightCode(v, spec, literal(String(params.color)));
   return {
     imports: [THREE_IMPORT],
-    setup: `${lightCode(v, String(params.kind), literal(String(params.color)), String(num(params.intensity)))}
+    setup: `${code}
 ${s}.add(${v}); // camera space, until an anchor takes it`,
+    locals,
     // `lightKind`: an anchor reads it (a hemisphere light cannot follow one, see the anchor).
-    outputs: { object: v, lightKind: String(params.kind) },
+    outputs: { object: v, lightKind: spec.kind },
   };
 };
 
@@ -230,9 +289,38 @@ const mesh: CodeEmitter = (ctx) => {
     imports: [THREE_IMPORT],
     setup: `const ${m} = new THREE.Mesh(${g}, ${withMaterial ?? `new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))}, metalness: 0, roughness: 1 })`});
 ${m}.position.set(${x}, ${y}, ${decimal(z + lift)});${lift ? ` // resting on the marker: lifted by ${decimal(lift)} mm, its geometry's bottom` : ''}
-${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}`,
+${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}${shadowCode(m, params)}`,
     frame: params.spin ? `${m}.rotation.z += delta * 0.0005; // spins about its own Z axis` : undefined,
     outputs: { object: m },
+  };
+};
+
+/** castShadow and receiveShadow, as the adapter's setShadowCasting: on the mesh, or on every mesh of a model. */
+function shadowCode(v: string, params: Record<string, unknown>, model = false): string {
+  const [cast, receive] = [params.castShadow === true, params.receiveShadow === true];
+  if (!cast && !receive) return '';
+  if (!model) return `${cast ? `\n${v}.castShadow = true;` : ''}${receive ? `\n${v}.receiveShadow = true;` : ''}`;
+  return `\n${v}.traverse((part) => {
+  if (!part.isMesh) return;
+  part.castShadow = ${cast};
+  part.receiveShadow = ${receive};
+});`;
+}
+
+/** scene.shadowCatcher: a plane of ShadowMaterial, sized from the marker when its markerInfo is wired (#134). */
+const shadowCatcher: CodeEmitter = (ctx) => {
+  const { name, params, inputs } = ctx;
+  required(ctx, 'scene');
+  const c = name();
+  const spec = shadowCatcherSpec(params);
+  const info = inputs.markerInfo as string | undefined;
+  const sized = info ? `\nif (${info}) ${c}.geometry = new THREE.PlaneGeometry(${info}.widthMM, ${info}.heightMM); // the marker's size` : '';
+  return {
+    imports: [THREE_IMPORT],
+    setup: `// Shows only the shadows cast on it.
+const ${c} = new THREE.Mesh(new THREE.PlaneGeometry(${decimal(spec.width)}, ${decimal(spec.depth)}), new THREE.ShadowMaterial({ opacity: ${decimal(spec.opacity)} }));
+${c}.receiveShadow = true;${sized}`,
+    outputs: { object: c },
   };
 };
 
@@ -418,6 +506,7 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   // One per shape of the core's GEOMETRY_TYPES (#132).
   ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,
+  'scene.shadowCatcher': shadowCatcher,
   'scene.anchor': anchor,
   'output.arView': arView,
   'tracking.selectMarker': selectMarker,

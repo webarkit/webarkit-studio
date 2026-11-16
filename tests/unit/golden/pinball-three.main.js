@@ -38,6 +38,9 @@ const filter = {"kind":"oneEuro","minCutOff":0.0001,"beta":0.01,"warmUp":5};
 // renderer (three.renderer)
 // Transparent: the camera video shows through.
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+// Shadow maps, as the studio's renderer: used only when a light casts.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 // controller (jsartoolkitNFT.controller)
 // The tracker processes a copy of the video letterboxed into a 4:3 frame of about 320 px (@webarkit/camera-view's rule).
