@@ -163,7 +163,7 @@ describe.each(ENGINES)('%s: lights (#134)', (engine) => {
         const d = sun.native as DirectionalLight;
         expect([d.autoUpdateExtends, d.orthoLeft, d.orthoRight, d.orthoTop, d.orthoBottom, d.shadowMinZ, d.shadowMaxZ]).toEqual([false, -250, 250, 250, -250, 1, reach]);
         const dg = generatorOf(sun)!;
-        expect([dg.getShadowMap()!.getSize().width, dg.bias, dg.normalBias, dg.forceBackFacesOnly]).toEqual([512, -0.001, 0, true]);
+        expect([dg.getShadowMap()!.getSize().width, dg.bias, dg.normalBias, dg.forceBackFacesOnly]).toEqual([512, 0.001, 0, true]);
         const s = spot.native as SpotLight;
         expect([s.shadowMinZ, s.shadowMaxZ]).toEqual([10, 3000]);
         expect(generatorOf(spot)!.getShadowMap()!.getSize().width).toBe(1024);

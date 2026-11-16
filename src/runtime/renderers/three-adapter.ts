@@ -386,10 +386,25 @@ function createThreeScene(
         case 'point':
           light = new THREE.PointLight(color, intensity);
           break;
-        case 'spot':
-          light = new THREE.SpotLight(color, intensity);
-          light.add((light as THREE.SpotLight).target);
+        case 'spot': {
+          const spot = new THREE.SpotLight(color, intensity);
+          spot.add(spot.target);
+          // SpotLightShadow ends its camera at the light's distance when it has one (`light.distance || camera.far`,
+          // SpotLightShadow.js, updateMatrices); Babylon.js's shadow does not stop there. Both keep SPOT_SHADOW_FAR: the
+          // distance is hidden from that one call, so a shadow past the light's reach falls the same on both.
+          const update = spot.shadow.updateMatrices.bind(spot.shadow);
+          spot.shadow.updateMatrices = (l: THREE.Light) => {
+            const distance = spot.distance;
+            spot.distance = 0;
+            try {
+              update(l);
+            } finally {
+              spot.distance = distance;
+            }
+          };
+          light = spot;
           break;
+        }
         default:
           light = new THREE.DirectionalLight(color, intensity);
           light.add((light as THREE.DirectionalLight).target);

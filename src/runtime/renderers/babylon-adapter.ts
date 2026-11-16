@@ -54,7 +54,7 @@ import {
   normalizeShadowCatcher,
   SHADOW_EXTENT,
   SPOT_SHADOW_NEAR,
-  spotShadowFar,
+  SPOT_SHADOW_FAR,
   type LightKind,
   type NormalLight,
 } from '../../core/light';
@@ -276,7 +276,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       light.range = range;
       light.falloffType = Light.FALLOFF_GLTF;
       light.shadowMinZ = SPOT_SHADOW_NEAR;
-      light.shadowMaxZ = spotShadowFar(spec);
+      light.shadowMaxZ = SPOT_SHADOW_FAR;
     } else if (light instanceof PointLight) {
       light.position = position;
       light.range = range;
@@ -297,7 +297,11 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       for (const mesh of casters) generator.addShadowCaster(mesh, false);
       generators.set(light, generator);
     }
-    generator.bias = spec.shadowBias;
+    // Three.js adds its bias to the receiver's depth (shadowmap_pars_fragment, `shadowCoord.z += shadowBias`: negative
+    // keeps a lit face out of its own shadow); Babylon.js adds its own to the caster's depth in the map
+    // (shadowMapVertexMetric, `+ biasAndScaleSM.x`: positive does). Both on the depth normalised over the shadow camera's
+    // near..far, linear for a directional light: the same offset, the other way.
+    generator.bias = -spec.shadowBias;
     generator.normalBias = 0;
   };
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */

@@ -35,7 +35,8 @@ export const DEFAULT_LIGHT_TARGET: Vec3 = [0, 0, 0];
 /**
  * The shadow cameras, the same on both engines and set for millimetres (the ruling on #134): Three.js's defaults (a
  * ±5 mm directional camera) leave most of a marker-sized shadow outside it. A directional light's camera covers ±250 mm
- * about its line, from 1 mm to 1 m past its target; a spot's, its cone from 10 mm to its distance, or 3 m.
+ * about its line, from 1 mm to 1 m past its target; a spot's, its cone from 10 mm to 3 m, whatever its distance (a
+ * shadow then falls the same on both engines past the light's reach, where it lights nothing).
  */
 export const SHADOW_EXTENT = 250;
 export const DIRECTIONAL_SHADOW_NEAR = 1;
@@ -43,7 +44,6 @@ export const SPOT_SHADOW_NEAR = 10;
 export const SPOT_SHADOW_FAR = 3000;
 export const directionalShadowFar = (spec: Pick<NormalLight, 'position' | 'target'>) =>
   Math.hypot(spec.position[0] - spec.target[0], spec.position[1] - spec.target[1], spec.position[2] - spec.target[2]) + 1000;
-export const spotShadowFar = (spec: Pick<NormalLight, 'distance'>) => spec.distance || SPOT_SHADOW_FAR;
 
 /** A spot's half-angle, in degrees: the engines need a cone narrower than a half turn. */
 export const MIN_SPOT_ANGLE = 1;
