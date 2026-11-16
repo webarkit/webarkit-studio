@@ -156,6 +156,8 @@ export function validateGraph(
   }
 
   const inputUse = new Map<string, number>();
+  /** Each scene object's parents (#136): the parent inputs its output is wired into, as `node.port`. */
+  const parents = new Map<string, { node: GraphNode; label: string; into: string[] }>();
   for (const e of g.edges) {
     const src = nodes.get(e.from.node);
     const dst = nodes.get(e.to.node);
@@ -176,6 +178,24 @@ export function validateGraph(
     inputUse.set(key, (inputUse.get(key) ?? 0) + 1);
     if (inp && !inp.multiple && (inputUse.get(key) ?? 0) > 1) {
       problems.push(`input ${key} accepts a single connection`);
+    }
+    // A parent input is a sceneObject input that takes several links (an anchor's or a group's children, AR View's
+    // objects, a plugin's container): known by its definition, never by a node's or a port's name. A single
+    // sceneObject input (an action's target) is not a parent.
+    if (out && inp && inp.type === 'sceneObject' && inp.multiple) {
+      const from = `${e.from.node}:${e.from.port}`;
+      const entry = parents.get(from) ?? { node: src, label: out.label, into: [] };
+      entry.into.push(`${e.to.node}.${e.to.port}`);
+      parents.set(from, entry);
+    }
+  }
+  // An object has one parent (#136): wired into two, or twice into one, the engines would each keep a different one.
+  // A work in progress may hold it (the editor draws the link); Run and the export refuse it.
+  if (!unfinished) {
+    for (const { node, label, into } of parents.values()) {
+      if (into.length < 2) continue;
+      const def = effectiveDefinition(node, catalog);
+      problems.push(`node ${node.id} (${def?.label ?? node.type}): its ${label} is wired into more than one parent (${into.join(', ')}): an object has one parent`);
     }
   }
 

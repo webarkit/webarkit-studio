@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type ParamValue } from '../../src/core/graph';
+import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type GraphDocument, type ParamValue } from '../../src/core/graph';
 import { LOADED_PLUGINS } from '../../src/core/plugins';
-import { NODE_CATALOG } from '../../src/nodes/catalog';
+import { NODE_CATALOG, type NodeDefinition } from '../../src/nodes/catalog';
 import { effectiveDefinition } from '../../src/core/script';
 import { CORE_SOCKET_TYPES, isSocketType, socketsCompatible } from '../../src/core/sockets';
 import { graph, TEST_CATALOG } from '../helpers/fake-catalog';
@@ -306,5 +306,57 @@ describe('catalog', () => {
       expect(def.params.url, type).toMatchObject({ kind: 'string', asset: 'file' });
     }
     expect(NODE_CATALOG['source.videoFile'].params.loop).toMatchObject({ kind: 'boolean', default: true, live: true });
+  });
+});
+
+describe('one parent per scene object (#136)', () => {
+  // Parents are known by their input's definition (a sceneObject input that takes several links), never by a node's or
+  // a port's name: a plugin's container is a parent too. A single sceneObject input (a target) is not a parent.
+  const node = (type: string, inputs: NodeDefinition['inputs'], outputs: NodeDefinition['outputs'] = {}): NodeDefinition => ({
+    type,
+    label: type,
+    category: 'scene',
+    provider: 'test',
+    description: '',
+    inputs,
+    outputs,
+    params: {},
+  });
+  const catalog: Record<string, NodeDefinition> = {
+    'test.object': node('test.object', {}, { object: { type: 'sceneObject', label: 'Object' } }),
+    'test.box': node('test.box', { contents: { type: 'sceneObject', label: 'Contents', multiple: true, optional: true } }, { object: { type: 'sceneObject', label: 'Box' } }),
+    'test.view': node('test.view', { things: { type: 'sceneObject', label: 'Things', multiple: true, optional: true } }),
+    'test.toggle': node('test.toggle', { target: { type: 'sceneObject', label: 'Target' } }),
+  };
+  const check = (doc: GraphDocument, unfinished = false) => () => validateGraph(doc, catalog, {}, { unfinished });
+
+  it('one parent, and any number of single targets, is valid', () => {
+    const doc = graph(
+      [['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view'], ['t1', 'test.toggle'], ['t2', 'test.toggle']],
+      [['o', 'object', 'b', 'contents'], ['b', 'object', 'v', 'things'], ['o', 'object', 't1', 'target'], ['o', 'object', 't2', 'target']],
+    );
+    expect(check(doc)).not.toThrow();
+  });
+
+  it('an object wired into two parents is refused, naming the object and both parents', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'v', 'things']]);
+    expect(check(doc)).toThrow(/node o \(test\.object\): its Object is wired into more than one parent \(b\.contents, v\.things\): an object has one parent/);
+  });
+
+  it('the same object wired twice into the same parent input is refused too', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'b', 'contents']]);
+    expect(check(doc)).toThrow(/node o \(test\.object\): its Object is wired into more than one parent \(b\.contents, b\.contents\)/);
+  });
+
+  it('a work in progress (an autosave, a file on Import) still opens; Run stays strict', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'v', 'things']]);
+    expect(check(doc, true)).not.toThrow();
+    expect(check(doc)).toThrow(GraphValidationError);
+  });
+
+  it('holds for every demo graph', () => {
+    for (const name of readdirSync('public/graphs').filter((f) => f.endsWith('.json'))) {
+      expect(() => validateGraph(JSON.parse(readFileSync(`public/graphs/${name}`, 'utf8'))), name).not.toThrow();
+    }
   });
 });
