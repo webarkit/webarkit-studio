@@ -398,8 +398,8 @@ export const environment: NodeFactory = (params, ctx) => {
   return {
     async init(inputs) {
       scene = inputs.scene as SceneValue;
-      const spec = environmentSpec(params);
       const url = String(params.url ?? '').trim();
+      let failed: string | null = null;
       if (url) {
         // Fetched whatever the source, so a live switch to HDR has the file; it fails the node only when it is used.
         const href = new URL(url, ctx.baseUrl).href;
@@ -408,9 +408,15 @@ export const environment: NodeFactory = (params, ctx) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           hdr = await res.arrayBuffer();
         } catch (err) {
-          if (spec.source === 'hdr') throw new Error(`cannot load the environment ${href} (${LOAD_HINT}): ${(err as Error).message}`);
-          ctx.log(`environment: ${href} not loaded (${(err as Error).message}); the neutral source does not need it`);
+          failed = `cannot load the environment ${href} (${LOAD_HINT}): ${(err as Error).message}`;
         }
+      }
+      // The params as they are once the fetch settles: a Source edited meanwhile decides (HDR to Neutral during a
+      // failing fetch starts Neutral, not a failed node). Live edits during createEnvironment are reconciled below.
+      const spec = environmentSpec(params);
+      if (failed) {
+        if (spec.source === 'hdr') throw new Error(failed);
+        ctx.log(`environment: ${failed.replace(/^cannot load the environment /, '')} not loaded; the neutral source does not need it`);
       }
       if (spec.source === 'hdr' && !hdr) throw new Error('the source is HDR, but no .hdr URL is set');
       // A Stop during the fetch: nothing is made (AGENTS.md, "An async init checks …").

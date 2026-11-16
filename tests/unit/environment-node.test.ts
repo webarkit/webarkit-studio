@@ -71,6 +71,21 @@ describe('scene.environment (#135)', () => {
     expect(logs.join('\n')).toMatch(/not loaded/);
   });
 
+  it('Source switched from HDR to Neutral while a failing fetch runs: it starts with Neutral, not a failed node', async () => {
+    let fail!: () => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((_resolve, reject) => (fail = () => reject(new Error('offline'))))));
+    const { scene, calls } = fakeScene();
+    const p = params({ source: 'hdr', url: 'room.hdr', intensity: 2 });
+    const node = environment(p, ctx);
+    const init = node.init!({ scene });
+    p.source = 'neutral'; // a live edit while the file loads; the node has no environment to change yet
+    node.onParamChange!('source', 'neutral');
+    fail();
+    await expect(init).resolves.toBeDefined();
+    expect(calls[0]).toEqual(['createEnvironment', { source: 'neutral', intensity: 2, rotation: 0 }, undefined]);
+    expect(logs.join('\n')).toMatch(/not loaded/);
+  });
+
   it('a second environment in the scene is refused at init, with a clear message', async () => {
     await expect(environment(params(), ctx).init!({ scene: fakeScene(true).scene })).rejects.toThrow(/already has an Environment: one per scene/);
   });
