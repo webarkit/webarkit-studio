@@ -354,9 +354,5 @@ describe('one parent per scene object (#136)', () => {
     expect(check(doc)).toThrow(GraphValidationError);
   });
 
-  it('holds for every demo graph', () => {
-    for (const name of readdirSync('public/graphs').filter((f) => f.endsWith('.json'))) {
-      expect(() => validateGraph(JSON.parse(readFileSync(`public/graphs/${name}`, 'utf8'))), name).not.toThrow();
-    }
-  });
+  // Every demo graph holds: "demo graph … is valid against the real catalog" above runs the strict check on each.
 });

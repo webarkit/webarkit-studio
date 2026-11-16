@@ -303,8 +303,13 @@ const group: CodeEmitter = (ctx) => {
   const { name, params, inputs } = ctx;
   required(ctx, 'scene');
   paramsOnly(ctx, 'position', 'rotation', 'scale');
+  // three.js takes a hemisphere light's sky from its world position: in a group it would point at the group. The
+  // studio keeps such a light in the root and turns it each frame; the export refuses it, as the anchor does. A group
+  // therefore never holds one, so a group nested in a group or an anchor cannot carry one past their checks either.
+  const hemispheres = ctx.fromEach('children').filter((c) => c.outputs.lightKind === 'hemisphere').map((c) => c.node);
+  if (hemispheres.length) throw new Error(`a hemisphere light in a group is not written yet (${hemispheres.join(', ')}): leave it in the scene root`);
   const g = name();
-  // As scene.group (and scene.mesh): each scale component at least MIN_SCALE in magnitude, with its sign.
+  // As the runtime's scene.group and scene.mesh: each scale component at least MIN_SCALE in magnitude, with its sign.
   const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
   const [x, y, z] = vec3(params.position);
   const children = list(inputs.children);

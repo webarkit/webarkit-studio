@@ -45,6 +45,20 @@ describe('the exported group (#136)', () => {
     exported.matrix.elements.forEach((v, i) => expect(v, `element ${i}`).toBeCloseTo(studio[i], 6));
   });
 
+  it.each([
+    ['in a group', false],
+    ['in a group on the anchor', true],
+  ])('a hemisphere light %s is refused by name, as on the anchor (its sky is its world position)', (_, onAnchor) => {
+    const doc = grouped({ position: [100, 0, 0] });
+    doc.nodes.push({ id: 'sky', type: 'scene.light', position: { x: 0, y: 0 }, params: { kind: 'hemisphere', color: '#ffffff', intensity: 1 } } as never);
+    doc.edges.push({ id: 'h1', from: { node: 'scene', port: 'scene' }, to: { node: 'sky', port: 'scene' } }, { id: 'h2', from: { node: 'sky', port: 'object' }, to: { node: 'grp', port: 'children' } });
+    if (!onAnchor) {
+      doc.edges = doc.edges.filter((e) => e.id !== 'g3');
+      doc.edges.push({ id: 'g4', from: { node: 'grp', port: 'object' }, to: { node: 'view', port: 'objects' } });
+    }
+    expect(() => main(doc)).toThrow(/grp \(scene\.group\): a hemisphere light in a group is not written yet \(sky\): leave it in the scene root/);
+  });
+
   // No exportable node gives a vector3 yet (math.* has no emitter), so the emitter is called with the input wired.
   it.each(['position', 'rotation', 'scale'])('a wired %s input is refused', (port) => {
     const emit = codeEmittersFor('three')['scene.group'];

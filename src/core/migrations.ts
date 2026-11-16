@@ -231,7 +231,8 @@ export function loadGraphDocument(doc: unknown, catalog?: Parameters<typeof vali
 
 /**
  * An autosave or a file on Import (#86), which may be work in progress: as loadGraphDocument(), but its required inputs may be
- * unconnected. Run and the standalone app export still refuse such a graph, through loadGraphDocument().
+ * unconnected, and an object may be wired into more than one parent (#136). Run and the standalone app export still
+ * refuse such a graph, through loadGraphDocument().
  */
 export function loadUnfinishedGraphDocument(doc: unknown): MigrationResult<GraphDocument> {
   const result = migrateGraph(doc);

@@ -668,7 +668,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       max: [0, 1, 2].map((i) => Math.max(...corners.map((c) => c[i]))) as V3,
     };
   };
-  const MOVED_TURNED_SCALED = T([10, -5, -100], [20, 30, 40], [1.5, 0.75, 1]);
+  const MOVED_TURNED_SCALED = T([10, -5, -100], [20, 30, 40], [1.5, -0.75, 1]); // one axis mirrored
   const OUTER = T([0, 0, -120], [0, 0, 30], [2, 2, 2]);
   const INNER = T([10, 0, 0], [0, 45, 0], [1, 0.5, 1]);
   /** A floor 600 mm square, 200 mm away, of the lit grey: what a light in a group lights. */
@@ -1369,7 +1369,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     },
     {
       // A group as scene.group sets it, moved, turned and scaled per axis: its child where the composed matrix puts it.
-      name: 'a child under a moved, turned and scaled group: the same place and bounds on both (#136)',
+      name: 'a child under a moved, turned and scaled group, one axis mirrored: the same place and bounds on both (#136)',
       ops: [...groupOps('g', MOVED_TURNED_SCALED), ...box('a', 20, [10, 0, 0]), { op: 'addChild', parent: 'g', child: 'a' }],
       regions: GRID,
       rules: [{ bounds: 'a', ...boundsUnder(MOVED_TURNED_SCALED, [10, 0, 0], 20) }, ...sameEverywhere(GRID)],
@@ -1398,6 +1398,30 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { frame: 'lit', region: 'c', is: 'drawn' },
         { frame: 'lit', region: 'c', is: 'same' },
         { frame: 'lit', region: 'edge', is: 'same' },
+        { region: 'c', is: 'drawn' },
+        { region: 'c', is: 'same' },
+        { region: 'c', is: 'changed', from: 'lit' },
+      ],
+    },
+    {
+      // Hiding a group turns off a hemisphere light in it too: the Three.js adapter keeps an adopted hemisphere in the root
+      // and hides it when any ancestor of its parent is hidden; Babylon.js's setEnabled reaches it as a child.
+      name: 'hiding a group turns off the hemisphere light in it, the same on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        ...meshOps('wall', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200]),
+        ...groupOps('outer', T([0, 0, -150])),
+        ...groupOps('inner', T([0, 0, 0]), 'outer'),
+        { op: 'createLight', id: 'sky', spec: { kind: 'hemisphere', color: '#ffffff', intensity: 2 } },
+        { op: 'addRoot', id: 'sky' },
+        { op: 'addChild', parent: 'inner', child: 'sky' },
+        { op: 'render', capture: 'lit' },
+        { op: 'setVisible', id: 'outer', visible: false },
+      ],
+      regions: { c: [62, 62, 4, 4] },
+      rules: [
+        { frame: 'lit', region: 'c', is: 'drawn' },
+        { frame: 'lit', region: 'c', is: 'same' },
         { region: 'c', is: 'drawn' },
         { region: 'c', is: 'same' },
         { region: 'c', is: 'changed', from: 'lit' },

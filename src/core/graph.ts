@@ -101,10 +101,11 @@ export class GraphValidationError extends Error {
  * Validation of a document of the current format; loadGraphDocument()
  * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles, required inputs connected.
+ * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136).
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
- * `unfinished`: a graph still being built may leave required inputs unconnected. Everything else is checked.
+ * `unfinished`: a graph still being built may leave required inputs unconnected, and may wire an object into more
+ * than one parent (the editor draws the link). Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
