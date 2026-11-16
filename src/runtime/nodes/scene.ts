@@ -6,8 +6,9 @@ import { clampRgba, hexToRgba, isRgba, rgbaToHex, type Rgba } from '../../core/c
 import type { ParamValue } from '../../core/graph';
 import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
 import { materialSpec, textureSpec, type MaterialSpec } from '../../core/material';
+import { lightSpec, shadowCatcherSpec } from '../../core/light';
 import { markerOffset, nonZeroScale } from '../../core/math';
-import { transformMatrix, type LightSpec, type MaterialSetup, type TextureSource } from '../renderers/adapter';
+import { transformMatrix, type MaterialSetup, type TextureSource } from '../renderers/adapter';
 import { LOAD_HINT, sourceUrl } from './sources';
 import type {
   CameraValue,
@@ -59,11 +60,8 @@ export const light: NodeFactory = (params) => {
   return {
     init(inputs) {
       scene = inputs.scene as SceneValue;
-      handle = scene.createLight({
-        kind: String(params.kind) as LightSpec['kind'],
-        color: colour.hex(),
-        intensity: Number(params.intensity),
-      });
+      // The colour is the param's, normalised; a colour input drives it after (drivenColor).
+      handle = scene.createLight({ ...lightSpec(params), color: colour.hex() });
       // In the scene root (camera space) until something adopts it, e.g. an anchor.
       scene.addRoot(handle);
       colour.init(inputs, (c) => scene!.setColor(handle!, c));
@@ -73,8 +71,11 @@ export const light: NodeFactory = (params) => {
       colour.update(inputs);
     },
     onParamChange(key, value) {
-      if (key === 'intensity' && scene && handle) scene.setIntensity(handle, Number(value));
-      if (key === 'color') colour.paramChanged();
+      if (!scene || !handle) return;
+      if (key === 'intensity') scene.setIntensity(handle, Number(value));
+      else if (key === 'color') colour.paramChanged();
+      // Position, target, distance, cone, shadows (#134): the light is changed in place; its kind is not live.
+      else scene.setLight(handle, lightSpec(params));
     },
   };
 };
@@ -224,6 +225,7 @@ export const mesh: NodeFactory = (params) => {
       colour.init(inputs, (c) => scene!.setColor(object!, c));
       readMaterial(inputs);
       applyTransform();
+      if (params.castShadow || params.receiveShadow) scene.setShadowCasting(object, params.castShadow === true, params.receiveShadow === true);
       return { object };
     },
     update(inputs, frame) {
@@ -238,6 +240,7 @@ export const mesh: NodeFactory = (params) => {
     onParamChange(key) {
       if (key === 'color') colour.paramChanged();
       if (key === 'position' || key === 'rotation' || key === 'scale' || key === 'rest') applyTransform();
+      if ((key === 'castShadow' || key === 'receiveShadow') && scene && object) scene.setShadowCasting(object, params.castShadow === true, params.receiveShadow === true);
     },
   };
 };
@@ -353,6 +356,34 @@ export const textureNode: NodeFactory = (params, ctx) => {
   };
 };
 
+/**
+ * scene.shadowCatcher — a plane on the marker that shows only the shadows cast on it (#134), centred on its origin (the
+ * marker's centre under an anchor with Center on). With markerInfo wired it takes the marker's size; every param is
+ * live. The scene's teardown frees it, as a mesh's.
+ */
+export const shadowCatcher: NodeFactory = (params) => {
+  let scene: SceneValue | null = null;
+  let object: SceneObjectValue | null = null;
+  let marker: unknown;
+  const spec = () => shadowCatcherSpec(params, (marker as MarkerInfoValue | undefined) ?? null);
+  return {
+    init(inputs) {
+      scene = inputs.scene as SceneValue;
+      marker = inputs.markerInfo;
+      object = scene.createShadowCatcher(spec());
+      return { object };
+    },
+    update(inputs) {
+      if (inputs.markerInfo === marker || !scene || !object) return;
+      marker = inputs.markerInfo;
+      scene.setShadowCatcher(object, spec());
+    },
+    onParamChange() {
+      if (scene && object) scene.setShadowCatcher(object, spec());
+    },
+  };
+};
+
 /** scene.anchor — applies the tracked pose to its children. */
 export const anchor: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
@@ -453,6 +484,7 @@ export const gltf: NodeFactory = (params, ctx) => {
       ctx.log(`glTF model loaded (${binary ? 'GLB' : 'glTF JSON'}, ${Math.round(data.byteLength / 1024)} KB)${clips.length ? `, clips: ${clips.join(', ')}` : ''}`);
       applyTransform();
       if (params.autoplay) applyAutoplay();
+      if (params.castShadow || params.receiveShadow) scene.setShadowCasting(model, params.castShadow === true, params.receiveShadow === true);
       return { object: model };
     },
     update(inputs) {
@@ -468,6 +500,7 @@ export const gltf: NodeFactory = (params, ctx) => {
     onParamChange(key) {
       if (GLTF_TRANSFORM_PARAMS.includes(key)) applyTransform();
       if (key === 'autoplay') applyAutoplay();
+      if ((key === 'castShadow' || key === 'receiveShadow') && scene && model) scene.setShadowCasting(model, params.castShadow === true, params.receiveShadow === true);
     },
   };
 };

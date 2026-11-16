@@ -584,7 +584,13 @@ export const CORE_NODES: NodeDefinition[] = [
     description:
       'A light. Left unconnected (or wired to AR View) it lives in camera space and lights the scene from the viewer; ' +
       'wired to a Marker Anchor it follows the marker and lights from above it. ' +
-      'Turn off "Default lights" on the Scene to light only with these.',
+      'Turn off "Default lights" on the Scene to light only with these. ' +
+      'Point and spot lights sit at Position; a spot and a directional light shine from Position towards Target (mm, in ' +
+      'the space of what the light is wired to); hemisphere and ambient lights read neither. A point or spot light fades with ' +
+      'the square of the distance and stops at Distance (0: no limit); its intensity is in candela at 1 m. Angle and ' +
+      'Penumbra shape a spot\'s cone: its edge is the same on both renderers, the fade inside the penumbra is not. ' +
+      'Directional and spot lights can cast shadows on meshes that receive them and on a Shadow Catcher; put a casting ' +
+      'light on the Marker Anchor, where its shadow camera covers the marker (±250 mm).',
     inputs: {
       scene: { type: 'scene', label: 'Scene' },
       // Overrides the color param while connected (alpha ignored: a light has no opacity).
@@ -592,9 +598,17 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     outputs: { object: { type: 'sceneObject', label: 'Light' } },
     params: {
-      kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient' } },
+      kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient', Point: 'point', Spot: 'spot' } },
       color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
       intensity: { kind: 'number', label: 'Intensity', default: 1.5, min: 0, max: 10, step: 0.1, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [200, -300, 1000], step: 1, unit: 'mm', live: true },
+      target: { kind: 'vector3', label: 'Target', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      distance: { kind: 'number', label: 'Distance (mm, 0: no limit)', default: 0, min: 0, max: 100000, step: 10, live: true },
+      angle: { kind: 'number', label: 'Spot angle (°)', default: 30, min: 1, max: 89, step: 1, live: true },
+      penumbra: { kind: 'number', label: 'Spot penumbra', default: 0, min: 0, max: 1, step: 0.05, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      shadowMapSize: { kind: 'select', label: 'Shadow map size', default: '1024', options: { '512': '512', '1024': '1024', '2048': '2048' }, live: true },
+      shadowBias: { kind: 'number', label: 'Shadow bias', default: -0.0005, min: -0.01, max: 0.01, step: 0.0001, live: true },
     },
   },
   {
@@ -625,6 +639,8 @@ export const CORE_NODES: NodeDefinition[] = [
       scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
       rest: { kind: 'boolean', label: 'Rest on the marker', default: true, live: true },
       spin: { kind: 'boolean', label: 'Spin', default: false, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      receiveShadow: { kind: 'boolean', label: 'Receive shadows', default: false, live: true },
     },
   },
   {
@@ -697,6 +713,28 @@ export const CORE_NODES: NodeDefinition[] = [
       position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
       rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
       autoplay: { kind: 'boolean', label: 'Autoplay first clip', default: false, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      receiveShadow: { kind: 'boolean', label: 'Receive shadows', default: false, live: true },
+    },
+  },
+  {
+    type: 'scene.shadowCatcher',
+    label: 'Shadow Catcher',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A plane on the marker that shows only the shadows cast on it, so content stands on the poster. Wire it into a ' +
+      'Marker Anchor\'s children (with Center on, it lies over the marker); with Marker info wired it takes the ' +
+      'marker\'s size. Opacity is how dark a full shadow is. Shadows come from directional and spot lights that cast them.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      markerInfo: { type: 'markerInfo', label: 'Marker info', optional: true, overrides: ['width', 'depth'] },
+    },
+    outputs: { object: { type: 'sceneObject', label: 'Catcher' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 300, min: 0, max: 10000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 300, min: 0, max: 10000, step: 1, live: true },
+      opacity: { kind: 'number', label: 'Opacity', default: 0.5, min: 0, max: 1, step: 0.05, live: true },
     },
   },
   {
