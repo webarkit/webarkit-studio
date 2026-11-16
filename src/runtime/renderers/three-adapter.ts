@@ -32,7 +32,7 @@ import {
   type SceneHandle,
   type SceneObject,
 } from './adapter';
-import { environmentRotation, normalizeEnvironment, type EnvironmentSpec } from '../../core/environment';
+import { environmentRotation, normalizeEnvironment, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../core/environment';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
 import { threeShape } from './three-shapes';
@@ -143,13 +143,16 @@ export function createThreeAdapter(opts: { antialias: boolean }): RendererAdapte
     renderer.shadowMap.type = THREE.PCFShadowMap;
   }
   const disposables = new Set<{ dispose(): void }>();
+  /** Set by dispose(): a scene's load that lands after it makes nothing (#135). */
+  const life = { disposed: false };
 
   const adapter: RendererAdapter = {
     kind: 'Three.js',
     canvas,
-    createScene: (options) => createThreeScene(adapter, renderer, disposables, options.defaultLights),
+    createScene: (options) => createThreeScene(adapter, renderer, disposables, options.defaultLights, life),
     setSize: (w, h) => renderer.setSize(w, h, false),
     dispose() {
+      life.disposed = true;
       disposables.forEach((d) => d.dispose());
       disposables.clear();
       renderer.dispose();
@@ -163,6 +166,7 @@ function createThreeScene(
   renderer: THREE.WebGLRenderer,
   disposables: Set<{ dispose(): void }>,
   defaultLights: boolean,
+  life: { disposed: boolean },
 ): SceneHandle {
   const scene = new THREE.Scene();
   const camera = new THREE.Camera();
@@ -182,26 +186,33 @@ function createThreeScene(
    * leaves them as they are (they receive, never cast). */
   const catchers = new WeakMap<THREE.Object3D, string>();
   /**
-   * The scene's environment (#135), one per scene: the object that places it, its spec, and the prefiltered texture of
-   * its source (with the bytes it was made from, so a change of intensity or rotation keeps it).
+   * The scene's environment (#135), one per scene: the object that places it, the spec last asked for, and the texture
+   * shown. `wanted` is the source (and file) the latest load moves to, `shown` the one on screen; `load` counts the
+   * loads, so a live change that lands after a newer one is dropped (neutral, hdr, neutral ends on neutral).
    */
-  type EnvironmentState = { pivot: THREE.Object3D; spec: EnvironmentSpec; texture: THREE.Texture | null; hdr?: ArrayBuffer };
+  type Shown = { source: EnvironmentSpec['source']; hdr?: ArrayBuffer };
+  type EnvironmentState = { pivot: THREE.Object3D; spec: EnvironmentSpec; texture: THREE.Texture | null; hdr?: ArrayBuffer; wanted: Shown; shown: Shown; load: number };
   let environment: EnvironmentState | null = null;
   const environmentMatrix = new THREE.Matrix4();
   /** The source's texture, prefiltered for PBR (PMREM): RoomEnvironment for neutral, the .hdr for hdr (the report). */
   const environmentTexture = async (spec: EnvironmentSpec, hdr: ArrayBuffer | undefined) => {
     if (spec.source === 'hdr' && !hdr) throw new Error('the environment source is HDR, but no .hdr file was given');
+    // Torn down while a loader was imported: nothing is made on a disposed renderer, as on Babylon.js.
+    const torn = () => {
+      if (life.disposed) throw new Error('the scene was torn down while the environment loaded');
+    };
+    const room = spec.source === 'neutral' ? (await import('three/examples/jsm/environments/RoomEnvironment.js')).RoomEnvironment : null;
+    const loader = spec.source === 'hdr' ? (await import('three/examples/jsm/loaders/HDRLoader.js')).HDRLoader : null;
+    torn();
     const pmrem = new THREE.PMREMGenerator(renderer);
     try {
-      if (spec.source === 'neutral') {
-        const { RoomEnvironment } = await import('three/examples/jsm/environments/RoomEnvironment.js');
-        const room = new RoomEnvironment();
-        const texture = pmrem.fromScene(room, 0.04).texture;
-        room.dispose();
+      if (room) {
+        const roomScene = new room();
+        const texture = pmrem.fromScene(roomScene, 0.04).texture;
+        roomScene.dispose();
         return texture;
       }
-      const { HDRLoader } = await import('three/examples/jsm/loaders/HDRLoader.js');
-      const parsed = new HDRLoader().parse(hdr!);
+      const parsed = new loader!().parse(hdr!);
       const equirect = new THREE.DataTexture(parsed.data, parsed.width, parsed.height, THREE.RGBAFormat, parsed.type);
       equirect.mapping = THREE.EquirectangularReflectionMapping;
       equirect.colorSpace = THREE.LinearSRGBColorSpace;
@@ -499,12 +510,13 @@ function createThreeScene(
       return wrap(mesh);
     },
     async createEnvironment(given, hdr) {
-      if (environment) throw new Error('this scene already has an environment (one per scene)');
+      if (environment) throw new Error(ONE_ENVIRONMENT);
       const spec = normalizeEnvironment(given);
       const pivot = new THREE.Object3D();
       pivot.name = 'environment';
       // Claimed before the await: a second one made meanwhile is refused too.
-      const state: EnvironmentState = { pivot, spec, texture: null, hdr };
+      const shown: Shown = { source: spec.source, hdr: spec.source === 'hdr' ? hdr : undefined };
+      const state: EnvironmentState = { pivot, spec, texture: null, hdr, wanted: shown, shown, load: 0 };
       environment = state;
       try {
         state.texture = await environmentTexture(spec, hdr);
@@ -513,7 +525,7 @@ function createThreeScene(
         throw err;
       }
       disposables.add(state.texture);
-      if (environment === state) writeEnvironment(state.texture, spec);
+      if (environment === state) writeEnvironment(state.texture, state.spec);
       return wrap(pivot);
     },
     async setEnvironment(o, given, hdr) {
@@ -522,9 +534,21 @@ function createThreeScene(
       if (!state || state.pivot !== pivot) return;
       const spec = normalizeEnvironment(given);
       const bytes = hdr ?? state.hdr;
-      if (spec.source !== state.spec.source || (spec.source === 'hdr' && hdr && hdr !== state.hdr)) {
-        const texture = await environmentTexture(spec, bytes);
-        if (environment !== state) {
+      state.spec = spec;
+      state.hdr = bytes;
+      const want: Shown = { source: spec.source, hdr: spec.source === 'hdr' ? bytes : undefined };
+      if (want.source !== state.wanted.source || want.hdr !== state.wanted.hdr) {
+        const load = ++state.load;
+        state.wanted = want;
+        let texture: THREE.Texture;
+        try {
+          texture = await environmentTexture(spec, bytes);
+        } catch (err) {
+          if (environment === state && state.load === load) state.wanted = state.shown; // still showing the old one
+          throw err;
+        }
+        // Removed meanwhile, or a newer change is loading: this one is dropped.
+        if (environment !== state || state.load !== load) {
           texture.dispose();
           return;
         }
@@ -533,11 +557,10 @@ function createThreeScene(
           state.texture.dispose();
         }
         state.texture = texture;
+        state.shown = want;
         disposables.add(texture);
       }
-      state.spec = spec;
-      state.hdr = bytes;
-      if (state.texture) writeEnvironment(state.texture, spec);
+      if (state.texture) writeEnvironment(state.texture, state.spec);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);

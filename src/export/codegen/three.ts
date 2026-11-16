@@ -353,7 +353,12 @@ const environment: CodeEmitter = (ctx) => {
   const url = String(params.url ?? '').trim();
   if (spec.source === 'hdr' && !url) throw new Error('its source is HDR, but it has no .hdr URL');
   const v = name();
-  const [turn, up, rotation] = [name('turn'), name('up'), name('rotation')];
+  // One per scene, refused by name here, as the studio refuses it at init: the Scene's outputs record the first one (the
+  // emitters see the graph only through what is wired to them).
+  const sceneOutputs = from('scene')!;
+  if (sceneOutputs.environment) throw new Error(`its scene already has an Environment (${sceneOutputs.environment}): one per scene`);
+  sceneOutputs.environment = v;
+  const [turn, up, rotation, before] = [name('turn'), name('up'), name('rotation'), name('before')];
   const load =
     spec.source === 'hdr'
       ? `  const equirect = await new HDRLoader().loadAsync(${literal(url)});
@@ -366,9 +371,7 @@ const environment: CodeEmitter = (ctx) => {
       spec.source === 'hdr' ? "import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';" : "import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';",
     ],
     setup: `// Lights and reflects every PBR surface; never drawn (the camera video is the background). One per scene.
-if (${s}.userData.environment) throw new Error('a scene takes one Environment');
 const ${v} = new THREE.Object3D(); // where it is: camera space, or the anchor it is wired into
-${s}.userData.environment = ${v};
 {
   const pmrem = new THREE.PMREMGenerator(${r});
 ${load}
@@ -379,14 +382,20 @@ ${s}.environmentIntensity = ${decimal(spec.intensity)};
 const ${turn} = new THREE.Matrix4().makeRotationY(${decimal((spec.rotation * Math.PI) / 180)});
 const ${up} = new THREE.Matrix4().makeRotationX(Math.PI / 2);
 const ${rotation} = new THREE.Matrix4();
-${s}.onBeforeRender = () => {
+const ${before} = ${s}.onBeforeRender;
+${s}.onBeforeRender = (...args) => {
+  ${before}.apply(${s}, args);
   const parent = ${v}.parent;
-  if (parent && parent !== ${s}) ${rotation}.extractRotation(parent.matrixWorld).multiply(${up}).multiply(${turn});
-  else ${rotation}.copy(${turn});
+  if (parent && parent !== ${s}) {
+    ${rotation}.extractRotation(parent.matrixWorld);
+    // A mirrored parent: its third axis flipped, so the environment still turns without a reflection, as in the studio.
+    if (${rotation}.determinant() < 0) for (const i of [8, 9, 10]) ${rotation}.elements[i] *= -1;
+    ${rotation}.multiply(${up}).multiply(${turn});
+  } else ${rotation}.copy(${turn});
   ${s}.environmentRotation.setFromRotationMatrix(${rotation});
 };
 ${s}.add(${v}); // camera space, until an anchor takes it`,
-    locals: ['pmrem', 'equirect', 'parent'],
+    locals: ['pmrem', 'equirect', 'parent', 'args', 'i'],
     outputs: { object: v },
   };
 };

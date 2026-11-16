@@ -7,7 +7,7 @@ import type { ParamValue } from '../../core/graph';
 import { geometryBounds, geometrySpec, restLift, type GeometryShape } from '../../core/geometry';
 import { materialSpec, textureSpec, type MaterialSpec } from '../../core/material';
 import { lightSpec, shadowCatcherSpec } from '../../core/light';
-import { environmentSpec } from '../../core/environment';
+import { environmentSpec, ONE_ENVIRONMENT } from '../../core/environment';
 import { markerOffset, nonZeroScale } from '../../core/math';
 import { transformMatrix, type MaterialSetup, type TextureSource } from '../renderers/adapter';
 import { LOAD_HINT, sourceUrl } from './sources';
@@ -418,7 +418,7 @@ export const environment: NodeFactory = (params, ctx) => {
       try {
         handle = await scene.createEnvironment(spec, hdr);
       } catch (err) {
-        if (/one per scene/.test((err as Error).message)) throw new Error('this scene already has an Environment: one per scene, so this one is refused');
+        if ((err as Error).message === ONE_ENVIRONMENT) throw new Error('this scene already has an Environment: one per scene, so this one is refused');
         throw err;
       }
       if (disposed) return;
@@ -426,7 +426,8 @@ export const environment: NodeFactory = (params, ctx) => {
       scene.addRoot(handle);
       // A live edit made while it loaded found no environment to change: applied now.
       const latest = environmentSpec(params);
-      if (JSON.stringify(latest) !== JSON.stringify(spec)) await scene.setEnvironment(handle, latest, hdr);
+      if (JSON.stringify(latest) !== JSON.stringify(spec))
+        await scene.setEnvironment(handle, latest, hdr).catch((err: Error) => ctx.log(`✗ environment: ${err.message}`)); // as onParamChange
       return { object: handle };
     },
     onParamChange() {

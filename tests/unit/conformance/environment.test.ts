@@ -21,11 +21,15 @@ const { FakeRenderer, FakePMREM } = vi.hoisted(() => ({
     async fromSceneTexture() {}
     fromScene() {
       FakePMREM.made.push({ from: 'scene' });
-      return { texture: new (globalThis as never as { THREE_: typeof THREE }).THREE_.Texture() };
+      const texture = new (globalThis as never as { THREE_: typeof THREE }).THREE_.Texture();
+      texture.name = 'scene';
+      return { texture };
     }
     fromEquirectangular(t: { image: { width: number } }) {
       FakePMREM.made.push({ from: `equirect ${t.image.width}` });
-      return { texture: new (globalThis as never as { THREE_: typeof THREE }).THREE_.Texture() };
+      const texture = new (globalThis as never as { THREE_: typeof THREE }).THREE_.Texture();
+      texture.name = 'equirect';
+      return { texture };
     }
     dispose() {}
   },
@@ -146,6 +150,35 @@ describe('three: scene.environment (#135)', () => {
       const next = new THREE.Matrix4().fromArray(c).multiply(new THREE.Matrix4().fromArray(b)).elements;
       expect(near(rotationOf(native), environmentRotation(10, next))).toBe(true);
     });
+  });
+
+  test('a live change that lands after a newer one is dropped: neutral, hdr, neutral ends on neutral', async () => {
+    await withScene(async (scene, native) => {
+      const env = await scene.createEnvironment(NEUTRAL, HDR);
+      const toHdr = scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr' });
+      const back = scene.setEnvironment(env, { ...NEUTRAL, intensity: 0.25 });
+      await Promise.all([toHdr, back]);
+      expect([native.environment?.name, native.environmentIntensity]).toEqual(['scene', 0.25]);
+    });
+  });
+
+  test('an intensity change while a new source loads keeps that source, with the new intensity', async () => {
+    await withScene(async (scene, native) => {
+      const env = await scene.createEnvironment(NEUTRAL, HDR);
+      const toHdr = scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr' });
+      const brighter = scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr', intensity: 3 });
+      await Promise.all([toHdr, brighter]);
+      expect([native.environment?.name, native.environmentIntensity]).toEqual(['equirect', 3]);
+      expect(FakePMREM.made.map((m) => m.from)).toEqual(['scene', 'equirect 16']);
+    });
+  });
+
+  test('torn down while it loads: refused, and nothing is made on the disposed renderer (as on Babylon.js)', async () => {
+    const adapter = createThreeAdapter({ antialias: false });
+    const made = adapter.createScene({ defaultLights: false }).createEnvironment(NEUTRAL);
+    adapter.dispose();
+    await expect(made).rejects.toThrow(/torn down/);
+    expect(FakePMREM.made).toEqual([]);
   });
 
   test('released, it leaves the scene, and another can be made', async () => {

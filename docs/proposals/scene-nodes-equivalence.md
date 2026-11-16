@@ -215,6 +215,8 @@ setting, but would make `@babylonjs/materials` a runtime dependency; this report
 | Diffuse (rough white sphere) | Equivalent within **look** | Residual up to 8 levels (top of the sphere) | e2e "latitude …" | run |
 | Intensity | Scales alike, k = 1; residual grows with brightness | `scene.environmentIntensity` on both. On a rough white sphere the residual (a hue difference: Babylon slightly redder, less blue) is 6 levels at 0.5 and 8 at 1, within look, and 10.5 at 2, beyond it | e2e "intensity 0.5 / 1 / 2, k = 1: a rough sphere, residual in …" | run |
 | Neutral environment | **Missing** on Babylon.js (offline) | Three.js `RoomEnvironment` (`examples/jsm/environments/`). Babylon's `createDefaultEnvironment` loads `https://assets.babylonjs.com/core/environments/environmentSpecular.env` (`Helpers/environmentHelper.js:445-453`): with the network blocked the scene never becomes ready (it waits for that texture). A neutral environment on Babylon needs a generated or bundled texture (for example an `.hdr` the node writes, as the tests do) | e2e "Babylon.js's default environment fetches from assets.babylonjs.com: with the network blocked the scene never gets ready" | run |
+| Neutral environment, the studio's (#135) | Alike, **not the same** (the ruling: an offline room-like light on both) | Three.js `RoomEnvironment` through `PMREMGenerator`; Babylon.js an `HDRCubeTexture` of a room the studio writes in the page (`neutralRoomHdr()`, `src/core/environment.ts`), scaled to `RoomEnvironment`'s diffuse level (it measured 2.4 times dimmer before). With the network blocked both become ready. A rough mid-grey sphere at intensity 1: within 8 levels; a mirror sphere: up to 172 levels apart (the rooms differ). Both scale with the intensity | e2e "the neutral environment works offline on both" | run |
+| Rotation and space (#135) | Equivalent with a translation | One rotation R (`environmentRotation()`): about +Y by the node's rotation; under an anchor, +Y to the marker's +Z, then the anchor's world rotation. Three.js: `scene.environmentRotation` = R (its shader samples with Rᵀ). Babylon.js: `setReflectionTextureMatrix(Rᵀ · RotationY(90°))`, which the PBR irradiance and reflection both read. Under an anchor turned about the view's vertical, and under a tilted one, a mirror sphere matches within look | SceneHandle "under an anchor …", "under a tilted anchor …", "rotation turns the environment …" | run |
 
 ### Fog (Phase 5)
 
@@ -293,7 +295,7 @@ camera set explicitly at mm scale (extent, near, far). Tolerance: same at the ce
 the cone's edge. Must not promise `decay` other than 2, nor the same penumbra profile (up to 22 levels apart): either
 document the difference or make penumbra engine-specific. Point-light shadows were not measured.
 
-**#135, `scene.environment`.** Translate: `.hdr` through `HDRLoader` + `PMREMGenerator` (with `flipY`) and
+**#135, `scene.environment`** (done; the rows above: the studio's neutral rooms, measured, and the rotation in camera and marker space). Translate: `.hdr` through `HDRLoader` + `PMREMGenerator` (with `flipY`) and
 `HDRCubeTexture`; Babylon `rotationY` + 90° against Three.js; the node's own rotation (about marker Z) applied the same
 way on both, after that offset; intensity by name. Tolerance: look on a rough sphere (up to 8 levels). Must not rely
 on Babylon's `createDefaultEnvironment` for the neutral source (it fetches from the network): generate the neutral

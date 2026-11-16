@@ -1344,6 +1344,29 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { region: 'left', is: 'changed', from: 'upright' },
       ],
     },
+    {
+      // A tilted marker, the usual AR pose: its +Z towards the viewer, turned 30 deg about the view's X; the environment
+      // turned 50 deg about the marker's +Z. A rotation that is not about the view's vertical does not commute with Babylon.js's quarter turn
+      // about Y, so an inverse or a product taken in the wrong order shows here (the graph reviewer on #135).
+      name: 'under a tilted anchor, the environment turns with the marker, the same on both (#135)',
+      ops: [
+        ...envSphere(1, 0.05),
+        { op: 'createGroup', id: 'anchor' },
+        { op: 'setMatrix', id: 'anchor', matrix: UPRIGHT },
+        { op: 'addRoot', id: 'anchor' },
+        { op: 'createEnvironment', id: 'env', spec: ENV({ rotation: 50 }), hdr: 'bands' },
+        { op: 'addChild', parent: 'anchor', child: 'env' },
+        { op: 'render', capture: 'upright' },
+        { op: 'setMatrix', id: 'anchor', matrix: transformMatrix({ position: [0, 0, -300], rotation: [30, 0, 0], scale: 1 }) },
+      ],
+      regions: ENV_REGIONS,
+      rules: [
+        ...drawnEverywhere('upright'),
+        ...drawnEverywhere(),
+        ...Object.keys(ENV_REGIONS).map((region): Rule => ({ region, is: 'look' })),
+        { region: 'top', is: 'changed', from: 'upright' },
+      ],
+    },
   ];
 
   const FINAL = 'final';

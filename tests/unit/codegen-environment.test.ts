@@ -33,7 +33,10 @@ function exportedRotation(code: string, parent: THREE.Matrix4 | null) {
     scene.add(anchor);
   } else scene.add(environment);
   scene.updateMatrixWorld(true);
+  const order: string[] = [];
+  scene.onBeforeRender = () => void order.push('before');
   new Function('THREE', 'scene', 'environment', `${block}\nscene.onBeforeRender();`)(THREE, scene, environment);
+  expect(order, 'an earlier onBeforeRender still runs').toEqual(['before']);
   return new THREE.Matrix4().makeRotationFromEuler(scene.environmentRotation).elements;
 }
 const near = (a: ArrayLike<number>, b: ArrayLike<number>) => Array.from(a).every((v, i) => Math.abs(v - b[i]) < 1e-5);
@@ -67,6 +70,22 @@ describe('the exported environment (#135)', () => {
   it('turns in camera space as the studio does', () => {
     const code = main(demo({ rotation: 30 }, 'none'));
     expect(near(exportedRotation(code, null), environmentRotation(30, null))).toBe(true);
+  });
+
+  it('a second Environment on the same scene is refused by name, as the studio refuses it at init', () => {
+    const doc = demo();
+    const env = doc.nodes.find((n) => n.type === 'scene.environment')!;
+    doc.nodes.push({ ...env, id: 'second', position: { x: 0, y: 0 } });
+    doc.edges.push({ id: 'e-second', from: { node: 'scene', port: 'scene' }, to: { node: 'second', port: 'scene' } });
+    expect(() => main(doc)).toThrow(/second \(scene\.environment\): its scene already has an Environment \(environment\): one per scene/);
+  });
+
+  it('under a mirrored anchor, still a rotation, as the studio turns it', () => {
+    const code = main(demo({ rotation: 15 }));
+    const mirrored = transformMatrix({ position: [0, 0, -400], rotation: [10, 40, -25], scale: [1, -1, 1] });
+    const got = exportedRotation(code, new THREE.Matrix4().fromArray(mirrored));
+    expect(new THREE.Matrix4().fromArray(Array.from(got)).determinant()).toBeCloseTo(1, 9);
+    expect(near(got, environmentRotation(15, mirrored))).toBe(true);
   });
 
   it("turns under a turned anchor as the studio does (the anchor's rotation, never its scale)", () => {

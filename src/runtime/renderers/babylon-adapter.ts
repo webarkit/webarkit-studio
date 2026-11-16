@@ -65,7 +65,7 @@ import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTextur
 // HDRCubeTexture uploads its faces with createRawCubeTextureFromUrl, which exists only once this extension is imported
 // (#135; without it the texture never loads).
 import '@babylonjs/core/Engines/Extensions/engine.rawTexture';
-import { environmentRotation, neutralRoomHdr, normalizeEnvironment, type EnvironmentSpec } from '../../core/environment';
+import { environmentRotation, neutralRoomHdr, normalizeEnvironment, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../core/environment';
 import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
 // VideoTexture calls engine methods its extensions add: imported for their side effects (AGENTS.md).
 import '@babylonjs/core/Engines/Extensions/engine.dynamicTexture';
@@ -255,8 +255,13 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
    * leaves them as they are (they receive, never cast). */
   const catchers = new WeakMap<BabylonNode, string>();
-  /** The scene's environment (#135), one per scene: the node that places it, its spec, its texture and the bytes. */
-  type EnvironmentState = { pivot: TransformNode; spec: EnvironmentSpec; texture: HDRCubeTexture | null; hdr?: ArrayBuffer };
+  /**
+   * The scene's environment (#135), one per scene: the object that places it, the spec last asked for, and the texture
+   * shown. `wanted` is the source (and file) the latest load moves to, `shown` the one on screen; `load` counts the
+   * loads, so a live change that lands after a newer one is dropped (neutral, hdr, neutral ends on neutral).
+   */
+  type Shown = { source: EnvironmentSpec['source']; hdr?: ArrayBuffer };
+  type EnvironmentState = { pivot: TransformNode; spec: EnvironmentSpec; texture: HDRCubeTexture | null; hdr?: ArrayBuffer; wanted: Shown; shown: Shown; load: number };
   let environment: EnvironmentState | null = null;
   const [environmentMatrix, inverseRotation, reflectionMatrix] = [new Matrix(), new Matrix(), new Matrix()];
   /** Babylon.js's equirectangular mapping is a quarter turn about Y from Three.js's (the report, "Around the vertical"). */
@@ -279,6 +284,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       // Torn down before it loaded (a Stop): the promise settles, as createTexture's does.
       texture.onDisposeObservable.addOnce(() => (done(), reject(new Error('the scene was torn down while the environment loaded'))));
     });
+  /** A texture that loaded after the scene was torn down is freed, and the load refused, as when it is disposed first. */
+  const afterTeardown = (texture: HDRCubeTexture) => {
+    if (!scene.isDisposed) return;
+    texture.dispose();
+    throw new Error('the scene was torn down while the environment loaded');
+  };
   const writeEnvironment = (texture: HDRCubeTexture, spec: EnvironmentSpec) => {
     // Lights and reflects only: no skybox, the camera video is the background.
     scene.environmentTexture = texture;
@@ -630,18 +641,23 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       return wrap(mesh);
     },
     async createEnvironment(given, hdr) {
-      if (environment) throw new Error('this scene already has an environment (one per scene)');
+      if (environment) throw new Error(ONE_ENVIRONMENT);
       const spec = normalizeEnvironment(given);
       const pivot = new TransformNode('environment', scene);
-      const state: EnvironmentState = { pivot, spec, texture: null, hdr };
+      const shown: Shown = { source: spec.source, hdr: spec.source === 'hdr' ? hdr : undefined };
+      const state: EnvironmentState = { pivot, spec, texture: null, hdr, wanted: shown, shown, load: 0 };
       environment = state; // claimed before the await: a second one made meanwhile is refused too
+      let texture: HDRCubeTexture;
       try {
-        state.texture = await environmentTexture(spec, hdr);
+        texture = await environmentTexture(spec, hdr);
+        afterTeardown(texture);
       } catch (err) {
         if (environment === state) environment = null;
+        if (!scene.isDisposed) pivot.dispose(); // nothing is left in the scene by a load that failed
         throw err;
       }
-      if (environment === state) writeEnvironment(state.texture, spec);
+      state.texture = texture;
+      if (environment === state) writeEnvironment(texture, state.spec);
       return wrap(pivot);
     },
     async setEnvironment(o, given, hdr) {
@@ -650,18 +666,30 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       if (!state || state.pivot !== pivot) return;
       const spec = normalizeEnvironment(given);
       const bytes = hdr ?? state.hdr;
-      if (spec.source !== state.spec.source || (spec.source === 'hdr' && hdr && hdr !== state.hdr)) {
-        const texture = await environmentTexture(spec, bytes);
-        if (environment !== state) {
+      state.spec = spec;
+      state.hdr = bytes;
+      const want: Shown = { source: spec.source, hdr: spec.source === 'hdr' ? bytes : undefined };
+      if (want.source !== state.wanted.source || want.hdr !== state.wanted.hdr) {
+        const load = ++state.load;
+        state.wanted = want;
+        let texture: HDRCubeTexture;
+        try {
+          texture = await environmentTexture(spec, bytes);
+          afterTeardown(texture);
+        } catch (err) {
+          if (environment === state && state.load === load) state.wanted = state.shown; // still showing the old one
+          throw err;
+        }
+        // Removed meanwhile, or a newer change is loading: this one is dropped.
+        if (environment !== state || state.load !== load) {
           texture.dispose();
           return;
         }
         state.texture?.dispose();
         state.texture = texture;
+        state.shown = want;
       }
-      state.spec = spec;
-      state.hdr = bytes;
-      if (state.texture) writeEnvironment(state.texture, spec);
+      if (state.texture) writeEnvironment(state.texture, state.spec);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);

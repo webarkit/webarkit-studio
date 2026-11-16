@@ -13,7 +13,13 @@ import { cross, dot, normalize, type Vec3 } from './math';
 export const ENVIRONMENT_SOURCES = ['neutral', 'hdr'] as const;
 export type EnvironmentSource = (typeof ENVIRONMENT_SOURCES)[number];
 
-/** The largest intensity kept. The docs promise the same look on both engines up to 1 only (the ruling on #135). */
+/** What an adapter's createEnvironment throws for a second environment in a scene (the node recognises it). */
+export const ONE_ENVIRONMENT = 'this scene already has an environment (one per scene)';
+
+/**
+ * The largest intensity kept. The editor's slider stops at 10; a graph or a script may go further, up to this bound. The
+ * docs promise the same look on both engines up to 1 only (the ruling on #135).
+ */
 export const MAX_ENVIRONMENT_INTENSITY = 100;
 
 export interface EnvironmentSpec {
