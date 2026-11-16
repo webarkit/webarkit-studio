@@ -242,8 +242,13 @@ describe.each(ENGINES)('%s: lights (#134)', (engine) => {
         const b = m.material as BackgroundMaterial;
         expect([b.shadowOnly, b.primaryColor.r, b.primaryColor.g, b.primaryColor.b, b.alpha, b.alphaMode, m.receiveShadows]).toEqual([true, 0, 0, 0, 0.5, Constants.ALPHA_LAYER_ACCUMULATE, true]);
       }
+      // Only the opacity changes: the plane is kept (a slider dragged would otherwise rebuild it every step).
+      const before = engine === 'three' ? (catcher.native as THREE.Mesh).geometry : null;
+      scene.setShadowCatcher(catcher, { width: 210, depth: 297, opacity: 0.4 });
+      if (engine === 'three') expect((catcher.native as THREE.Mesh).geometry).toBe(before);
       scene.setShadowCatcher(catcher, { width: 100, depth: 50, opacity: 0.25 });
       expect(close(size(), [100, 50, 0], 1e-4)).toBe(true);
+      if (engine === 'three') expect((catcher.native as THREE.Mesh).geometry).not.toBe(before);
       if (engine === 'three') expect(((catcher.native as THREE.Mesh).material as THREE.ShadowMaterial).opacity).toBe(0.25);
       else expect(((catcher.native as AbstractMesh).material as BackgroundMaterial).alpha).toBe(0.25);
     });

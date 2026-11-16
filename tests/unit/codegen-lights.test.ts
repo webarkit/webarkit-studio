@@ -51,7 +51,8 @@ function describeLight(light: THREE.Light) {
     light.updateMatrixWorld(true);
     light.shadow.updateMatrices(light);
     const c = light.shadow.camera as THREE.OrthographicCamera & THREE.PerspectiveCamera;
-    Object.assign(out, { castShadow: light.castShadow, mapSize: light.shadow.mapSize.x, bias: light.shadow.bias, near: c.near, far: c.far });
+    // The export writes the far plane to 6 decimals (decimal()).
+    Object.assign(out, { castShadow: light.castShadow, mapSize: light.shadow.mapSize.x, bias: light.shadow.bias, near: c.near, far: Math.round(c.far * 1e4) / 1e4 });
     if (light instanceof THREE.DirectionalLight) Object.assign(out, { left: c.left, right: c.right, top: c.top, bottom: c.bottom });
   }
   return out;
@@ -110,6 +111,20 @@ describe('the exported project with shadows (#134)', () => {
     expect(() => parse(model, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow();
     expect(model).toContain('model.traverse((part) => {\n  if (!part.isMesh) return;\n  part.castShadow = true;\n  part.receiveShadow = false;\n});');
     expect(main).toMatch(/const catcher = new THREE\.Mesh\(new THREE\.PlaneGeometry\(300, 300\), new THREE\.ShadowMaterial\(\{ opacity: 0\.4 \}\)\);/);
-    expect(main).toMatch(/if \(select_pinball\?\.info\) catcher\.geometry = new THREE\.PlaneGeometry\(select_pinball\?\.info\.widthMM, select_pinball\?\.info\.heightMM\);/);
+    expect(main).toContain('const { widthMM, heightMM } = select_pinball?.info;');
+    expect(main).toContain('catcher.geometry.dispose();\n    catcher.geometry = new THREE.PlaneGeometry(fit(widthMM), fit(heightMM));');
+  });
+
+  it("sizes the exported catcher from the marker as the studio does: finite and above 0, within the bounds", () => {
+    const main = generateSource(shadowDemo(), 'three', codeEmittersFor('three')).files['src/main.js'];
+    const start = main.indexOf('const catcher = ');
+    const block = main.slice(start, main.indexOf('\n}\n', start) + 2);
+    const run = (info: unknown) =>
+      new Function('THREE', 'select_pinball', `${block}\nreturn [catcher.geometry.parameters.width, catcher.geometry.parameters.height];`)(THREE, { info });
+    expect(run({ widthMM: 210, heightMM: 297 })).toEqual([210, 297]);
+    expect(run({ widthMM: 0, heightMM: 297 })).toEqual([300, 300]);
+    expect(run({ widthMM: NaN, heightMM: 297 })).toEqual([300, 300]);
+    expect(run({ widthMM: 1e9, heightMM: 1e-9 })).toEqual([1e6, 0.001]);
+    expect(run(undefined)).toEqual([300, 300]);
   });
 });

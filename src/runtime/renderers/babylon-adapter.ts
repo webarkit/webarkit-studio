@@ -50,6 +50,8 @@ import {
   DIRECTIONAL_SHADOW_NEAR,
   directionalShadowFar,
   engineIntensity,
+  normalizeIntensity,
+  catcherSize,
   normalizeLight,
   normalizeShadowCatcher,
   SHADOW_EXTENT,
@@ -245,8 +247,9 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const lightKinds = new WeakMap<Light, LightKind>();
   const generators = new Map<Light, ShadowGenerator>();
   const casters = new Set<AbstractMesh>();
-  /** The shadow catchers: setShadowCasting leaves them as they are (they receive, never cast). */
-  const catchers = new WeakSet<BabylonNode>();
+  /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
+   * leaves them as they are (they receive, never cast). */
+  const catchers = new WeakMap<BabylonNode, string>();
   /** The meshes of a node and its descendants. */
   const meshesOf = (n: BabylonNode) => [n, ...n.getDescendants(false)].filter((m): m is AbstractMesh => 'receiveShadows' in m && !catchers.has(m));
   /**
@@ -262,14 +265,14 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     const range = spec.distance > 0 ? spec.distance : Number.MAX_VALUE;
     if (light instanceof DirectionalLight) {
       light.position = position;
-      if (toward.lengthSquared() > 0) light.direction = toward.normalize();
+      light.direction = toward.normalize();
       light.autoUpdateExtends = false;
       Object.assign(light, { orthoLeft: -SHADOW_EXTENT, orthoRight: SHADOW_EXTENT, orthoTop: SHADOW_EXTENT, orthoBottom: -SHADOW_EXTENT });
       light.shadowMinZ = DIRECTIONAL_SHADOW_NEAR;
       light.shadowMaxZ = directionalShadowFar(spec);
     } else if (light instanceof SpotLight) {
       light.position = position;
-      if (toward.lengthSquared() > 0) light.direction = toward.normalize();
+      light.direction = toward.normalize();
       light.angle = 2 * spec.angle * DEG;
       light.innerAngle = 2 * spec.angle * (1 - spec.penumbra) * DEG;
       light.exponent = 0;
@@ -583,13 +586,16 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       blendLikeThree(material);
       mesh.material = material;
       mesh.receiveShadows = true;
-      catchers.add(mesh);
+      catchers.set(mesh, catcherSize(spec));
       return wrap(mesh);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);
       const mesh = node(o) as Mesh;
-      babylonVertexData({ shape: 'plane', width: spec.width, depth: spec.depth }).applyToMesh(mesh, true);
+      if (catchers.get(mesh) !== catcherSize(spec)) {
+        babylonVertexData({ shape: 'plane', width: spec.width, depth: spec.depth }).applyToMesh(mesh, true);
+        catchers.set(mesh, catcherSize(spec));
+      }
       (mesh.material as BackgroundMaterial).alpha = spec.opacity;
     },
     addChild(parent, child) {
@@ -636,7 +642,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     setIntensity(o, i) {
       const light = node(o) as Light;
       // Every light comes from createLight, which records its scale: the fallback is never reached.
-      light.intensity = i * (scales.get(light) ?? 1);
+      light.intensity = normalizeIntensity(i) * (scales.get(light) ?? 1);
     },
 
     animations: (o) => [...(modelClips.get(node(o))?.names ?? [])],

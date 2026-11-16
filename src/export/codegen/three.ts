@@ -6,6 +6,7 @@
  */
 import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
 import { nonZeroScale } from '../../core/math';
+import { MAX_SIZE, MIN_SIZE } from '../../core/geometry';
 import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type TextureWrap } from '../../core/material';
 import { rgbaToHex } from '../../core/color';
 import { DIRECTIONAL_SHADOW_NEAR, directionalShadowFar, engineIntensity, lightSpec, normalizeLight, shadowCatcherSpec, SHADOW_EXTENT, SPOT_SHADOW_FAR, SPOT_SHADOW_NEAR, type NormalLight } from '../../core/light';
@@ -106,7 +107,7 @@ ${v}.position.set(0, 0, 1); // the sky: +Z, out of the marker plane`,
     lines.push(`${v}.shadow.mapSize.set(${spec.shadowMapSize}, ${spec.shadowMapSize});`);
     lines.push(`${v}.shadow.bias = ${decimal(spec.shadowBias)};`);
     if (spec.kind === 'directional') {
-      lines.push(`Object.assign(${v}.shadow.camera, { left: -${SHADOW_EXTENT}, right: ${SHADOW_EXTENT}, top: ${SHADOW_EXTENT}, bottom: -${SHADOW_EXTENT}, near: ${DIRECTIONAL_SHADOW_NEAR}, far: ${directionalShadowFar(spec)} });`);
+      lines.push(`Object.assign(${v}.shadow.camera, { left: -${SHADOW_EXTENT}, right: ${SHADOW_EXTENT}, top: ${SHADOW_EXTENT}, bottom: -${SHADOW_EXTENT}, near: ${DIRECTIONAL_SHADOW_NEAR}, far: ${decimal(directionalShadowFar(spec))} });`);
     } else {
       lines.push(`Object.assign(${v}.shadow.camera, { near: ${SPOT_SHADOW_NEAR}, far: ${SPOT_SHADOW_FAR} });`);
       if (spec.distance) {
@@ -314,13 +315,25 @@ const shadowCatcher: CodeEmitter = (ctx) => {
   const c = name();
   const spec = shadowCatcherSpec(params);
   const info = inputs.markerInfo as string | undefined;
-  const sized = info ? `\nif (${info}) ${c}.geometry = new THREE.PlaneGeometry(${info}.widthMM, ${info}.heightMM); // the marker's size` : '';
+  // The marker's size, as the studio takes it (shadowCatcherSpec): finite and above 0, within the geometry bounds.
+  const sized = info
+    ? `
+if (${info}) {
+  const fit = (mm) => Math.min(Math.max(mm, ${MIN_SIZE}), ${MAX_SIZE});
+  const { widthMM, heightMM } = ${info};
+  if (Number.isFinite(widthMM) && Number.isFinite(heightMM) && widthMM > 0 && heightMM > 0) {
+    ${c}.geometry.dispose();
+    ${c}.geometry = new THREE.PlaneGeometry(fit(widthMM), fit(heightMM)); // the marker's size
+  }
+}`
+    : '';
   return {
     imports: [THREE_IMPORT],
     setup: `// Shows only the shadows cast on it.
 const ${c} = new THREE.Mesh(new THREE.PlaneGeometry(${decimal(spec.width)}, ${decimal(spec.depth)}), new THREE.ShadowMaterial({ opacity: ${decimal(spec.opacity)} }));
 ${c}.receiveShadow = true;${sized}`,
     outputs: { object: c },
+    locals: ['fit', 'widthMM', 'heightMM'],
   };
 };
 

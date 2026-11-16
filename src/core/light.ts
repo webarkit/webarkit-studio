@@ -84,7 +84,7 @@ export interface ShadowCatcherSpec {
   opacity: number;
 }
 
-const LIGHT_DEFAULTS = { intensity: 1, distance: 0, angle: 30, penumbra: 0, shadowMapSize: 1024 as ShadowMapSize, shadowBias: -0.0005 };
+const LIGHT_DEFAULTS = { intensity: 1.5, distance: 0, angle: 30, penumbra: 0, shadowMapSize: 1024 as ShadowMapSize, shadowBias: -0.0005 };
 const CATCHER_DEFAULTS: ShadowCatcherSpec = { width: 300, depth: 300, opacity: 0.5 };
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -109,14 +109,25 @@ const mapSize = (v: unknown): ShadowMapSize => ((typeof v === 'number' || typeof
 /** `#rrggbb` (the alpha of a light's colour means nothing); a malformed colour is white. */
 const hex = (v: unknown) => rgbaToHex(typeof v === 'string' ? hexToRgba(v) : [1, 1, 1, 1]);
 
+/**
+ * A light's intensity param, made safe: finite and ≥ 0, and small enough that engineIntensity() stays finite. Anything
+ * else is the catalog's default.
+ */
+export const MAX_INTENSITY = Number.MAX_VALUE / POINT_SPOT_INTENSITY_SCALE / 2; // MAX_VALUE / 10⁶ × 10⁶ rounds up to Infinity
+export const normalizeIntensity = (v: unknown) => within(v, 0, MAX_INTENSITY, LIGHT_DEFAULTS.intensity);
+
 export function normalizeLight(spec: LightSpec): NormalLight {
   const kind = lightKind(spec.kind);
+  const position = vec3(spec.position, DEFAULT_LIGHT_POSITION);
+  let target = vec3(spec.target, DEFAULT_LIGHT_TARGET);
+  // A light that shines towards where it stands has no direction: it takes the default one, from where it is.
+  if (target.every((c, i) => c === position[i])) target = position.map((c, i) => c + DEFAULT_LIGHT_TARGET[i] - DEFAULT_LIGHT_POSITION[i]) as Vec3;
   return {
     kind,
     color: hex(spec.color),
-    intensity: within(spec.intensity, 0, Number.MAX_VALUE, LIGHT_DEFAULTS.intensity),
-    position: vec3(spec.position, DEFAULT_LIGHT_POSITION),
-    target: vec3(spec.target, DEFAULT_LIGHT_TARGET),
+    intensity: normalizeIntensity(spec.intensity),
+    position,
+    target,
     distance: within(spec.distance, 0, MAX_SIZE, LIGHT_DEFAULTS.distance),
     angle: within(spec.angle, MIN_SPOT_ANGLE, MAX_SPOT_ANGLE, LIGHT_DEFAULTS.angle),
     penumbra: within(spec.penumbra, 0, 1, LIGHT_DEFAULTS.penumbra),
@@ -150,6 +161,9 @@ export function normalizeShadowCatcher(spec: ShadowCatcherSpec): ShadowCatcherSp
     opacity: within(spec.opacity, 0, 1, CATCHER_DEFAULTS.opacity),
   };
 }
+
+/** A catcher's size as a key: the adapters rebuild its plane only when it changes. */
+export const catcherSize = (spec: Pick<ShadowCatcherSpec, 'width' | 'depth'>) => `${spec.width}x${spec.depth}`;
 
 /** scene.shadowCatcher's params, or, with its markerInfo wired, the marker's size in mm. */
 export function shadowCatcherSpec(params: Record<string, unknown>, marker?: { widthMM?: unknown; heightMM?: unknown } | null): ShadowCatcherSpec {

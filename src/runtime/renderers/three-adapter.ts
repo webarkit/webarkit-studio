@@ -5,6 +5,8 @@ import {
   DIRECTIONAL_SHADOW_NEAR,
   directionalShadowFar,
   engineIntensity,
+  normalizeIntensity,
+  catcherSize,
   normalizeLight,
   normalizeShadowCatcher,
   SHADOW_EXTENT,
@@ -175,8 +177,9 @@ function createThreeScene(
   const meshGeometry = new WeakMap<THREE.Object3D, ThreeGeometryState>();
   /** The geometries createGeometry made and keeps: a release never disposes one, the scene's teardown does. */
   const sharedGeometries = new WeakSet<THREE.BufferGeometry>();
-  /** The shadow catchers: setShadowCasting leaves them as they are (they receive, never cast). */
-  const catchers = new WeakSet<THREE.Object3D>();
+  /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
+   * leaves them as they are (they receive, never cast). */
+  const catchers = new WeakMap<THREE.Object3D, string>();
   /** Each light's kind (setLight keeps it) and its intensity scale (setIntensity: engineIntensity, #134). */
   const lightKinds = new WeakMap<THREE.Light, LightKind>();
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
@@ -433,15 +436,18 @@ function createThreeScene(
       // camera as a half-transparent mesh does.
       const mesh = new THREE.Mesh(threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth }), new THREE.ShadowMaterial({ opacity: spec.opacity }));
       mesh.receiveShadow = true;
-      catchers.add(mesh);
+      catchers.set(mesh, catcherSize(spec));
       return wrap(mesh);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);
       const mesh = obj(o) as THREE.Mesh;
-      const old = mesh.geometry;
-      mesh.geometry = threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth });
-      old.dispose();
+      if (catchers.get(mesh) !== catcherSize(spec)) {
+        const old = mesh.geometry;
+        mesh.geometry = threeGeometry({ shape: 'plane', width: spec.width, depth: spec.depth });
+        old.dispose();
+        catchers.set(mesh, catcherSize(spec));
+      }
       (mesh.material as THREE.ShadowMaterial).opacity = spec.opacity;
     },
     addChild(parent, child) {
@@ -489,7 +495,7 @@ function createThreeScene(
     },
     setIntensity(o, i) {
       const light = obj(o) as THREE.Light;
-      light.intensity = engineIntensity(lightKinds.get(light) ?? 'directional', i);
+      light.intensity = engineIntensity(lightKinds.get(light) ?? 'directional', normalizeIntensity(i));
     },
 
     animations: (o) => [...(modelClips.get(obj(o))?.names ?? [])],

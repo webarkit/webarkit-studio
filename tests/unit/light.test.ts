@@ -3,6 +3,7 @@ import {
   DEFAULT_LIGHT_POSITION,
   DEFAULT_LIGHT_TARGET,
   LIGHT_KINDS,
+  MAX_INTENSITY,
   MAX_SPOT_ANGLE,
   MIN_SPOT_ANGLE,
   POINT_SPOT_INTENSITY_SCALE,
@@ -11,6 +12,7 @@ import {
   engineIntensity,
   lightKind,
   lightSpec,
+  normalizeIntensity,
   normalizeLight,
   normalizeShadowCatcher,
   shadowCatcherSpec,
@@ -54,7 +56,26 @@ describe('normalizeLight', () => {
 
   it.each([NaN, Infinity, 'x', null])('gives each number its default for %s', (bad) => {
     const s = normalizeLight({ kind: 'spot', color: '#fff', intensity: bad as never, angle: bad as never, penumbra: bad as never, distance: bad as never, shadowBias: bad as never });
-    expect([s.intensity, s.angle, s.penumbra, s.distance, s.shadowBias]).toEqual([1, 30, 0, 0, -0.0005]);
+    // The intensity's default is the catalog's, 1.5.
+    expect([s.intensity, s.angle, s.penumbra, s.distance, s.shadowBias]).toEqual([1.5, 30, 0, 0, -0.0005]);
+  });
+
+  it('gives a light that shines towards where it stands the default direction, from where it is', () => {
+    const s = normalizeLight({ kind: 'spot', color: '#fff', intensity: 1, position: [10, 20, 30], target: [10, 20, 30] });
+    expect(s.position).toEqual([10, 20, 30]);
+    expect(s.target).toEqual([10 - DEFAULT_LIGHT_POSITION[0], 20 - DEFAULT_LIGHT_POSITION[1], 30 - DEFAULT_LIGHT_POSITION[2]]);
+    // Equal through their defaults too: a position given as the default target.
+    const d = normalizeLight({ kind: 'directional', color: '#fff', intensity: 1, position: [0, 0, 0] });
+    expect(d.target).not.toEqual(d.position);
+    expect(normalizeLight(s)).toEqual(s);
+  });
+
+  it('caps the intensity so that the engine intensity stays finite', () => {
+    const s = normalizeLight({ kind: 'point', color: '#fff', intensity: Number.MAX_VALUE });
+    expect(Number.isFinite(engineIntensity(s.kind, s.intensity))).toBe(true);
+    expect(normalizeIntensity(Number.MAX_VALUE)).toBe(MAX_INTENSITY);
+    expect(Number.isFinite(engineIntensity('spot', MAX_INTENSITY))).toBe(true);
+    expect([normalizeIntensity(-2), normalizeIntensity(NaN), normalizeIntensity(3)]).toEqual([0, 1.5, 3]);
   });
 
   it('keeps a position or target that is not three finite numbers at its default', () => {
