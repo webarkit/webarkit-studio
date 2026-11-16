@@ -48,6 +48,7 @@ import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter
 import type { GeometryObject, LightSpec, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from '../../../src/runtime/renderers/adapter';
 import type { MaterialSpec, TextureSpec } from '../../../src/core/material';
 import type { ShadowCatcherSpec } from '../../../src/core/light';
+import type { EnvironmentSpec } from '../../../src/core/environment';
 import type { GeometrySpec } from '../../../src/core/geometry';
 import { createPrimitive, type PrimitiveSpec } from '../../helpers/primitive';
 
@@ -179,6 +180,12 @@ export type AdapterOp =
   | { op: 'createShadowCatcher'; id: string; spec: ShadowCatcherSpec }
   | { op: 'setShadowCatcher'; id: string; spec: ShadowCatcherSpec }
   /**
+   * #135: the scene's environment (an object) and its live change. `hdr` names a file the page writes: `bands`, four
+   * bands by longitude (red, green, blue, white), or `latitude`, red above the horizon and blue below (radiance 0.5).
+   */
+  | { op: 'createEnvironment'; id: string; spec: EnvironmentSpec; hdr?: EnvironmentHdr }
+  | { op: 'setEnvironment'; id: string; spec: EnvironmentSpec; hdr?: EnvironmentHdr }
+  /**
    * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
    * a case can check it; otherwise what is read back is the frame after the last operation.
    */
@@ -216,6 +223,14 @@ export function makeHdr(width: number, height: number, radiance: (u: number, v: 
       out[o++] = e + 128;
     }
   return out;
+}
+
+export type EnvironmentHdr = 'bands' | 'latitude';
+/** The .hdr files a case can name (#135), as the report's environment tests write them. */
+function environmentHdr(name: EnvironmentHdr): ArrayBuffer {
+  const bands: V3[] = [[0.5, 0.02, 0.02], [0.02, 0.5, 0.02], [0.02, 0.02, 0.5], [0.5, 0.5, 0.5]];
+  const bytes = name === 'bands' ? makeHdr(64, 32, (u) => bands[Math.floor(u * 4)]) : makeHdr(64, 32, (_u, v) => (v < 0.5 ? [0.5, 0.02, 0.02] : [0.02, 0.02, 0.5]));
+  return bytes.buffer.slice(0) as ArrayBuffer;
 }
 
 /** The textures a scene can name: made in the page, so no file and no codec. */
@@ -987,6 +1002,12 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             break;
           case 'setShadowCatcher':
             handle.setShadowCatcher(get(step.id), step.spec);
+            break;
+          case 'createEnvironment':
+            create(step.id, await handle.createEnvironment(step.spec, step.hdr && environmentHdr(step.hdr)));
+            break;
+          case 'setEnvironment':
+            await handle.setEnvironment(get(step.id), step.spec, step.hdr && environmentHdr(step.hdr));
             break;
           case 'render':
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.

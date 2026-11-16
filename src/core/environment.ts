@@ -127,7 +127,8 @@ export function neutralRoomHdr(): Uint8Array {
       const du = Math.min(Math.abs(u - lon), 1 - Math.abs(u - lon)) * 360;
       return smooth(1 - Math.hypot(du / 30, (elevation - el) / 20));
     };
-    const l = 0.6 + 1.4 * ceiling - 0.4 * floor + 2.5 * Math.max(panel(0.25, 15), panel(0.75, 15));
+    // Scaled to give about the diffuse light RoomEnvironment gives (measured on a rough sphere: 2.4 times this room).
+    const l = 2.4 * (0.6 + 1.4 * ceiling - 0.25 * floor + 2.5 * Math.max(panel(0.25, 15), panel(0.75, 15)));
     return [l, l, l];
   }));
 }
