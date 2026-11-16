@@ -61,6 +61,11 @@ import {
   type NormalLight,
 } from '../../core/light';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTexture';
+// HDRCubeTexture uploads its faces with createRawCubeTextureFromUrl, which exists only once this extension is imported
+// (#135; without it the texture never loads).
+import '@babylonjs/core/Engines/Extensions/engine.rawTexture';
+import { environmentRotation, neutralRoomHdr, normalizeEnvironment, type EnvironmentSpec } from '../../core/environment';
 import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
 // VideoTexture calls engine methods its extensions add: imported for their side effects (AGENTS.md).
 import '@babylonjs/core/Engines/Extensions/engine.dynamicTexture';
@@ -250,6 +255,35 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
    * leaves them as they are (they receive, never cast). */
   const catchers = new WeakMap<BabylonNode, string>();
+  /** The scene's environment (#135), one per scene: the node that places it, its spec, its texture and the bytes. */
+  type EnvironmentState = { pivot: TransformNode; spec: EnvironmentSpec; texture: HDRCubeTexture | null; hdr?: ArrayBuffer };
+  let environment: EnvironmentState | null = null;
+  const [environmentMatrix, inverseRotation, reflectionMatrix] = [new Matrix(), new Matrix(), new Matrix()];
+  /** Babylon.js's equirectangular mapping is a quarter turn about Y from Three.js's (the report, "Around the vertical"). */
+  const QUARTER_TURN = Matrix.RotationY(Math.PI / 2);
+  /**
+   * The source as a prefiltered cube: the uploaded .hdr, or the neutral room the studio writes itself (never
+   * createDefaultEnvironment, which fetches from assets.babylonjs.com: the ruling on #135). From a blob URL, as the
+   * report's tests load theirs.
+   */
+  const environmentTexture = (spec: EnvironmentSpec, hdr: ArrayBuffer | undefined) =>
+    new Promise<HDRCubeTexture>((resolve, reject) => {
+      if (spec.source === 'hdr' && !hdr) throw new Error('the environment source is HDR, but no .hdr file was given');
+      const url = URL.createObjectURL(new Blob([spec.source === 'hdr' ? hdr! : (neutralRoomHdr() as BlobPart)]));
+      const done = () => URL.revokeObjectURL(url);
+      const texture: HDRCubeTexture = new HDRCubeTexture(
+        url, scene, 256, false, true, false, true,
+        () => (done(), resolve(texture)),
+        (message) => (done(), reject(new Error(`could not read the environment's .hdr: ${message ?? 'unknown error'}`))),
+      );
+      // Torn down before it loaded (a Stop): the promise settles, as createTexture's does.
+      texture.onDisposeObservable.addOnce(() => (done(), reject(new Error('the scene was torn down while the environment loaded'))));
+    });
+  const writeEnvironment = (texture: HDRCubeTexture, spec: EnvironmentSpec) => {
+    // Lights and reflects only: no skybox, the camera video is the background.
+    scene.environmentTexture = texture;
+    scene.environmentIntensity = spec.intensity;
+  };
   /** The meshes of a node and its descendants. */
   const meshesOf = (n: BabylonNode) => [n, ...n.getDescendants(false)].filter((m): m is AbstractMesh => 'receiveShadows' in m && !catchers.has(m));
   /**
@@ -511,6 +545,12 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       // releaseForMesh), and a geometry node keeps building on it. The scene's teardown frees it.
       // A released light's generator goes with it; a released caster leaves every generator (#134).
       for (const m of [n, ...n.getDescendants(false)]) {
+        // The environment leaves the scene with its node (#135).
+        if (environment && m === environment.pivot) {
+          environment.texture?.dispose();
+          scene.environmentTexture = null;
+          environment = null;
+        }
         if (m instanceof Light) {
           generators.get(m)?.dispose();
           generators.delete(m);
@@ -588,6 +628,40 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       mesh.receiveShadows = true;
       catchers.set(mesh, catcherSize(spec));
       return wrap(mesh);
+    },
+    async createEnvironment(given, hdr) {
+      if (environment) throw new Error('this scene already has an environment (one per scene)');
+      const spec = normalizeEnvironment(given);
+      const pivot = new TransformNode('environment', scene);
+      const state: EnvironmentState = { pivot, spec, texture: null, hdr };
+      environment = state; // claimed before the await: a second one made meanwhile is refused too
+      try {
+        state.texture = await environmentTexture(spec, hdr);
+      } catch (err) {
+        if (environment === state) environment = null;
+        throw err;
+      }
+      if (environment === state) writeEnvironment(state.texture, spec);
+      return wrap(pivot);
+    },
+    async setEnvironment(o, given, hdr) {
+      const pivot = node(o);
+      const state = environment;
+      if (!state || state.pivot !== pivot) return;
+      const spec = normalizeEnvironment(given);
+      const bytes = hdr ?? state.hdr;
+      if (spec.source !== state.spec.source || (spec.source === 'hdr' && hdr && hdr !== state.hdr)) {
+        const texture = await environmentTexture(spec, bytes);
+        if (environment !== state) {
+          texture.dispose();
+          return;
+        }
+        state.texture?.dispose();
+        state.texture = texture;
+      }
+      state.spec = spec;
+      state.hdr = bytes;
+      if (state.texture) writeEnvironment(state.texture, spec);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);
@@ -704,6 +778,17 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
 
     render(projection) {
       if (projection) camera.freezeProjectionMatrix(Matrix.FromArray(Array.from(projection)));
+      if (environment?.texture) {
+        // Under an anchor it turns with the anchor's world matrix (#135); at the root, in camera space. Babylon's
+        // matrix arrays are laid out as Three.js's column-major ones, so FromArray gives the same rotation R; the
+        // shader samples reflectionMatrix · n, for the irradiance and the reflections alike (pbrBlockReflection),
+        // with R's inverse (its transpose) first, then the quarter turn.
+        const parent = environment.pivot.parent;
+        Matrix.FromArrayToRef(environmentRotation(environment.spec.rotation, parent ? parent.computeWorldMatrix(true).m : null), 0, environmentMatrix);
+        environmentMatrix.transposeToRef(inverseRotation);
+        inverseRotation.multiplyToRef(QUARTER_TURN, reflectionMatrix);
+        environment.texture.setReflectionTextureMatrix(reflectionMatrix);
+      }
       for (const [hemi, localDirection] of adoptedHemis) {
         const parent = hemi.parent as TransformNode | null;
         if (parent) Vector3.TransformNormalToRef(localDirection, parent.computeWorldMatrix(true), hemi.direction);

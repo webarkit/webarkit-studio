@@ -16,6 +16,7 @@
 import type { GeometrySpec } from '../../core/geometry';
 import type { MaterialSpec, TextureSpec } from '../../core/material';
 import type { LightSpec, ShadowCatcherSpec } from '../../core/light';
+import type { EnvironmentSpec } from '../../core/environment';
 import { transformMatrix } from '../../core/math';
 
 export interface SceneObject {
@@ -201,6 +202,16 @@ export interface SceneHandle {
   /** A plane on the marker (XY, facing +Z) that shows only the shadows falling on it, `opacity` dark at full shadow. */
   createShadowCatcher(spec: ShadowCatcherSpec): SceneObject;
   setShadowCatcher(catcher: SceneObject, spec: ShadowCatcherSpec): void;
+  /**
+   * The scene's environment (#135; src/core/environment.ts, normalised by the adapter): image-based lighting for every
+   * PBR material, never drawn as a background. `hdr` is an equirectangular `.hdr` file, needed when the source is
+   * `hdr`; the neutral source is made in the page on each engine, with no network. The returned object places it: at
+   * the root, or wired to AR View, in camera space; a child of an anchor, it follows the anchor's world rotation every
+   * frame (environmentRotation()), whether the anchor is visible or not. One per scene: a second is refused.
+   */
+  createEnvironment(spec: EnvironmentSpec, hdr?: ArrayBuffer): Promise<SceneObject>;
+  /** Changes the environment in place: its intensity and rotation, and its source (an `hdr` source needs the file). */
+  setEnvironment(environment: SceneObject, spec: EnvironmentSpec, hdr?: ArrayBuffer): Promise<void>;
   /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;
   /** Adds a top-level object (anchor, light…) to the rendered scene. */

@@ -32,6 +32,7 @@ import {
   type SceneHandle,
   type SceneObject,
 } from './adapter';
+import { environmentRotation, normalizeEnvironment, type EnvironmentSpec } from '../../core/environment';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
 import { threeShape } from './three-shapes';
@@ -180,6 +181,47 @@ function createThreeScene(
   /** The shadow catchers and their size (setShadowCatcher rebuilds the plane only when it changes); setShadowCasting
    * leaves them as they are (they receive, never cast). */
   const catchers = new WeakMap<THREE.Object3D, string>();
+  /**
+   * The scene's environment (#135), one per scene: the object that places it, its spec, and the prefiltered texture of
+   * its source (with the bytes it was made from, so a change of intensity or rotation keeps it).
+   */
+  type EnvironmentState = { pivot: THREE.Object3D; spec: EnvironmentSpec; texture: THREE.Texture | null; hdr?: ArrayBuffer };
+  let environment: EnvironmentState | null = null;
+  const environmentMatrix = new THREE.Matrix4();
+  /** The source's texture, prefiltered for PBR (PMREM): RoomEnvironment for neutral, the .hdr for hdr (the report). */
+  const environmentTexture = async (spec: EnvironmentSpec, hdr: ArrayBuffer | undefined) => {
+    if (spec.source === 'hdr' && !hdr) throw new Error('the environment source is HDR, but no .hdr file was given');
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    try {
+      if (spec.source === 'neutral') {
+        const { RoomEnvironment } = await import('three/examples/jsm/environments/RoomEnvironment.js');
+        const room = new RoomEnvironment();
+        const texture = pmrem.fromScene(room, 0.04).texture;
+        room.dispose();
+        return texture;
+      }
+      const { HDRLoader } = await import('three/examples/jsm/loaders/HDRLoader.js');
+      const parsed = new HDRLoader().parse(hdr!);
+      const equirect = new THREE.DataTexture(parsed.data, parsed.width, parsed.height, THREE.RGBAFormat, parsed.type);
+      equirect.mapping = THREE.EquirectangularReflectionMapping;
+      equirect.colorSpace = THREE.LinearSRGBColorSpace;
+      // As HDRLoader.load() sets it (DataTextureLoader): a Radiance file's first row is the top (the report).
+      equirect.flipY = true;
+      equirect.minFilter = equirect.magFilter = THREE.LinearFilter;
+      equirect.generateMipmaps = false;
+      equirect.needsUpdate = true;
+      const texture = pmrem.fromEquirectangular(equirect).texture;
+      equirect.dispose();
+      return texture;
+    } finally {
+      pmrem.dispose();
+    }
+  };
+  const writeEnvironment = (texture: THREE.Texture, spec: EnvironmentSpec) => {
+    // Lights and reflects only: scene.background stays null, the camera video is the background.
+    scene.environment = texture;
+    scene.environmentIntensity = spec.intensity;
+  };
   /** Each light's kind (setLight keeps it) and its intensity scale (setIntensity: engineIntensity, #134). */
   const lightKinds = new WeakMap<THREE.Light, LightKind>();
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
@@ -359,6 +401,15 @@ function createThreeScene(
           (x as THREE.Light).dispose();
           disposables.delete(x as THREE.Light);
         }
+        // The environment leaves the scene with its object (#135).
+        if (environment && x === environment.pivot) {
+          if (environment.texture) {
+            disposables.delete(environment.texture);
+            environment.texture.dispose();
+          }
+          scene.environment = null;
+          environment = null;
+        }
         // A catcher's plane and material leave the set: disposeObject3D frees them below, once.
         if (catchers.has(x)) {
           disposables.delete((x as THREE.Mesh).geometry);
@@ -446,6 +497,47 @@ function createThreeScene(
       mesh.receiveShadow = true;
       catchers.set(mesh, catcherSize(spec));
       return wrap(mesh);
+    },
+    async createEnvironment(given, hdr) {
+      if (environment) throw new Error('this scene already has an environment (one per scene)');
+      const spec = normalizeEnvironment(given);
+      const pivot = new THREE.Object3D();
+      pivot.name = 'environment';
+      // Claimed before the await: a second one made meanwhile is refused too.
+      const state: EnvironmentState = { pivot, spec, texture: null, hdr };
+      environment = state;
+      try {
+        state.texture = await environmentTexture(spec, hdr);
+      } catch (err) {
+        if (environment === state) environment = null;
+        throw err;
+      }
+      disposables.add(state.texture);
+      if (environment === state) writeEnvironment(state.texture, spec);
+      return wrap(pivot);
+    },
+    async setEnvironment(o, given, hdr) {
+      const pivot = obj(o);
+      const state = environment;
+      if (!state || state.pivot !== pivot) return;
+      const spec = normalizeEnvironment(given);
+      const bytes = hdr ?? state.hdr;
+      if (spec.source !== state.spec.source || (spec.source === 'hdr' && hdr && hdr !== state.hdr)) {
+        const texture = await environmentTexture(spec, bytes);
+        if (environment !== state) {
+          texture.dispose();
+          return;
+        }
+        if (state.texture) {
+          disposables.delete(state.texture);
+          state.texture.dispose();
+        }
+        state.texture = texture;
+        disposables.add(texture);
+      }
+      state.spec = spec;
+      state.hdr = bytes;
+      if (state.texture) writeEnvironment(state.texture, spec);
     },
     setShadowCatcher(o, given) {
       const spec = normalizeShadowCatcher(given);
@@ -560,7 +652,16 @@ function createThreeScene(
       // or an anchor above it, would aim the sky one frame late (#145). The scene's own updateMatrix() flags it, so this
       // recomputes the whole tree, as render() does. Only with an adopted hemisphere, at the cost of one more pass over
       // the tree per frame.
-      if (adoptedHemis.size > 0) scene.updateMatrixWorld();
+      // The environment under an anchor turns with it (#135), from world matrices brought up to date the same way.
+      const anchored = environment?.pivot.parent && environment.pivot.parent !== scene ? environment.pivot.parent : null;
+      if (adoptedHemis.size > 0 || anchored) scene.updateMatrixWorld();
+      if (environment) {
+        anchored?.updateWorldMatrix(true, false); // a parent outside the scene, as for the hemispheres below
+        environmentMatrix.fromArray(environmentRotation(environment.spec.rotation, anchored ? anchored.matrixWorld.elements : null));
+        // Three.js samples with this rotation's inverse (WebGLMaterials: envMapRotation, transposed), for the diffuse
+        // light and the reflections alike.
+        scene.environmentRotation.setFromRotationMatrix(environmentMatrix);
+      }
       for (const [hemi, parent] of adoptedHemis) {
         // A parent outside the scene is not reached by the call above: for it this keeps the previous behaviour (a matrix
         // set by setMatrix is not forced).

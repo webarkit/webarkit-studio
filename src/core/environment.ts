@@ -70,7 +70,7 @@ export function environmentRotation(rotation: number, parentWorld: ArrayLike<num
   const turn = [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1];
   if (!parentWorld) return turn.map((v) => v + 0);
   // Q: +Y (the room's up) to +Z (out of the marker), +Z to −Y.
-  const marker = [c, s, 0, 0, 0, 0, 1, 0, -s, c, 0, 0, 0, 0, 0, 1]; // Q · turn
+  const marker = [c, s, 0, 0, 0, 0, 1, 0, s, -c, 0, 0, 0, 0, 0, 1]; // Q · turn
   const p = rotationOf(parentWorld);
   const out = new Array<number>(16).fill(0);
   for (let col = 0; col < 4; col++)

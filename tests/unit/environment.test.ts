@@ -61,6 +61,13 @@ describe('environmentRotation: where the environment turns to (#135)', () => {
     expect(close(apply(b, [1, 0, 0]), [-y, x, 0])).toBe(true);
   });
 
+  it('is a rotation (orthonormal, determinant 1), in either space', () => {
+    const det = (m: number[]) =>
+      m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
+    const pose = transformMatrix({ position: [0, 0, -400], rotation: [10, 20, 30], scale: 1 });
+    for (const parent of [null, pose]) for (const rotation of [0, 30, 271]) expect(det(environmentRotation(rotation, parent))).toBeCloseTo(1, 12);
+  });
+
   it("follows the anchor's rotation, never its translation or its scale", () => {
     const pose = transformMatrix({ position: [10, -40, -600], rotation: [20, -35, 70], scale: 3 });
     const turn = transformMatrix({ position: [0, 0, 0], rotation: [20, -35, 70], scale: 1 });
