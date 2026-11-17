@@ -1530,7 +1530,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       regions: { C: [62, 9, 3, 3], S: [55, 15, 4, 4] },
       rules: [{ region: 'C', is: 'drawn' }, { region: 'C', is: 'same' }],
       known: {
-        issue: 'new issue (draft in the #136 handoff): Babylon.js widens the directional shadow camera by shadowOrthoScale',
+        issue: '#169',
         why: "Babylon.js's directional camera is ±300 mm, not the adapter's ±250 mm: shadowOrthoScale 0.1 widens explicit extents",
         rules: [{ region: 'S', is: 'empty' }],
         pinned: { three: { C: [124, 124, 124, 255], S: [0, 0, 0, 0] }, babylon: { C: [124, 124, 124, 255], S: [0, 0, 0, 153] } },
