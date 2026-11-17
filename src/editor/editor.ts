@@ -329,8 +329,13 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   // A plain drag on the canvas pans; with Shift it draws a box instead (the area's default guard, plus Shift).
   area.area.setDragHandler(new Drag({ down: (e) => !(e.pointerType === 'mouse' && e.button !== 0) && !e.shiftKey, move: () => true }));
 
-  /** The press under way is not the primary button (a right-click): its pointerup is kept from selectableNodes. */
-  let secondary = false;
+  /**
+   * Where the press under way started, as the area saw it: on the canvas, on a node, or with another button than the
+   * primary (a right-click). A pointerup with no press the area saw (a click in the context menu or the minimap, which
+   * stop their pointerdown) or a right-click's is kept from selectableNodes: it would clear the selection, its move
+   * count still at what the last canvas press left (Qodo on #172).
+   */
+  let press: 'canvas' | 'node' | 'secondary' | null = null;
   /** A Ctrl or Shift click on a node already selected: removed on a click without a drag (a drag moves the selection). */
   let toggle: { id: string; dragged: boolean } | null = null;
   /** A box being drawn: where it started (area coordinates and client), whether it adds, and the rectangle shown. */
@@ -355,6 +360,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   // Before selectableNodes: its own pipe runs after this one, and a pointerup this one keeps never clears the selection.
   area.addPipe((context) => {
     if (context.type === 'nodepicked') {
+      press = 'node';
       const node = editor.getNode(context.data.id);
       toggle = lastPointer?.add && node?.selected ? { id: node.id, dragged: false } : null;
     } else if (context.type === 'nodetranslated') {
@@ -365,8 +371,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       // so a right-click on a node reaches the area too, and selectableNodes cleared the selection on its pointerup;
       // where the browser opens the context menu after the pointerup (Chrome on Windows), the menu's Duplicate and
       // Delete then saw one node instead of the selection.
-      secondary = e.pointerType === 'mouse' && e.button !== 0;
-      if (secondary) return context;
+      press = e.pointerType === 'mouse' && e.button !== 0 ? 'secondary' : 'canvas';
+      if (press === 'secondary') return context;
       // Otherwise only the empty canvas reaches the area's pointerdown: a node's drag handler stops its own.
       if (e.shiftKey) {
         const rect = document.createElement('div');
@@ -378,10 +384,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     } else if (context.type === 'pointermove') {
       if (box) drawBox({ x: context.data.event.clientX, y: context.data.event.clientY });
     } else if (context.type === 'pointerup') {
-      if (secondary) {
-        secondary = false;
-        return;
-      }
+      const started = press;
+      press = null;
+      if (started === null || started === 'secondary') return;
       if (toggle && !toggle.dragged) void selectable.unselect(toggle.id).then(followSelection);
       toggle = null;
       if (box) {
@@ -453,8 +458,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   /** Removes nodes and their wires, as one undo step, through the node menu's path (removeNode). */
   async function removeNodes(ids: string[]) {
     if (!ids.length) return;
-    // The selection goes with them: the selector would keep entities for nodes that no longer exist.
-    await selector.unselectAll();
+    // Their selection goes with them (the selector would keep entities for nodes that no longer exist); the others'
+    // stays: Delete in the menu of a node outside the selection removes that node only (Qodo on #172).
+    for (const id of ids) if (editor.getNode(id)?.selected) await selectable.unselect(id);
     await oneStep(async () => {
       for (const id of ids) await removeNode(id);
     });

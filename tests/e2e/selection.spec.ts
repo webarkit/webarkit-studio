@@ -179,6 +179,25 @@ test.describe('selection (#139)', () => {
   });
 });
 
+test.describe('selection, after review (#139)', () => {
+  test("Delete in the menu of a node outside the selection removes that node only, and the selection stays (Qodo on #172)", async ({ page }) => {
+    await openRow(page);
+    await titled(page, 'Time').locator('.title').click();
+    await titled(page, 'Absolute').locator('.title').click({ modifiers: ['Shift'] });
+    await expect(selected(page)).toHaveCount(2);
+    // The lower Negate (n2): the one further down the screen.
+    const negates = titled(page, 'Negate');
+    const [y0, y1] = await Promise.all([0, 1].map(async (i) => (await negates.nth(i).boundingBox())!.y));
+    await negates.nth(y0 > y1 ? 0 : 1).locator('.title').click({ button: 'right' });
+    await page.locator('.context-menu .item', { hasText: 'Delete' }).click();
+    await expect(nodes(page)).toHaveCount(3);
+    expect((await saved(page)).nodes.map((n) => n.id).sort()).toEqual(['a1', 'n1', 't']);
+    await expect(selected(page)).toHaveCount(2);
+    await expect(titled(page, 'Time')).toHaveClass(/selected/);
+    await expect(titled(page, 'Absolute')).toHaveClass(/selected/);
+  });
+});
+
 test.describe('where the selection shortcuts do not apply (#139)', () => {
   async function selectRow(page: Page) {
     await openRow(page);
