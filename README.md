@@ -44,8 +44,14 @@ Editing:
 
 - **Add a node:** right-click the canvas and type to search (name, category or library), or filter the palette.
 - **Undo / redo:** ↶ / ↷, or Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y). Param edits are undone too.
-- **Copy / paste / duplicate:** Ctrl+C / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
+- **Select:** click a node; Ctrl+click or Shift+click adds it, or removes it if it is selected; Shift+drag on the
+  canvas draws a box that selects the nodes it touches (with Ctrl, adds them); Ctrl+A selects every node; Escape
+  clears. A plain drag on the canvas pans; Ctrl+drag (or Shift+drag) on a selected node moves the whole selection.
+- **Copy / cut / paste / duplicate:** Ctrl+C, Ctrl+X / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
   or Duplicate in a node's right-click menu. Wires between the copied nodes are kept.
+- **Delete:** Delete or Backspace removes the selected nodes and their wires, and so does Delete in a selected
+  node's menu. Each of these is one undo step. Keys typed in a field, a select or the log are never taken as
+  shortcuts.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 

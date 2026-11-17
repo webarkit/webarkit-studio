@@ -71,6 +71,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */
 .studio-node { width: 230px; background: var(--node); border: 1px solid var(--border); border-top: 3px solid var(--c, var(--border)); border-radius: 8px; padding-bottom: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.35); user-select: none; }
 .studio-node.selected { border-color: var(--accent); border-top-color: var(--accent); }
+/* The box of a Shift+drag on the canvas (#139): over the nodes, never catching the pointer. */
+.selection-box { position: absolute; z-index: 5; border: 1px dashed var(--accent); background: rgb(255 0 85 / 0.08); pointer-events: none; }
 .studio-node .title { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; font-weight: 600; }
 .studio-node .title small { display: block; font-weight: 400; font-size: 10px; color: var(--muted); }
 .studio-node .port .optional { font-style: italic; opacity: 0.7; }

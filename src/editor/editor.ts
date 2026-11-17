@@ -3,7 +3,8 @@
  * load(doc) builds the Rete graph, toDocument() serializes it back.
  */
 import { getUID, NodeEditor } from 'rete';
-import { AreaExtensions, AreaPlugin, type Area2D } from 'rete-area-plugin';
+import { AreaExtensions, AreaPlugin, Drag, type Area2D } from 'rete-area-plugin';
+import { boxFrom, nodesInBox, type NodeRect } from './box-select';
 import { ClassicFlow, ConnectionPlugin } from 'rete-connection-plugin';
 import { ContextMenuPlugin } from 'rete-context-menu-plugin';
 import { HistoryPlugin, Presets as HistoryPresets, type HistoryActions } from 'rete-history-plugin';
@@ -236,7 +237,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       return {
         list: [
           { label: ids.length > 1 ? `Duplicate ${ids.length} nodes` : 'Duplicate', key: 'duplicate', handler: () => serial(() => duplicate(ids)) },
-          { label: 'Delete', key: 'delete', handler: () => removeNode(target.id) },
+          // On a selected node, Delete removes the whole selection, as one undo step (#139).
+          { label: ids.length > 1 ? `Delete ${ids.length} nodes` : 'Delete', key: 'delete', handler: () => serial(() => removeNodes(ids)) },
         ],
       };
     },
@@ -282,7 +284,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   };
 
   // Ctrl/Cmd+Z undo, Ctrl+Shift+Z / Ctrl+Y redo; text fields keep the browser's own undo.
+  // Delete, Backspace, Ctrl/Cmd+A and Escape act on the selection (#139), only where the editor has the keyboard.
   const onKeyDown = (e: KeyboardEvent) => {
+    if (selectionKey(e)) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || isEditable(e.target)) return;
     const key = e.key.toLowerCase();
     if (key === 'z' && !e.shiftKey) void undo();
@@ -308,9 +312,152 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const undo = () => serial(() => history.undo());
   const redo = () => serial(() => history.redo());
 
+  // ------------------------------------------------------------- selection (#139)
+  /**
+   * The modifiers of the last pointerdown, and whether it was in the editor. Read from the event, never from key state:
+   * accumulateOnCtrl() tracks Ctrl through keydown / keyup, so a key released while the window had lost focus stayed
+   * "pressed" (rete-area-plugin 2.3.2, accumulateOnCtrl).
+   */
+  let lastPointer: { add: boolean; inEditor: boolean } | null = null;
+  const onPointerDownCapture = (e: PointerEvent) => {
+    lastPointer = { add: e.ctrlKey || e.metaKey || e.shiftKey, inEditor: e.target instanceof Node && container.contains(e.target) };
+  };
+  document.addEventListener('pointerdown', onPointerDownCapture, true);
+  /** Ctrl, Cmd or Shift on a node's pointerdown adds it to the selection (Shift+click as Ctrl+click). */
+  const accumulating = { active: () => lastPointer?.add ?? false, destroy() {} };
+
+  // A plain drag on the canvas pans; with Shift it draws a box instead (the area's default guard, plus Shift).
+  area.area.setDragHandler(new Drag({ down: (e) => !(e.pointerType === 'mouse' && e.button !== 0) && !e.shiftKey, move: () => true }));
+
+  /** The press under way is not the primary button (a right-click): its pointerup is kept from selectableNodes. */
+  let secondary = false;
+  /** A Ctrl or Shift click on a node already selected: removed on a click without a drag (a drag moves the selection). */
+  let toggle: { id: string; dragged: boolean } | null = null;
+  /** A box being drawn: where it started (area coordinates and client), whether it adds, and the rectangle shown. */
+  let box: { start: { x: number; y: number }; startClient: { x: number; y: number }; add: boolean; rect: HTMLDivElement } | null = null;
+  const drawBox = (client: { x: number; y: number }) => {
+    if (!box) return;
+    const at = container.getBoundingClientRect();
+    const [a, b] = [box.startClient, client];
+    Object.assign(box.rect.style, {
+      left: `${Math.min(a.x, b.x) - at.left}px`,
+      top: `${Math.min(a.y, b.y) - at.top}px`,
+      width: `${Math.abs(a.x - b.x)}px`,
+      height: `${Math.abs(a.y - b.y)}px`,
+    });
+  };
+  /** Each node's rectangle in area coordinates: its view's position and its element's size (unscaled CSS pixels). */
+  const nodeRects = (): NodeRect[] =>
+    editor.getNodes().flatMap((n) => {
+      const view = area.nodeViews.get(n.id);
+      return view ? [{ id: n.id, x: view.position.x, y: view.position.y, width: view.element.offsetWidth, height: view.element.offsetHeight }] : [];
+    });
+  // Before selectableNodes: its own pipe runs after this one, and a pointerup this one keeps never clears the selection.
+  area.addPipe((context) => {
+    if (context.type === 'nodepicked') {
+      const node = editor.getNode(context.data.id);
+      toggle = lastPointer?.add && node?.selected ? { id: node.id, dragged: false } : null;
+    } else if (context.type === 'nodetranslated') {
+      if (toggle?.id === context.data.id) toggle.dragged = true;
+    } else if (context.type === 'pointerdown') {
+      const e = context.data.event;
+      // A right (or middle) press never changes the selection. A node's drag handler takes the primary button only,
+      // so a right-click on a node reaches the area too, and selectableNodes cleared the selection on its pointerup;
+      // where the browser opens the context menu after the pointerup (Chrome on Windows), the menu's Duplicate and
+      // Delete then saw one node instead of the selection.
+      secondary = e.pointerType === 'mouse' && e.button !== 0;
+      if (secondary) return context;
+      // Otherwise only the empty canvas reaches the area's pointerdown: a node's drag handler stops its own.
+      if (e.shiftKey) {
+        const rect = document.createElement('div');
+        rect.className = 'selection-box';
+        container.appendChild(rect);
+        box = { start: { ...context.data.position }, startClient: { x: e.clientX, y: e.clientY }, add: e.ctrlKey || e.metaKey, rect };
+        drawBox(box.startClient);
+      }
+    } else if (context.type === 'pointermove') {
+      if (box) drawBox({ x: context.data.event.clientX, y: context.data.event.clientY });
+    } else if (context.type === 'pointerup') {
+      if (secondary) {
+        secondary = false;
+        return;
+      }
+      if (toggle && !toggle.dragged) void selectable.unselect(toggle.id).then(followSelection);
+      toggle = null;
+      if (box) {
+        const { start, add, rect } = box;
+        box = null;
+        rect.remove();
+        const hit = nodesInBox(boxFrom(start, context.data.position), nodeRects());
+        void serial(async () => {
+          if (!add) await selector.unselectAll();
+          for (const id of hit) await selectable.select(id, true);
+          followSelection();
+        });
+        return; // kept from selectableNodes: a short box (under 4 moves) would clear the selection there
+      }
+    }
+    return context;
+  });
+
   const selector = AreaExtensions.selector();
-  const selectable = AreaExtensions.selectableNodes(area, selector, { accumulating: AreaExtensions.accumulateOnCtrl() });
+  const selectable = AreaExtensions.selectableNodes(area, selector, { accumulating });
   const selectedIds = () => editor.getNodes().filter((n) => n.selected).map((n) => n.id);
+
+  /**
+   * Whether the editor has the keyboard for Delete, Backspace, Ctrl/Cmd+A and Escape: not while a context menu or a
+   * dialog is open (an Escape there closes only it), and only on the editor's own elements, never a form control. The
+   * page body counts when the last click was in the editor (or there was none): the log is not focusable, so a key
+   * pressed after a click in it targets the body, and Ctrl+A there is the browser's select-all.
+   */
+  function editorHasKeys(e: KeyboardEvent) {
+    if (document.querySelector('.context-menu, dialog[open]')) return false;
+    const target = e.target;
+    if (target === document.body || target === document.documentElement) return !lastPointer || lastPointer.inEditor;
+    return target instanceof HTMLElement && container.contains(target) && !isFormControl(target);
+  }
+  /** Handles a selection key; true if it took it. */
+  function selectionKey(e: KeyboardEvent): boolean {
+    if (e.altKey || e.isComposing) return false;
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
+      if (!editorHasKeys(e)) return false;
+      const ids = selectedIds();
+      if (!ids.length) return false;
+      e.preventDefault();
+      if (!e.repeat) void serial(() => removeNodes(ids));
+      return true;
+    }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'a') {
+      if (!editorHasKeys(e)) return false;
+      e.preventDefault();
+      void serial(selectAll);
+      return true;
+    }
+    if (!mod && !e.shiftKey && e.key === 'Escape') {
+      if (!editorHasKeys(e)) return false;
+      void serial(async () => {
+        await selector.unselectAll();
+        followSelection();
+      });
+      return true;
+    }
+    return false;
+  }
+  async function selectAll() {
+    for (const n of editor.getNodes()) await selectable.select(n.id, true);
+    followSelection();
+  }
+  /** Removes nodes and their wires, as one undo step, through the node menu's path (removeNode). */
+  async function removeNodes(ids: string[]) {
+    if (!ids.length) return;
+    // The selection goes with them: the selector would keep entities for nodes that no longer exist.
+    await selector.unselectAll();
+    await oneStep(async () => {
+      for (const id of ids) await removeNode(id);
+    });
+    followSelection();
+  }
 
   // ------------------------------------------------- copy / paste / duplicate
   // Copy and paste go through the clipboard events (no permission prompt), as
@@ -330,7 +477,17 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     e.preventDefault();
     void serial(() => paste(data, pastePoint()));
   };
+  // Cut (#139): the copy, then the selection removed, as one undo step; through the clipboard event, as copy is.
+  const onCut = (e: ClipboardEvent) => {
+    const ids = selectedIds();
+    const textSelected = !(document.getSelection()?.isCollapsed ?? true);
+    if (isEditable(e.target) || textSelected || !ids.length || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
+    e.preventDefault();
+    void serial(() => removeNodes(ids));
+  };
   document.addEventListener('copy', onCopy);
+  document.addEventListener('cut', onCut);
   document.addEventListener('paste', onPaste);
 
   /**
@@ -629,12 +786,26 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     destroy() {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCut);
+      document.removeEventListener('pointerdown', onPointerDownCapture, true);
+      box?.rect.remove();
       document.removeEventListener('paste', onPaste);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerleave', onPointerLeave);
       area.destroy();
     },
   };
+}
+
+/** A form control or editable content: its keys (Backspace in a field, Delete in a select) are its own (#139). */
+function isFormControl(target: HTMLElement) {
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLButtonElement
+  );
 }
 
 /** Text fields and editable content keep their own keyboard shortcuts. */
