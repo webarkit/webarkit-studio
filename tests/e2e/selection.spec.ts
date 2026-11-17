@@ -198,6 +198,64 @@ test.describe('selection, after review (#139)', () => {
   });
 });
 
+test.describe('the box and its pointer (Qodo on #172)', () => {
+  /**
+   * A Shift+press and a move of the mouse on the canvas at `at`, never released: the pointerup lost outside the window.
+   * The mouse's own pointer (id 1, Playwright's too), as a real lost release is: two pointers down at once would be a
+   * pinch, which rete reads as a zoom.
+   */
+  const strandedBox = (page: Page, at: { x: number; y: number }) =>
+    page.evaluate(({ x, y }) => {
+      const canvas = document.getElementById('editor')!.firstElementChild as HTMLElement;
+      const init = { pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1, shiftKey: true, bubbles: true, clientX: x, clientY: y };
+      canvas.dispatchEvent(new PointerEvent('pointerdown', init));
+      window.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: x + 40, clientY: y + 40 }));
+    }, at);
+
+  test('a box whose pointerup never came: a new Shift-drag shows one rectangle and selects as usual', async ({ page }) => {
+    await openRow(page);
+    const { from, to } = await rowBox(page);
+    await strandedBox(page, { x: from.x, y: to.y + 40 });
+    await expect(page.locator('.selection-box')).toHaveCount(1);
+    // The new box, held before its release: one rectangle on screen.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await expect(page.locator('.selection-box')).toHaveCount(1);
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await expect(page.locator('.selection-box')).toHaveCount(0);
+    await expect(selected(page)).toHaveCount(3);
+  });
+
+  test("another pointer's moves and ups leave the box alone; a pointercancel removes it and selects nothing", async ({ page }) => {
+    await openRow(page);
+    const { from, to } = await rowBox(page);
+    await page.keyboard.down('Shift');
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    // A pointerup of another pointer: the box stays, and its release still selects.
+    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, pointerType: 'touch', bubbles: true, clientX: 0, clientY: 0 })));
+    await expect(page.locator('.selection-box')).toHaveCount(1);
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await expect(selected(page)).toHaveCount(3);
+    await page.keyboard.press('Escape');
+    // A box cancelled (pointercancel of its own pointer, 1 for Playwright's mouse): gone, nothing selected.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', bubbles: true })));
+    await expect(page.locator('.selection-box')).toHaveCount(0);
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await expect(selected(page)).toHaveCount(0);
+  });
+});
+
 test.describe('where the selection shortcuts do not apply (#139)', () => {
   async function selectRow(page: Page) {
     await openRow(page);

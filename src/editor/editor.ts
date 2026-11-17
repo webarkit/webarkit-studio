@@ -338,8 +338,22 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   let press: 'canvas' | 'node' | 'secondary' | null = null;
   /** A Ctrl or Shift click on a node already selected: removed on a click without a drag (a drag moves the selection). */
   let toggle: { id: string; dragged: boolean } | null = null;
-  /** A box being drawn: where it started (area coordinates and client), whether it adds, and the rectangle shown. */
-  let box: { start: { x: number; y: number }; startClient: { x: number; y: number }; add: boolean; rect: HTMLDivElement } | null = null;
+  /**
+   * A box being drawn: the pointer that draws it, where it started (area coordinates and client), whether it adds, and
+   * the rectangle shown. Other pointers' moves and ups leave it alone (Qodo on #172).
+   */
+  let box: { pointerId: number; start: { x: number; y: number }; startClient: { x: number; y: number }; add: boolean; rect: HTMLDivElement } | null = null;
+  /** Ends a box that will select nothing: a new box, a pointercancel or a lost capture of its pointer, a teardown. */
+  const cancelBox = () => {
+    box?.rect.remove();
+    box = null;
+  };
+  // A pointerup released outside the window may never come: a cancel, or the next box, ends the stranded one.
+  const onPointerCancel = (e: PointerEvent) => {
+    if (box && e.pointerId === box.pointerId) cancelBox();
+  };
+  window.addEventListener('pointercancel', onPointerCancel);
+  container.addEventListener('lostpointercapture', onPointerCancel);
   const drawBox = (client: { x: number; y: number }) => {
     if (!box) return;
     const at = container.getBoundingClientRect();
@@ -375,15 +389,19 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       if (press === 'secondary') return context;
       // Otherwise only the empty canvas reaches the area's pointerdown: a node's drag handler stops its own.
       if (e.shiftKey) {
+        cancelBox(); // one rectangle on screen: a box whose pointerup never came ends here
         const rect = document.createElement('div');
         rect.className = 'selection-box';
         container.appendChild(rect);
-        box = { start: { ...context.data.position }, startClient: { x: e.clientX, y: e.clientY }, add: e.ctrlKey || e.metaKey, rect };
+        box = { pointerId: e.pointerId, start: { ...context.data.position }, startClient: { x: e.clientX, y: e.clientY }, add: e.ctrlKey || e.metaKey, rect };
         drawBox(box.startClient);
       }
     } else if (context.type === 'pointermove') {
-      if (box) drawBox({ x: context.data.event.clientX, y: context.data.event.clientY });
+      const e = context.data.event;
+      if (box && e.pointerId === box.pointerId) drawBox({ x: e.clientX, y: e.clientY });
     } else if (context.type === 'pointerup') {
+      // Another pointer's up, while a box is drawn: the gesture is the box's, and nothing else changes.
+      if (box && context.data.event.pointerId !== box.pointerId) return;
       const started = press;
       press = null;
       if (started === null || started === 'secondary') return;
@@ -798,7 +816,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('cut', onCut);
       document.removeEventListener('pointerdown', onPointerDownCapture, true);
-      box?.rect.remove();
+      window.removeEventListener('pointercancel', onPointerCancel);
+      container.removeEventListener('lostpointercapture', onPointerCancel);
+      cancelBox();
       document.removeEventListener('paste', onPaste);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerleave', onPointerLeave);
