@@ -6,7 +6,7 @@
  * asking again. Where the browser has no `crypto.subtle` (a plain http page that is not localhost), the answers
  * last for the session only.
  */
-import { isScriptType, nodeScriptText } from '../core/script';
+import { nodeScriptText, scriptNodesIn } from '../core/script';
 import type { GraphDocument, GraphNode } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 
@@ -21,7 +21,7 @@ async function fingerprint(text: string): Promise<string | null> {
 }
 
 export interface ScriptTrust {
-  /** The script nodes of `doc` whose script was never allowed. */
+  /** The script nodes of `doc`, inside its macros too (#140), whose script was never allowed. */
   untrusted(doc: GraphDocument): Promise<GraphNode[]>;
   /** Remembers these scripts as allowed. */
   trust(texts: readonly string[]): Promise<void>;
@@ -44,7 +44,7 @@ export function createScriptTrust(builtIn: readonly string[]): ScriptTrust {
     async untrusted(doc) {
       const trusted = new Set(read());
       const out: GraphNode[] = [];
-      for (const node of doc.nodes.filter((n) => isScriptType(n.type))) {
+      for (const node of scriptNodesIn(doc)) {
         const text = nodeScriptText(node);
         if (shipped.has(text) || session.has(text)) continue;
         const print = await fingerprint(text);

@@ -39,11 +39,15 @@ export function installPlugin(plugin: StudioPlugin): void {
  * so a graph that forgets to list a plugin gets "not listed", not "unknown type".
  */
 export function pluginIdsOf(doc: unknown): string[] {
-  const g = (doc ?? {}) as { plugins?: unknown; nodes?: unknown };
+  const g = (doc ?? {}) as { plugins?: unknown; nodes?: unknown; macros?: unknown };
   const listed = Array.isArray(g.plugins) ? g.plugins.map((p) => String((p as { id?: unknown })?.id)) : [];
-  const used = Array.isArray(g.nodes)
-    ? g.nodes.map((n) => (n as { type?: unknown })?.type).filter((t): t is string => typeof t === 'string' && t.includes('.')).map((t) => t.slice(0, t.indexOf('.')))
-    : [];
+  // The nodes inside the macros' definitions too (#140).
+  const definitions = g.macros && typeof g.macros === 'object' ? Object.values(g.macros as Record<string, { nodes?: unknown }>) : [];
+  const nodes = [g.nodes, ...definitions.map((d) => d?.nodes)].flatMap((list) => (Array.isArray(list) ? list : []));
+  const used = nodes
+    .map((n) => (n as { type?: unknown })?.type)
+    .filter((t): t is string => typeof t === 'string' && t.includes('.'))
+    .map((t) => t.slice(0, t.indexOf('.')));
   return [...new Set([...listed, ...used])];
 }
 

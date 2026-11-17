@@ -12,7 +12,7 @@ import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
 import type { AssetLookup } from '../assets/asset';
 import { loadPlugins, pluginIdsOf } from '../plugins/host';
-import { isScriptType } from '../core/script';
+import { scriptNodesIn } from '../core/script';
 import studioConfig from '../../webarkit-studio.config';
 // names.ts, not exporters.ts: that one pulls in the code generator, which an exported app has no use for.
 import { graphTitle } from '../export/names';
@@ -50,8 +50,8 @@ async function loadGraph(): Promise<{ graph: unknown; linked: string | null }> {
  * refused. Called once the plugins are loaded, so a plugin's code node is known by its definition, not its name.
  */
 function refuseLinkedCode(graph: unknown, url: string): void {
-  const nodes = (graph as { nodes?: Array<{ id?: unknown; type?: unknown }> }).nodes;
-  const scripts = Array.isArray(nodes) ? nodes.filter((n) => typeof n?.type === 'string' && isScriptType(n.type)) : [];
+  // Inside its macros too (#140): a script in a definition runs as one outside does.
+  const scripts = scriptNodesIn((graph ?? {}) as { nodes?: unknown; macros?: unknown });
   if (scripts.length) {
     throw new Error(
       `${url} has scripts (${scripts.map((n) => String(n.id)).join(', ')}), and the player does not run scripts from a link: open the graph in the studio, which asks before running them`,
