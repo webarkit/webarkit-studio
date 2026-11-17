@@ -44,6 +44,7 @@ import { pageEvent } from './nodes/page';
 import { scriptLite } from './nodes/script';
 import { threeScript } from './nodes/three-script';
 import { threeRenderScript } from './nodes/three-render-script';
+import { nodeMaterialNode } from './nodes/babylon-node-material';
 import { button, colorPicker, select, slider, toggle as uiToggle } from './nodes/ui';
 import { inspector, statsNode, traceNode } from './nodes/debug';
 import { selectMarkerNode } from './nodes/tracking';
@@ -61,6 +62,7 @@ export const NODE_REGISTRY: Record<string, NodeFactory> = {
   'scene.light': light,
   'scene.mesh': mesh,
   'scene.material': materialNode,
+  'babylon.nodeMaterial': nodeMaterialNode,
   'scene.texture': textureNode,
   'scene.shadowCatcher': shadowCatcher,
   'scene.environment': environment,

@@ -309,7 +309,20 @@ export function createBabylonAdapter(opts: BabylonRendererOptions): RendererAdap
   return adapter;
 }
 
-function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLights: boolean, shared: BabylonShared): SceneHandle {
+/**
+ * A Babylon.js scene's handle, with what only Babylon.js has (#138): babylon.* nodes reach it after checking the
+ * renderer's kind. Not part of SceneHandle: the Three.js adapter has no counterpart, and no common node calls it.
+ */
+export interface BabylonSceneHandle extends SceneHandle {
+  /**
+   * A Node Material from the .json the Node Material Editor saves, made in this scene: a material that setMeshMaterial
+   * gives a mesh, as createMaterial's. Fails, naming them, on block types Babylon.js does not know (never a material
+   * with holes), and on a texture the file names by URL. The scene's teardown frees it.
+   */
+  loadNodeMaterial(json: unknown, name: string): Promise<{ material: MaterialObject; blocks: number }>;
+}
+
+function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLights: boolean, shared: BabylonShared): BabylonSceneHandle {
   const scene = new Scene(engine);
   scene.useRightHandedSystem = true;
   scene.clearColor = new Color4(0, 0, 0, 0);
@@ -439,6 +452,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   };
   /** Each mesh's own material (createMesh): setColor colours it, and setMeshMaterial(mesh, null) gives it back (#133). */
   const ownMaterial = new WeakMap<BabylonNode, PBRMaterial>();
+  // A createMaterial material is a PBRMaterial, and only those reach setMaterial; a Node Material (#138) reaches
+  // setMeshMaterial only, which assigns it as any Material.
   const materialOf = (m: MaterialObject) => (assertOwned(handle, m), m.native as PBRMaterial);
   const textureOf = (t: TextureObject) => (assertOwned(handle, t), t.native as Texture);
   /** Video textures: updated in render(), since they do not follow their element's events (independentVideoSource). */
@@ -488,7 +503,7 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   const adoptedHemis = new Map<HemisphericLight, Vector3>();
   const modelClips = new WeakMap<BabylonNode, ModelClips>();
 
-  const handle: SceneHandle = {
+  const handle: BabylonSceneHandle = {
     renderer: adapter,
 
     createGeometry(spec) {
@@ -510,6 +525,13 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       mesh.material = material;
       ownMaterial.set(mesh, material);
       return wrap(mesh);
+    },
+    async loadNodeMaterial(json, name) {
+      // The block registration comes with this module, loaded only by graphs that use a Node Material.
+      const { parseNodeMaterial } = await import('./babylon-node-material');
+      if (scene.isDisposed) throw new Error('the scene was torn down while the Node Material loaded');
+      const { material, blocks } = parseNodeMaterial(json, name, scene);
+      return { material: { scene: handle, native: material, kind: 'material' }, blocks };
     },
     createMaterial(setup) {
       const material = threeLikePbr('material', scene);

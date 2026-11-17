@@ -69,6 +69,8 @@ key by key; a renamed key looks like one removal plus one addition.
 - Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
+- A node that needs one engine declares `engine` (`'three'` or `'babylon'`): every `three.*` and `babylon.*` node, renderers
+  included (#138). The engine rule of `validateGraph()` reads it, never the name.
 
 ## 4. Live params
 

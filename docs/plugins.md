@@ -58,6 +58,13 @@ A node that runs code its graph holds sets `runsCode: true` in its definition (t
 trust prompt, the player's `?graph=` refusal and the MCP server's refusal cover it, by that flag and never by
 its name. A plugin node that runs code it was given must set it.
 
+A node that needs one engine sets `engine: 'three'` or `engine: 'babylon'` in its definition (types package 1.9.0,
+#138), as the built-in `three.*` and `babylon.*` nodes do, and a renderer node declares the engine it is. `validateGraph()`
+then refuses the node, by name, in a scene whose renderer is the other engine: through its own `scene` input, or
+through the scene objects, materials, textures and geometries it feeds. Plain data (numbers, vectors, colours) carries
+no engine. A plugin renderer that declares no engine leaves its scenes unconcerned. `validatePlugin()` refuses any other
+value. An unfinished graph (an autosave, an import still being built) is not checked, so the user can change the renderer.
+
 ## Registering it
 
 List the plugin in [`webarkit-studio.config.ts`](../webarkit-studio.config.ts), under its id,
@@ -240,10 +247,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.5.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.9.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.5.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.9.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs

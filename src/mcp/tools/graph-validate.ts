@@ -21,7 +21,8 @@ export const graphValidate = defineTool({
   title: 'Validate a graph',
   description:
     'Checks a graph document as the studio does before running it: format and version, plugins, node types, ports, socket types, ' +
-    'single connections, required inputs, array params and cycles. An older version that the studio can upgrade is checked as upgraded. ' +
+    'single connections, required inputs, array params, cycles, one parent per scene object, and no node of one engine in a scene of the other ' +
+    '(a Babylon.js node in a Three.js scene, or the other way). An older version that the studio can upgrade is checked as upgraded. ' +
     'Returns valid and the list of problems, and upgradedFrom if the document was upgraded.',
   inputSchema: z.object(graphInput),
   run: (input, env) => checkGraph(readGraphInput(input, env)),

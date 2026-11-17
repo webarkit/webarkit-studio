@@ -7,6 +7,7 @@
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { compareVersions, isVersion, LOADED_PLUGINS } from './plugins';
 import { effectiveDefinition, isScriptType } from './script';
+import { engineProblems, ownPort } from './engine';
 import { socketsCompatible } from './sockets';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
@@ -101,11 +102,13 @@ export class GraphValidationError extends Error {
  * Validation of a document of the current format; loadGraphDocument()
  * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136).
+ * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136), no node of one engine
+ * in a scene of the other (#138, src/core/engine.ts).
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
- * `unfinished`: a graph still being built may leave required inputs unconnected, and may wire an object into more
- * than one parent (the editor draws the link). Everything else is checked.
+ * `unfinished`: a graph still being built may leave required inputs unconnected, may wire an object into more than
+ * one parent (the editor draws the link), and may mix the engines (the user is changing the renderer: #138, as #136).
+ * Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
@@ -173,8 +176,8 @@ export function validateGraph(
     }
     if (missing.has(namespaceOf(src.type)) || missing.has(namespaceOf(dst.type))) continue; // reported as the missing plugin
     // Effective ports: a script node's come from its header (src/core/script.ts).
-    const out = effectiveDefinition(src, catalog)?.outputs[e.from.port];
-    const inp = effectiveDefinition(dst, catalog)?.inputs[e.to.port];
+    const out = ownPort(effectiveDefinition(src, catalog)?.outputs, e.from.port);
+    const inp = ownPort(effectiveDefinition(dst, catalog)?.inputs, e.to.port);
     if (!out) problems.push(`edge ${e.id}: ${src.type} has no output "${e.from.port}"`);
     if (!inp) problems.push(`edge ${e.id}: ${dst.type} has no input "${e.to.port}"`);
     if (out && inp && !socketsCompatible(out.type, inp.type)) {
@@ -203,6 +206,9 @@ export function validateGraph(
       const def = effectiveDefinition(node, catalog);
       problems.push(`node ${node.id} (${def?.label ?? node.type}): its ${label} is wired into more than one parent (${into.join(', ')}): an object has one parent`);
     }
+    // The engine rule (#138): a node of one engine in a scene of the other never runs. A work in progress may hold it,
+    // as it may hold two parents; Run, the exports and the MCP server refuse it.
+    problems.push(...engineProblems(g, nodes, catalog));
   }
 
   for (const n of g.nodes) {

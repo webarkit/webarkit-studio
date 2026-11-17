@@ -38,6 +38,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Both renderers draw the same light and the same shadows; a spot's penumbra fades differently on each (the cone's edge
   is the same). The source code export writes them. A new demo, "pinball · a model standing on the poster, with its
   shadow", shows it. Saved graphs keep their lights as they were.
+- A Babylon.js Node Material node (#138): a material from a `.json` file saved by Babylon.js's Node Material Editor,
+  for meshes, as a Material's. A graph that puts a node of one engine in a scene of the other (a Babylon.js node in
+  a Three.js scene, a Three.js Script in a Babylon.js scene, directly or through what it feeds) is now refused before
+  it runs, naming the node, in the studio, the exports and the MCP server; a work in progress still opens.
+- Plugin API: a node definition can say which engine it needs (`engine: 'three' | 'babylon'`), which that check reads
+  (plugin API types package 1.9.0).
 - The renderer nodes expose their engine's options (#137), each with its engine's names and defaults, so a saved graph
   renders as before: antialias, power preference, preserve drawing buffer and stencil; a max pixel ratio that caps the
   device pixel ratio the AR view is drawn at (on a phone, a cap of 1 draws fewer pixels), live; tone mapping and

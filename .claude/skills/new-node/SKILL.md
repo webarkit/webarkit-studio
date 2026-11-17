@@ -21,7 +21,7 @@ If the type already exists, or the request renames or removes an existing node, 
 
 A plugin's node goes into the plugin instead of steps 1 to 3 (`AGENTS.md`, "Adding a node").
 
-1. **Catalog:** add a `NodeDefinition` to `defs` in `src/nodes/catalog.ts`, in the section of its category. Metadata only, no runtime imports.
+1. **Catalog:** add a `NodeDefinition` to `defs` in `src/nodes/catalog.ts`, in the section of its category. Metadata only, no runtime imports. A `three.*` or `babylon.*` node sets `engine` to the engine it needs (#138: the engine rule reads it; `tests/unit/engine-rule.test.ts` checks it).
 2. **Factory:** implement it in the matching file of `src/runtime/nodes/` (or a new file for a new area). Use the lifecycle in `src/runtime/types.ts`: `init`, `update`, `onParamChange`, `dispose`. Copy the style of a nearby node of the same category.
 3. **Registry:** import the factory in `src/runtime/registry.ts` and add it to `NODE_REGISTRY` under the same type, next to its neighbours in the catalog order.
 4. **Test:** add a test in `tests/unit/` for the logic that does not need a browser (see `tests/unit/nodes.test.ts`).

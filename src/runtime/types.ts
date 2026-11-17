@@ -102,9 +102,21 @@ export interface GeometryValue {
  * material (#133): a material made in a scene, shared by every mesh given it, with the normalized spec it was last
  * written with. A new value on every change, so an Inspector shows it; the handle stays the same.
  */
-export interface MaterialValue {
+export type MaterialValue = SpecMaterialValue | NodeMaterialValue;
+/** scene.material's: the spec it was written with. */
+export interface SpecMaterialValue {
   handle: MaterialObject;
   spec: MaterialSpec;
+  nodeMaterial?: undefined;
+}
+/**
+ * babylon.nodeMaterial's (#138): a Node Material has no MaterialSpec (its colour, if any, is a block of a graph), so
+ * `spec` is null rather than one made up; what it is, is the file and its count of blocks. A mesh reads the handle only.
+ */
+export interface NodeMaterialValue {
+  handle: MaterialObject;
+  spec: null;
+  nodeMaterial: { file: string; blocks: number };
 }
 /** texture (#133): a texture made in a scene, its picture's size and kind, and its wrap and repeat. */
 export interface TextureValue {
