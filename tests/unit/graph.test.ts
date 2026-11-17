@@ -354,5 +354,28 @@ describe('one parent per scene object (#136)', () => {
     expect(check(doc)).toThrow(GraphValidationError);
   });
 
+  // Node ids are free strings and a port name may hold ':' (a script's header, a plugin): a key that joins them with ':'
+  // makes node "a:b" port "object" and node "a" port "b:object" the same output (Qodo on #168), and the same for inputs.
+  const colliding: Record<string, NodeDefinition> = {
+    ...catalog,
+    'test.odd': node('test.odd', { 'b:target': { type: 'sceneObject', label: 'Odd target', optional: true } }, { 'b:object': { type: 'sceneObject', label: 'Odd object' } }),
+  };
+
+  it('two outputs whose node and port join to the same text are two objects, each with its own parent', () => {
+    const doc = graph(
+      [['a:b', 'test.object'], ['a', 'test.odd'], ['p1', 'test.box'], ['p2', 'test.box']],
+      [['a:b', 'object', 'p1', 'contents'], ['a', 'b:object', 'p2', 'contents']],
+    );
+    expect(() => validateGraph(doc, colliding, {})).not.toThrow();
+  });
+
+  it('two single inputs whose node and port join to the same text take one link each', () => {
+    const doc = graph(
+      [['o1', 'test.object'], ['o2', 'test.object'], ['a:b', 'test.toggle'], ['a', 'test.odd']],
+      [['o1', 'object', 'a:b', 'target'], ['o2', 'object', 'a', 'b:target']],
+    );
+    expect(() => validateGraph(doc, colliding, {})).not.toThrow();
+  });
+
   // Every demo graph holds: "demo graph … is valid against the real catalog" above runs the strict check on each.
 });
