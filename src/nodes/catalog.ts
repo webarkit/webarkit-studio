@@ -317,10 +317,10 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
   }),
 ];
 
-/** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 /** WebGL's powerPreference (#137), the same names on both renderers; each node keeps its engine's default. */
 const POWER_PREFERENCES = { Default: 'default', 'High performance': 'high-performance', 'Low power': 'low-power' };
 
+/** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 export const CORE_NODES: NodeDefinition[] = [
   // ------------------------------------------------------------ sources
   {
