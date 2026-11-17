@@ -774,6 +774,30 @@ export const CORE_NODES: NodeDefinition[] = [
     outputs: { object: { type: 'sceneObject', label: 'Anchor' } },
     params: { center: { kind: 'boolean', label: 'Center on marker', default: true, live: true } },
   },
+  {
+    type: 'scene.group',
+    label: 'Group',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'Moves, turns, scales and hides its children together. Wire it into a Marker Anchor, another Group or AR View; ' +
+      'position (mm), rotation (degrees, X then Y then Z) and scale (per axis) apply in the space of what it is wired ' +
+      'into, as a Mesh\'s do. Connected inputs override the params. Hiding the group (Set Visible) hides its children and ' +
+      'turns off the lights in it; an Environment in it still lights the scene. An object has one parent.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      children: { type: 'sceneObject', label: 'Children', multiple: true, optional: true },
+      position: { type: 'vector3', label: 'Position', optional: true },
+      rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
+      scale: { type: 'vector3', label: 'Scale', optional: true },
+    },
+    outputs: { object: { type: 'sceneObject', label: 'Group' } },
+    params: {
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+      scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
+    },
+  },
 
   // ------------------------------------------------------------ geometry
   // Shapes in mm, in marker space (+Z out of the marker), for scene.mesh (#132). Every param is live: a change rebuilds

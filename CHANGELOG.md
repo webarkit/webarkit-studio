@@ -20,6 +20,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Three.js and Babylon.js, on every shape (#162). The source code export writes them (an image texture; a video one is
   refused by name).
   A new demo, "pinball · a textured poster and a chrome knot", shows both.
+- A Group node (#136): moves, turns, scales and hides its children together, inside a Marker Anchor, another Group
+  or AR View. Its position, rotation and scale (per axis) change live, and math nodes can drive them. Hiding a group
+  hides its children and turns off the lights in it. The source code export writes it, and a new demo, "pinball · a
+  group of shapes turning on the marker", shows it.
+- An object has one parent: a graph that wires the same object into two parents (two anchors, a group and AR View, or
+  twice into one) is refused at Run, naming the object; a work in progress still opens (#136).
 - An Environment node (#135): image-based lighting that gives metallic and glossy surfaces something to reflect,
   never drawn over the camera video. Neutral is a soft room made offline on each renderer (alike, not the same); HDR
   uses an uploaded equirectangular `.hdr`, which the upload button now offers and which project files and exported apps

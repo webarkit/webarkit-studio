@@ -20,7 +20,7 @@ import type { MaterialSpec, TextureSpec } from '../../src/core/material';
 import type { LightSpec } from '../../src/core/light';
 import type { EnvironmentSpec } from '../../src/core/environment';
 import type { GeometrySpec } from '../../src/core/geometry';
-import { nonZeroScale, transformMatrix } from '../../src/core/math';
+import { multiplyMatrices, nonZeroScale, transformMatrix, transformPoint } from '../../src/core/math';
 
 const ENGINES = ['three', 'babylon'] as const;
 type Engine = (typeof ENGINES)[number];
@@ -656,6 +656,29 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     for (let col = 0; col < 4; col++) for (let row = 0; row < 4; row++) for (let k = 0; k < 4; k++) out[col * 4 + row] += UPRIGHT[k * 4 + row] * z[col * 4 + k];
     return out;
   })();
+
+  // #136: groups. A group's matrix as scene.group sets it (transformMatrix, the mesh's), and the world bounds of a box
+  // centred at `at` in it: its eight corners through the composed matrix.
+  const T = (position: V3, rotation: V3 = [0, 0, 0], scale: V3 = [1, 1, 1]) => transformMatrix({ position, rotation, scale });
+  const boundsUnder = (world: number[], at: V3, size: number): { min: V3; max: V3 } => {
+    const h = size / 2;
+    const corners = [-h, h].flatMap((x) => [-h, h].flatMap((y) => [-h, h].map((z) => transformPoint(world, [at[0] + x, at[1] + y, at[2] + z]))));
+    return {
+      min: [0, 1, 2].map((i) => Math.min(...corners.map((c) => c[i]))) as V3,
+      max: [0, 1, 2].map((i) => Math.max(...corners.map((c) => c[i]))) as V3,
+    };
+  };
+  const MOVED_TURNED_SCALED = T([10, -5, -100], [20, 30, 40], [1.5, -0.75, 1]); // one axis mirrored
+  const OUTER = T([0, 0, -120], [0, 0, 30], [2, 2, 2]);
+  const INNER = T([10, 0, 0], [0, 45, 0], [1, 0.5, 1]);
+  /** A floor 600 mm square, 200 mm away, of the lit grey: what a light in a group lights. */
+  const FLOOR = meshOps('floor', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200]);
+  /** A group `id` at the root, with `matrix`. */
+  const groupOps = (id: string, matrix: number[], parent?: string): AdapterOp[] => [
+    { op: 'createGroup', id },
+    { op: 'setMatrix', id, matrix },
+    parent ? { op: 'addChild', parent, child: id } : { op: 'addRoot', id },
+  ];
 
   const CASES: Case[] = [
     ...(['box', 'sphere', 'torusKnot'] as const).map(
@@ -1343,6 +1366,175 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { region: 'right', is: 'look' },
         { region: 'left', is: 'changed', from: 'upright' },
       ],
+    },
+    {
+      // A group as scene.group sets it, moved, turned and scaled per axis: its child where the composed matrix puts it.
+      name: 'a child under a moved, turned and scaled group, one axis mirrored: the same place and bounds on both (#136)',
+      ops: [...groupOps('g', MOVED_TURNED_SCALED), ...box('a', 20, [10, 0, 0]), { op: 'addChild', parent: 'g', child: 'a' }],
+      regions: GRID,
+      rules: [{ bounds: 'a', ...boundsUnder(MOVED_TURNED_SCALED, [10, 0, 0], 20) }, ...sameEverywhere(GRID)],
+    },
+    {
+      name: 'a group inside a group: the child under both matrices, the same on both (#136)',
+      ops: [...groupOps('outer', OUTER), ...groupOps('inner', INNER, 'outer'), ...box('a', 10, [5, 0, 0]), { op: 'addChild', parent: 'inner', child: 'a' }],
+      regions: GRID,
+      rules: [{ bounds: 'a', ...boundsUnder(multiplyMatrices(OUTER, INNER), [5, 0, 0], 10) }, ...sameEverywhere(GRID)],
+    },
+    {
+      // Hiding a group hides its children and turns off the lights in it (Three.js: an invisible parent's children are
+      // skipped, lights included; Babylon.js: setEnabled, which the children inherit through isEnabled()).
+      name: 'hiding a group turns off the point light in it, the same on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        ...FLOOR,
+        ...groupOps('g', T([0, 0, 0])),
+        { op: 'createLight', id: 'l', spec: { kind: 'point', color: '#ffffff', intensity: 0.02, position: [0, 0, -100] } },
+        { op: 'addChild', parent: 'g', child: 'l' },
+        { op: 'render', capture: 'lit' },
+        { op: 'setVisible', id: 'g', visible: false },
+      ],
+      regions: { c: [62, 62, 4, 4], edge: [14, 62, 4, 4] },
+      rules: [
+        { frame: 'lit', region: 'c', is: 'drawn' },
+        { frame: 'lit', region: 'c', is: 'same' },
+        { frame: 'lit', region: 'edge', is: 'same' },
+        { region: 'c', is: 'drawn' },
+        { region: 'c', is: 'same' },
+        { region: 'c', is: 'changed', from: 'lit' },
+      ],
+    },
+    {
+      // Hiding a group turns off a hemisphere light in it too: the Three.js adapter keeps an adopted hemisphere in the root
+      // and hides it when any ancestor of its parent is hidden; Babylon.js's setEnabled reaches it as a child.
+      name: 'hiding a group turns off the hemisphere light in it, the same on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        ...meshOps('wall', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200]),
+        ...groupOps('outer', T([0, 0, -150])),
+        ...groupOps('inner', T([0, 0, 0]), 'outer'),
+        { op: 'createLight', id: 'sky', spec: { kind: 'hemisphere', color: '#ffffff', intensity: 2 } },
+        { op: 'addRoot', id: 'sky' },
+        { op: 'addChild', parent: 'inner', child: 'sky' },
+        { op: 'render', capture: 'lit' },
+        { op: 'setVisible', id: 'outer', visible: false },
+      ],
+      regions: { c: [62, 62, 4, 4] },
+      rules: [
+        { frame: 'lit', region: 'c', is: 'drawn' },
+        { frame: 'lit', region: 'c', is: 'same' },
+        { region: 'c', is: 'drawn' },
+        { region: 'c', is: 'same' },
+        { region: 'c', is: 'changed', from: 'lit' },
+      ],
+    },
+    {
+      // #145's rule with groups between: a hemisphere light under a group inside a group inside an anchor follows a turn
+      // of the outer group on the frame of the turn. Its sky is the marker's +Z: towards the viewer, then turned away.
+      name: 'a hemisphere light under nested groups follows a turn of the outer one on the same frame, on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        ...meshOps('wall', { shape: 'plane', width: 600, depth: 600 }, [0, 0, -200]),
+        ...groupOps('anchor', T([0, 0, -150])),
+        ...groupOps('outer', T([0, 0, 0]), 'anchor'),
+        ...groupOps('inner', T([0, 0, 0]), 'outer'),
+        // As the light node does: in the root first, then adopted (the Three.js adapter keeps an adopted hemisphere in the
+        // root and aims it from its parent).
+        { op: 'createLight', id: 'sky', spec: { kind: 'hemisphere', color: '#ffffff', intensity: 2 } },
+        { op: 'addRoot', id: 'sky' },
+        { op: 'addChild', parent: 'inner', child: 'sky' },
+        { op: 'render', capture: 'facing' },
+        { op: 'setMatrix', id: 'outer', matrix: T([0, 0, 0], [180, 0, 0]) },
+      ],
+      regions: { c: [62, 62, 4, 4] },
+      rules: [
+        { frame: 'facing', region: 'c', is: 'drawn' },
+        { frame: 'facing', region: 'c', is: 'same' },
+        { region: 'c', is: 'drawn' },
+        { region: 'c', is: 'same' },
+        { region: 'c', is: 'changed', from: 'facing' },
+      ],
+    },
+    {
+      // The environment under a group inside a group inside an anchor: a turn of the outer group about the marker's +Z
+      // turns the reflection on the same frame, the same on both (the ruling on #135, with groups between).
+      name: 'the environment under nested groups follows a turn of the outer one, on both (#136)',
+      ops: [
+        ...envSphere(1, 0.05),
+        ...groupOps('anchor', UPRIGHT),
+        ...groupOps('outer', T([0, 0, 0]), 'anchor'),
+        ...groupOps('inner', T([0, 0, 0]), 'outer'),
+        { op: 'createEnvironment', id: 'env', spec: ENV(), hdr: 'bands' },
+        { op: 'addChild', parent: 'inner', child: 'env' },
+        { op: 'render', capture: 'upright' },
+        { op: 'setMatrix', id: 'outer', matrix: T([0, 0, 0], [0, 0, 90]) },
+      ],
+      regions: ENV_REGIONS,
+      rules: [
+        ...drawnEverywhere('upright'),
+        { frame: 'upright', region: 'left', is: 'look' },
+        { frame: 'upright', region: 'right', is: 'look' },
+        ...drawnEverywhere(),
+        { region: 'left', is: 'look' },
+        { region: 'right', is: 'look' },
+        { region: 'left', is: 'changed', from: 'upright' },
+      ],
+    },
+    {
+      // A light under a group scaled 2: the scale moves its position (world z −100), not its range (150 mm), on both.
+      // Its lit disc on the floor, 100 mm from it, ends 112 mm out; a doubled range would end it 283 mm out.
+      name: 'a point light under a scaled group: the position scales, the range does not, the same on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        ...FLOOR,
+        ...groupOps('g', T([0, 0, 0], [0, 0, 0], [2, 2, 2])),
+        { op: 'createLight', id: 'l', spec: { kind: 'point', color: '#ffffff', intensity: 0.02, position: [0, 0, -50], distance: 150 } },
+        { op: 'addChild', parent: 'g', child: 'l' },
+      ],
+      regions: GRID,
+      rules: [{ region: 'g3_3', is: 'drawn' }, ...sameEverywhere(GRID), { row: 64, is: 'edges', channel: 0, threshold: 16 }],
+    },
+    {
+      // A shadow-casting directional light under a group scaled 2, its position and target halved: in world space the
+      // same light as SIDE_SUN. Its shadow extents are the adapter's (±250 mm), not scaled.
+      name: "a casting directional light under a scaled group: the cube's shadow where SIDE_SUN puts it, on both (#136)",
+      ops: [
+        ...LIT_OPS,
+        ...catcherOps(),
+        ...STANDING_CUBE,
+        ...groupOps('g', T([0, 0, 0], [0, 0, 0], [2, 2, 2])),
+        { op: 'createLight', id: 'l', spec: { ...SIDE_SUN, position: [150, 0, 50], target: [0, 0, -100] } },
+        { op: 'addChild', parent: 'g', child: 'l' },
+      ],
+      regions: SHADOW_REGIONS,
+      rules: shadowRules(),
+    },
+    {
+      // The extents themselves: a catcher 400 mm away, 800 mm square, and a 40 mm cube on it at y 300 mm, just outside
+      // the ±250 mm directional shadow camera (the light 45° from +X, through the catcher's centre: y is square to it).
+      // Under a group scaled 2, the extents stay ±250 mm, so the cube casts nothing on either engine; a scale that
+      // reached them (±500 mm) would shadow the catcher left of the cube (region S, px 55..59 by 15..19).
+      // Babylon.js widens even explicit ortho extents by shadowOrthoScale (0.1 a side, directionalLight.pure.js:233-238):
+      // its camera is ±300 mm, so the cube, at y 280..320, half casts there (alpha 153), with or without a group. Pinned;
+      // a scale that reached Babylon.js's extents would still show, as a full shadow (204) instead of 153.
+      name: 'a casting directional light under a scaled group: its shadow extents do not scale, on both (#136)',
+      ops: [
+        ...LIT_OPS,
+        { op: 'createShadowCatcher', id: 'c', spec: { width: 800, depth: 800, opacity: 0.8 } },
+        { op: 'setPosition', id: 'c', position: [0, 0, -400] },
+        { op: 'addRoot', id: 'c' },
+        ...meshOps('far', { shape: 'box', width: 40, depth: 40, height: 40 }, [0, 300, -380], true),
+        ...groupOps('g', T([0, 0, 0], [0, 0, 0], [2, 2, 2])),
+        { op: 'createLight', id: 'l', spec: { kind: 'directional', color: '#ffffff', intensity: 2, position: [200, 0, 0], target: [0, 0, -200], castShadow: true } },
+        { op: 'addChild', parent: 'g', child: 'l' },
+      ],
+      regions: { C: [62, 9, 3, 3], S: [55, 15, 4, 4] },
+      rules: [{ region: 'C', is: 'drawn' }, { region: 'C', is: 'same' }],
+      known: {
+        issue: '#169',
+        why: "Babylon.js's directional camera is ±300 mm, not the adapter's ±250 mm: shadowOrthoScale 0.1 widens explicit extents",
+        rules: [{ region: 'S', is: 'empty' }],
+        pinned: { three: { C: [124, 124, 124, 255], S: [0, 0, 0, 0] }, babylon: { C: [124, 124, 124, 255], S: [0, 0, 0, 153] } },
+      },
     },
     {
       // A tilted marker, the usual AR pose: its +Z towards the viewer, turned 30 deg about the view's X; the environment

@@ -101,10 +101,11 @@ export class GraphValidationError extends Error {
  * Validation of a document of the current format; loadGraphDocument()
  * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles, required inputs connected.
+ * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136).
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
- * `unfinished`: a graph still being built may leave required inputs unconnected. Everything else is checked.
+ * `unfinished`: a graph still being built may leave required inputs unconnected, and may wire an object into more
+ * than one parent (the editor draws the link). Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
@@ -155,7 +156,14 @@ export function validateGraph(
     }
   }
 
+  /**
+   * A port's key in the maps below: node ids are free strings and a port may hold ':', so joining them with a separator
+   * would make node "a:b" port "c" and node "a" port "b:c" the same port (Qodo on #168). A JSON array cannot collide.
+   */
+  const portKey = (node: string, port: string) => JSON.stringify([node, port]);
   const inputUse = new Map<string, number>();
+  /** Each scene object's parents (#136), by its output's portKey: the parent inputs it is wired into, as `node.port`. */
+  const parents = new Map<string, { node: GraphNode; label: string; into: string[] }>();
   for (const e of g.edges) {
     const src = nodes.get(e.from.node);
     const dst = nodes.get(e.to.node);
@@ -172,10 +180,28 @@ export function validateGraph(
     if (out && inp && !socketsCompatible(out.type, inp.type)) {
       problems.push(`edge ${e.id}: cannot connect ${out.type} to ${inp.type}`);
     }
-    const key = `${e.to.node}:${e.to.port}`;
+    const key = portKey(e.to.node, e.to.port);
     inputUse.set(key, (inputUse.get(key) ?? 0) + 1);
     if (inp && !inp.multiple && (inputUse.get(key) ?? 0) > 1) {
-      problems.push(`input ${key} accepts a single connection`);
+      problems.push(`input ${e.to.node}:${e.to.port} accepts a single connection`);
+    }
+    // A parent input is a sceneObject input that takes several links (an anchor's or a group's children, AR View's
+    // objects, a plugin's container): known by its definition, never by a node's or a port's name. A single
+    // sceneObject input (an action's target) is not a parent.
+    if (out && inp && inp.type === 'sceneObject' && inp.multiple) {
+      const from = portKey(e.from.node, e.from.port);
+      const entry = parents.get(from) ?? { node: src, label: out.label, into: [] };
+      entry.into.push(`${e.to.node}.${e.to.port}`);
+      parents.set(from, entry);
+    }
+  }
+  // An object has one parent (#136): wired into two, or twice into one, the engines would each keep a different one.
+  // A work in progress may hold it (the editor draws the link); Run and the export refuse it.
+  if (!unfinished) {
+    for (const { node, label, into } of parents.values()) {
+      if (into.length < 2) continue;
+      const def = effectiveDefinition(node, catalog);
+      problems.push(`node ${node.id} (${def?.label ?? node.type}): its ${label} is wired into more than one parent (${into.join(', ')}): an object has one parent`);
     }
   }
 
@@ -203,7 +229,7 @@ export function validateGraph(
       }
     }
     for (const [port, spec] of unfinished ? [] : Object.entries(def.inputs)) {
-      if (!spec.optional && !inputUse.has(`${n.id}:${port}`)) {
+      if (!spec.optional && !inputUse.has(portKey(n.id, port))) {
         problems.push(`node ${n.id} (${def.label}): required input "${spec.label}" is not connected`);
       }
     }
