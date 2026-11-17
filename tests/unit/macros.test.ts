@@ -7,7 +7,6 @@ import {
   flattenGraph,
   macrosFor,
   mergeMacros,
-  freeMacroId,
   paramTargets,
   reportTarget,
   type MacroDefinition,
@@ -279,7 +278,7 @@ describe('macro: helpers', () => {
   it('mergeMacros shares a same definition, and gives a different one under a taken id a new id', () => {
     const into: Record<string, MacroDefinition> = { 'abs-neg': absNeg() };
     const changed = { ...absNeg(), name: 'Changed' };
-    const renamed = mergeMacros(into, { 'abs-neg': changed, fresh: absNeg() }, (taken) => freeMacroId('abs-neg', taken));
+    const renamed = mergeMacros(into, { 'abs-neg': changed, fresh: absNeg() });
     expect(renamed).toEqual(new Map([['abs-neg', 'abs-neg-2']]));
     expect(Object.keys(into)).toEqual(['abs-neg', 'abs-neg-2', 'fresh']);
     expect(into['abs-neg-2'].name).toBe('Changed');

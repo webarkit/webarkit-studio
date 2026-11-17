@@ -26,6 +26,13 @@ export interface ExportContext {
 }
 
 /** True if any param of the graph references an uploaded asset. */
+/**
+ * Whether a node uses the uploaded asset `id`: a macro node's promoted param, or a node inside a definition too (#140).
+ * The Assets panel asks before deleting one in use.
+ */
+export const usesAsset = (doc: GraphDocument, id: string) =>
+  everyNode(doc).some(({ node }) => Object.values(node.params ?? {}).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id));
+
 /** Whether a node uses an uploaded asset: a macro node's promoted param, or a node inside a definition too (#140). */
 export const usesUploadedAssets = (doc: GraphDocument) =>
   everyNode(doc).some(({ node }) => Object.values(node.params ?? {}).some((v) => typeof v === 'string' && parseAssetRef(v)));

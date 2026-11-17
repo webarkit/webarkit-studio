@@ -9,13 +9,14 @@ import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
+import { paramTargets } from '../core/macros';
+import { macroReports } from './macro-reports';
 import { HANDOFF_KEY } from './handoff';
-import { defaultFilename, EXPORTERS } from '../export/exporters';
+import { defaultFilename, EXPORTERS, usesAsset } from '../export/exporters';
 import { type SaveFailed, saveFile } from './save-file';
 import { isProjectFile, unpackProject } from '../export/project';
 import { openAssetStore } from '../assets/asset-store';
 import { mountAssetsPanel } from './assets-panel';
-import { parseAssetRef } from '../core/assets';
 import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
@@ -143,7 +144,10 @@ const studio = await createStudioEditor($('editor'), {
       })();
       return;
     }
-    if (runtime.setParam(nodeId, key, value) === 'restart') log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
+    // A macro node's promoted param goes to its inner node in the running flat graph; its definition needs a restart (#140).
+    const targets = paramTargets(studio.toDocument(), nodeId, key);
+    const results = targets.map((t) => runtime!.setParam(t.node, t.key, value));
+    if (!targets.length || results.includes('restart')) log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
   // Wires are read when the preview starts: say so once per run.
   onWiresChange() {
@@ -182,9 +186,7 @@ $('btn-undo').onclick = () => void studio.undo();
 $('btn-redo').onclick = () => void studio.redo();
 $('btn-arrange').onclick = () => void studio.arrange();
 
-mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
-  studio.toDocument().nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id)),
-);
+mountAssetsPanel($('assets-panel'), assetStore, log, (id) => usesAsset(studio.toDocument(), id));
 
 // ---------------------------------------------------------------- palette
 const palette = $('palette');
@@ -377,12 +379,15 @@ async function run(reason = 'run') {
     return;
   }
   if (id !== runId) return; // superseded while asking
+  // The runtime runs the flat graph (#140): a report or an error of an inner node shows on its macro node.
+  const reports = macroReports(doc, (nodeId, status) => studio.setNodeStatus(nodeId, status));
   try {
     runtime = new GraphRuntime(doc, {
       stage,
       log,
       onReport: (nodeId, text) => {
         // An empty report clears the status (no empty box left on the node).
+        if (reports.route(nodeId, text)) return;
         studio.setNodeStatus(nodeId, text ? { text } : null);
         // The code panel covers its node: it shows that node's runtime errors too.
         scriptPanel.report(nodeId, text);
@@ -398,7 +403,9 @@ async function run(reason = 'run') {
     if (id !== runId) return;
     log(`✗ ${(err as Error).message}`);
     // Point at the node that failed.
-    if (err instanceof NodeRuntimeError) studio.setNodeStatus(err.nodeId, { text: (err as Error).message, error: true });
+    if (err instanceof NodeRuntimeError && !reports.route(err.nodeId, (err as Error).message, true)) {
+      studio.setNodeStatus(err.nodeId, { text: (err as Error).message, error: true });
+    }
     stop(true);
   }
 }

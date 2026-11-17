@@ -404,7 +404,11 @@ export const sameDefinition = (a: MacroDefinition, b: MacroDefinition) => canoni
  * shared; one whose id is taken by a different content gets a new id from `newId`. Returns the ids to rewrite in the
  * pasted macro nodes' `definition` params (old → new), only those that changed.
  */
-export function mergeMacros(into: MacroDefinitions, incoming: MacroDefinitions | undefined, newId: (taken: (id: string) => boolean) => string): Map<string, string> {
+export function mergeMacros(
+  into: MacroDefinitions,
+  incoming: MacroDefinitions | undefined,
+  newId: (id: string, taken: (id: string) => boolean) => string = freeMacroId,
+): Map<string, string> {
   const renamed = new Map<string, string>();
   for (const [id, def] of entries(incoming)) {
     const existing = own(into, id);
@@ -414,7 +418,7 @@ export function mergeMacros(into: MacroDefinitions, incoming: MacroDefinitions |
       continue;
     }
     const same = Object.entries(into).find(([, d]) => sameDefinition(d, def));
-    const target = same ? same[0] : newId((candidate) => Object.hasOwn(into, candidate));
+    const target = same ? same[0] : newId(id, (candidate) => Object.hasOwn(into, candidate));
     if (!same) put(into, target, structuredClone(def));
     renamed.set(id, target);
   }

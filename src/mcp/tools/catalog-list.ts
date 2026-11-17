@@ -22,6 +22,10 @@ export const catalogList = defineTool({
       graphVersion: GRAPH_VERSION,
       plugins: Object.entries(LOADED_PLUGINS).map(([id, version]) => ({ id, version })),
       connections: 'An output connects to an input of the same socket type, or to any input of type "any". A required input must be connected.',
+      macros:
+        'A node of type "macro" has no ports of its own: they come from its definition in the graph\'s "macros" (by the id in its "definition" param), ' +
+        'which exposes inner ports and promotes inner params. Validation and the runtime replace each macro node by its inner nodes, ' +
+        'named "<macro node>/<inner node>", and check that flat graph. No macro inside a macro.',
       nodes,
     };
   },

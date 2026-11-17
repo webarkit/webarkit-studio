@@ -2,6 +2,7 @@ import { ClassicPreset, type GetSchemes } from 'rete';
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
 import { effectiveDefinition } from '../core/script';
+import { DEFINITION_PARAM, MACRO_TYPE, type MacroDefinitions } from '../core/macros';
 import { socketsCompatible, type SocketType } from '../core/sockets';
 
 /** One Rete socket instance per socket type; compatibility = same type. */
@@ -15,6 +16,12 @@ export class TypedSocket extends ClassicPreset.Socket {
   }
 }
 
+/**
+ * A param the node body and the Properties panel do not show: a macro node's `definition` (#140), which names its
+ * definition and is not edited by hand.
+ */
+export const hiddenParam = (type: string, key: string) => type === MACRO_TYPE && key === DEFINITION_PARAM;
+
 const sockets = new Map<SocketType, TypedSocket>();
 const socketFor = (type: SocketType) => {
   if (!sockets.has(type)) sockets.set(type, new TypedSocket(type));
@@ -23,7 +30,8 @@ const socketFor = (type: SocketType) => {
 
 /**
  * Editor-side node: a view of its definition plus its params. The definition is the effective one
- * (src/core/script.ts): a script node's ports and params come from its header, and follow its script.
+ * (src/core/script.ts): a script node's ports and params come from its header, and follow its script; a macro node's
+ * (#140) from its definition among the editor's `macros`.
  */
 export class StudioNode extends ClassicPreset.Node<
   Record<string, TypedSocket>,
@@ -39,20 +47,29 @@ export class StudioNode extends ClassicPreset.Node<
   width = 230;
   height = 160;
 
+  /** The editor's macro definitions, read each time: a macro node's ports follow them. */
+  private readonly macros: () => MacroDefinitions | undefined;
+
   constructor(
     readonly type: string,
     params: Record<string, ParamValue> = {},
+    macros: () => MacroDefinitions | undefined = () => undefined,
   ) {
     const def = NODE_CATALOG[type];
     if (!def) throw new Error(`Unknown node type "${type}"`);
     super(def.label);
     this.params = { ...params };
+    this.macros = macros;
+    this.label = this.def.label; // a macro node is named after its definition
     this.syncPorts();
   }
 
-  /** The node's definition: the catalog's, with a script node's header ports and params. Parsed once per script text. */
+  /**
+   * The node's definition: the catalog's, with a script node's header ports and params (parsed once per script text),
+   * or a macro node's from its definition.
+   */
   get def(): NodeDefinition {
-    return effectiveDefinition({ type: this.type, params: this.params })!;
+    return effectiveDefinition({ type: this.type, params: this.params }, NODE_CATALOG, this.macros())!;
   }
 
   /** Makes the Rete ports match the definition: a port that is gone or changed type is removed, a new one added. */

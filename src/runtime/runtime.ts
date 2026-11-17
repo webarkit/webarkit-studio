@@ -8,6 +8,7 @@
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { resolveParams, topologicalOrder, type GraphDocument, type GraphNode, type ParamValue } from '../core/graph';
 import { loadGraphDocument } from '../core/migrations';
+import { flattenGraph } from '../core/macros';
 import { effectiveDefinition } from '../core/script';
 import { parseAssetRef } from '../core/assets';
 import type { AssetLookup } from '../assets/asset';
@@ -78,7 +79,9 @@ export class GraphRuntime {
   constructor(doc: unknown, opts: RuntimeOptions) {
     this.catalog = opts.catalog ?? NODE_CATALOG;
     this.registry = opts.registry ?? NODE_REGISTRY;
-    this.doc = loadGraphDocument(doc, this.catalog).doc;
+    // The flat graph (#140): every macro node replaced by its inner nodes, `<macro node>/<inner node>`. Node ids in
+    // setParam(), onReport and NodeRuntimeError are flat ids; the studio routes them to the macro node.
+    this.doc = flattenGraph(loadGraphDocument(doc, this.catalog).doc).doc;
     this.opts = opts;
   }
 

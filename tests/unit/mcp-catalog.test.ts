@@ -76,3 +76,23 @@ describe('graph_validate', () => {
     expect(!result.ok && result.error).toContain('missing.json');
   });
 });
+
+describe('catalog_list and graph_validate: macros (#140)', () => {
+  it('lists the macro node type and says where its ports come from', async () => {
+    const { value } = (await call(client, 'catalog_list', { types: ['macro'] })) as { value: any };
+    expect(value.nodes).toHaveLength(1);
+    expect(value.nodes[0]).toMatchObject({ type: 'macro', category: 'macro', params: { definition: { kind: 'string' } } });
+    expect(value.macros).toMatch(/flat/);
+  });
+
+  it('graph_validate checks a graph with macros on its flat graph, and refuses a macro inside a macro', async () => {
+    const graph = demo();
+    graph.nodes.push({ id: 'm', type: 'macro', params: { definition: 'd' } });
+    graph.macros = { d: { name: 'D', nodes: [{ id: 'v', type: 'debug.inspector', params: {} }], edges: [] } };
+    const result = (await call(client, 'graph_validate', { graph })) as { value: any };
+    expect(result.value.problems).toEqual(['node m/v (Inspector): required input "Value" is not connected']);
+    graph.macros.d.nodes.push({ id: 'inner', type: 'macro', params: { definition: 'd' } });
+    const nested = (await call(client, 'graph_validate', { graph })) as { value: any };
+    expect(nested.value.problems).toEqual(['macro "D": node inner is a macro, and a macro inside a macro is not supported']);
+  });
+});

@@ -12,6 +12,7 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
+import { everyNode, macrosFor, type MacroDefinitions } from '../core/macros';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
@@ -80,6 +81,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
   const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction | NameEditAction>();
   let graphName = 'Untitled';
+  /**
+   * The macro definitions of this session (#140): the loaded graph's, and those pasted since. A definition no node uses
+   * any more stays here (undo of a deletion finds it), and is left out of every document toDocument() writes.
+   */
+  let macros: MacroDefinitions = {};
 
   /**
    * Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it.
@@ -555,7 +561,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
-    const { nodes, edges } = pasteClipboard(data, getUID, at);
+    const { nodes, edges } = pasteClipboard(data, getUID, at, macros);
     // The copies replace the selection (before adding: a selected node would drag them along).
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
@@ -678,7 +684,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   }
 
   async function addNode(type: string, position = { x: 0, y: 0 }, id?: string, params?: Record<string, ParamValue>) {
-    const node = new StudioNode(type, params);
+    const node = new StudioNode(type, params, () => macros);
     if (id) node.id = id;
     await editor.addNode(node);
     await area.translate(node.id, position);
@@ -703,7 +709,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       from: { node: c.source, port: c.sourceOutput },
       to: { node: c.target, port: c.targetInput },
     }));
-    doc.plugins = graphPlugins(doc.nodes);
+    const used = macrosFor(doc.nodes, macros);
+    if (used) doc.macros = used;
+    // A plugin's node inside a macro needs its plugin as one outside does.
+    doc.plugins = graphPlugins(everyNode(doc).map((e) => e.node));
     return doc;
   }
 
@@ -737,6 +746,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   async function loadGraph(doc: GraphDocument) {
     await editor.clear();
     graphName = doc.name ?? 'Untitled';
+    macros = structuredClone(doc.macros ?? {});
     events.onNameChange?.(graphName);
     for (const n of doc.nodes) await addNode(n.type, n.position, n.id, n.params);
     for (const e of doc.edges) {

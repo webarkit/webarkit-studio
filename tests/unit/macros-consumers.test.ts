@@ -11,7 +11,7 @@ import { scriptNodesIn } from '../../src/core/script';
 import { assetRef } from '../../src/core/assets';
 import { createScriptTrust } from '../../src/app/script-trust';
 import { collectAssets } from '../../src/export/app-bundle';
-import { usesUploadedAssets, type ExportContext } from '../../src/export/exporters';
+import { usesAsset, usesUploadedAssets, type ExportContext } from '../../src/export/exporters';
 import { exportSourceCode } from '../../src/export/codegen/export';
 import { checkSourceCode } from '../../src/export/codegen/check';
 import { packProject, unpackProject } from '../../src/export/project';
@@ -93,6 +93,15 @@ describe('macros: assets', () => {
     const doc = modelDoc();
     doc.nodes = [doc.nodes[0]];
     expect(usesUploadedAssets(doc)).toBe(true);
+  });
+
+  it('an asset used only inside a macro is in use: the Assets panel does not offer to delete it as unused', () => {
+    const doc = modelDoc();
+    doc.nodes = [doc.nodes[0]];
+    expect(usesAsset(doc, 'g1')).toBe(true);
+    expect(usesAsset(doc, 'g2')).toBe(false);
+    doc.nodes = [modelDoc().nodes[1]];
+    expect(usesAsset(doc, 'g2')).toBe(true);
   });
 
   it('a project file keeps the macros', async () => {

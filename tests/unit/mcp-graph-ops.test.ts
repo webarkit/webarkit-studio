@@ -140,3 +140,54 @@ describe('graph_create and graph_edit tools', () => {
     expect(result).toEqual({ ok: false, error: expect.stringContaining('no node "x"') });
   });
 });
+
+describe('applyOps: macros (#140)', () => {
+  const withMacro = (): GraphDocument => {
+    const doc = emptyGraph('macros');
+    doc.nodes = [
+      { id: 't', type: 'math.time', params: {} },
+      { id: 'm', type: 'macro', params: { definition: 'neg' } },
+    ];
+    doc.macros = {
+      neg: {
+        name: 'Neg',
+        nodes: [{ id: 'n', type: 'math.negate', params: {} }],
+        edges: [],
+        inputs: { x: { node: 'n', port: 'x' } },
+        outputs: { value: { node: 'n', port: 'value' } },
+        params: { x: { node: 'n', param: 'x' } },
+      },
+    };
+    return doc;
+  };
+
+  it('keeps the macros, and connects to and from a macro node through its instance ports', () => {
+    const out = applyOps(withMacro(), [
+      { op: 'connect', from: { node: 't', port: 'seconds' }, to: { node: 'm', port: 'x' } },
+      { op: 'addNode', type: 'math.abs', id: 'a' },
+      { op: 'connect', from: { node: 'm', port: 'value' }, to: { node: 'a', port: 'x' } },
+      { op: 'setParam', node: 'm', key: 'x', value: 3 },
+    ]);
+    expect(out.macros).toEqual(withMacro().macros);
+    expect(out.nodes.find((n) => n.id === 'm')!.params).toEqual({ definition: 'neg', x: 3 });
+    expect(() => validateGraph(out)).not.toThrow();
+    expect(() => applyOps(withMacro(), [{ op: 'connect', from: { node: 't', port: 'seconds' }, to: { node: 'm', port: 'y' } }])).toThrow(/Neg has no input "y" \(inputs: x\)/);
+  });
+
+  it('adds a macro node only for a definition the graph has', () => {
+    expect(applyOps(withMacro(), [{ op: 'addNode', type: 'macro', id: 'm2', params: { definition: 'neg' } }]).nodes.map((n) => n.id)).toEqual(['t', 'm', 'm2']);
+    expect(() => applyOps(withMacro(), [{ op: 'addNode', type: 'macro', params: { definition: 'gone' } }])).toThrow(/no macro definition "gone"/);
+    expect(() => applyOps(withMacro(), [{ op: 'addNode', type: 'macro' }])).toThrow(/no macro definition ""/);
+  });
+
+  it('removing the last macro node of a definition leaves the definition out, as the editor saves it', () => {
+    const out = applyOps(withMacro(), [{ op: 'removeNode', id: 'm' }]);
+    expect(out.macros).toBeUndefined();
+  });
+
+  it('lists the plugin of a node inside a macro', () => {
+    const doc = withMacro();
+    doc.macros!.neg.nodes.push({ id: 'p', type: 'jsartoolkitNFT.settings', params: {} });
+    expect(applyOps(doc, []).plugins).toEqual([{ id: plugin.id, version: plugin.version }]);
+  });
+});
