@@ -23,7 +23,7 @@ import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 export type { AssetKindDefinition } from '../core/assets';
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
 export type { CoreSocketType, PluginSocketType, SocketType } from '../core/sockets';
-export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
+export type { AssetKind, Engine, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
 export type {
   CameraValue,
   ColorValue,

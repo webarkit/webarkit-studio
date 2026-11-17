@@ -88,6 +88,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
   - `webarkit.*` is reserved for webarkit/webarkit trackers.
   - A new reserved namespace updates every list of them: `RESERVED_NAMESPACES` (`src/core/plugins.ts`), the naming rules here, the graph-review checklist, `CONTRIBUTING.md` and the README (#81, #90, #92).
   - Do not name nodes after packages they do not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
+- **The engine rule** (#138, `src/core/engine.ts`): a node that needs one engine declares it with `engine: 'three' | 'babylon'` in its definition, as every built-in `three.*` and `babylon.*` node does, renderers included (a unit test checks each declares the engine its prefix names). `validateGraph()` refuses such a node when it reaches a scene whose renderer is the other engine, through its own `scene` input, through the objects, materials, textures and geometries it feeds, or through those it is given from a scene upstream, transitively; plain data carries no engine. The rule reads the field, never the node's name; the prefix fallback for a node that declares none guards the built-ins only, since a plugin cannot use the `three` or `babylon` namespace. A renderer whose engine is unknown leaves its scenes unconcerned. Skipped for an unfinished graph, as the one-parent check (#136). A node's own init check of the renderer (`three.script`, `babylon.nodeMaterial`) stays, as a second guard.
 - **Units and space:**
   - Marker space is in millimetres, with the marker on the XY plane and +Z up.
   - Matrices are column-major.
@@ -109,7 +110,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 
 ## Adding a node
 
-1. Add the definition to `src/nodes/catalog.ts`: type, label, category, provider, ports, params. Mark the params that apply without a restart `live: true`. Follow the naming rules above.
+1. Add the definition to `src/nodes/catalog.ts`: type, label, category, provider, ports, params. Mark the params that apply without a restart `live: true`. Follow the naming rules above. A `three.*` or `babylon.*` node declares its `engine` (the engine rule).
 2. Implement the factory in `src/runtime/nodes/` (`init`, `update`, `onParamChange` for live params, `dispose` for anything to release; see `src/runtime/types.ts`).
 3. Register it under the same type in `NODE_REGISTRY` (`src/runtime/registry.ts`).
 4. Add a unit test in `tests/unit/` for any logic that does not need a browser; add an e2e check if the node changes what the preview shows or logs.

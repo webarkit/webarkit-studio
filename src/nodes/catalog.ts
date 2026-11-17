@@ -77,7 +77,17 @@ export interface NodeDefinition {
    * it from a `?graph=` link and the MCP server never runs it. These read this flag, never the node's name.
    */
   runsCode?: true;
+  /**
+   * The engine the node needs (#138): it makes or reads that engine's objects, so validateGraph() refuses it in a scene
+   * whose renderer is the other engine. A renderer node declares the engine it is. Every built-in `three.*` and
+   * `babylon.*` node declares it; the rule reads this field, never the node's name. Its fallback to the type's prefix
+   * for a node that declares none guards the built-ins: a plugin cannot use the `three` or `babylon` namespace.
+   */
+  engine?: Engine;
 }
+
+/** The engines a node can need (#138), as NodeDefinition.engine names them. */
+export type Engine = 'three' | 'babylon';
 
 /** A number input and the live param of the same name that it overrides: key, label, default, step. */
 type NumberPort = [key: string, label: string, value: number, step?: number];
@@ -542,6 +552,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Three.js Renderer',
     category: 'renderer',
     provider: 'Three.js',
+    engine: 'three',
     description:
       'Three.js WebGL renderer (engine + canvas). Connect it to Scene nodes. Its options are three.js\'s own, with its defaults; ' +
       'antialias, power preference, preserve drawing buffer and stencil recreate the renderer. Max pixel ratio caps the ' +
@@ -580,6 +591,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Babylon.js Renderer',
     category: 'renderer',
     provider: 'Babylon.js',
+    engine: 'babylon',
     description:
       'Babylon.js engine + canvas (loaded on demand). Connect it to Scene nodes. Its options are Babylon.js\'s own, with its ' +
       'defaults; antialias, power preference, preserve drawing buffer and stencil recreate the engine. Max pixel ratio caps ' +
@@ -694,6 +706,21 @@ export const CORE_NODES: NodeDefinition[] = [
       castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
       receiveShadow: { kind: 'boolean', label: 'Receive shadows', default: false, live: true },
     },
+  },
+  {
+    type: 'babylon.nodeMaterial',
+    label: 'Babylon.js Node Material',
+    category: 'scene',
+    provider: 'Babylon.js',
+    engine: 'babylon',
+    description:
+      'A Babylon.js Node Material, from a .json file saved by Babylon.js\'s Node Material Editor, for meshes (their Material ' +
+      'input), as a Material\'s. Babylon.js only: a graph that puts it in a scene of the other renderer is refused before ' +
+      'it runs, and the source code export refuses it. Its exposed inputs are not mapped yet, and a texture the file ' +
+      'names by URL is not supported yet: the file is refused.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { material: { type: 'material', label: 'Material' } },
+    params: { url: { kind: 'string', label: 'Node Material (.json)', default: 'materials/green-node-material.json', asset: 'file' } },
   },
   {
     type: 'scene.material',
@@ -1278,6 +1305,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'three.js Script',
     category: 'scene',
     provider: 'Three.js',
+    engine: 'three',
     description:
       'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Mesh. ' +
       'Define onInit({ THREE, group, inputs }) to create meshes, materials and lights in group (marker space: mm, +Z up), ' +
@@ -1313,6 +1341,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'three.js Render Script',
     category: 'output',
     provider: 'Three.js',
+    engine: 'three',
     description:
       'A three.js script that renders on its own, in place of Scene, Renderer, AR Camera, Anchor and AR View for its content: ' +
       'wire the tracker side (Video, Pose, Found, Projection, Marker info). The node makes a WebGLRenderer on its own canvas over ' +

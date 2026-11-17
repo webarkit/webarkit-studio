@@ -127,6 +127,8 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
     if (types.has(def.type)) problems.push(`node type "${def.type}" is defined twice`);
     types.add(def.type);
     if (typeof plugin.factories?.[def.type] !== 'function') problems.push(`no factory for "${def.type}"`);
+    // `engine` (#138): the engine the node needs, which the engine rule of validateGraph() reads.
+    if (def.engine !== undefined && def.engine !== 'three' && def.engine !== 'babylon') problems.push(`${def.type}: engine must be "three" or "babylon"`);
     for (const [side, ports] of [['input', def.inputs], ['output', def.outputs]] as const) {
       for (const [key, port] of Object.entries(ports ?? {})) {
         if (!known(port.type)) problems.push(`${def.type}: ${side} "${key}" has unknown socket type "${port.type}"`);

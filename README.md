@@ -701,6 +701,7 @@ Planned split once the format stabilises (npm workspaces):
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient / point / spot; position, target, distance, spot angle and penumbra; point and spot intensity in candela at 1 m; directional and spot cast shadows, map size and bias) |
 | `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color?, material? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; a connected material replaces it and sets the colour aside; casts and receives shadows; connected inputs override the params) |
+| `babylon.nodeMaterial` | ✅ | scene → material (a Babylon.js Node Material from a `.json` saved by the Node Material Editor; Babylon.js only: refused in a Three.js scene; exposed inputs not mapped yet; a texture named by URL is refused) |
 | `scene.material` | ✅ ⚡ | scene, color?, emissive?, map? → material (PBR: colour, metalness, roughness, emissive and its intensity, opacity, side front / back / double, unlit; shared by every mesh it reaches; connected colour and emissive override the params) |
 | `scene.texture` | ✅ ⚡ | scene, video? → texture (an image URL or upload, or a connected video, which wins; sRGB, the same way up on both renderers; wrap clamp / repeat / mirror and repeat U, V live, the URL on the next Run) |
 | `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |

@@ -15,6 +15,7 @@ import type {
   CameraValue,
   GeometryValue,
   MaterialValue,
+  SpecMaterialValue,
   MarkerInfoValue,
   NodeFactory,
   PortValues,
@@ -258,7 +259,7 @@ const sameSpec = (a: MaterialSpec, b: MaterialSpec) => JSON.stringify(a) === JSO
  */
 export const materialNode: NodeFactory = (params) => {
   let scene: SceneValue | null = null;
-  let value: MaterialValue | null = null;
+  let value: SpecMaterialValue | null = null;
   /** The map the material was last written with (a texture's live change keeps its handle: nothing to rewrite). */
   let written: MaterialSetup['map'] = null;
   /** The inputs as last read, compared by reference: a frame with nothing new costs nothing. */

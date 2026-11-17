@@ -103,6 +103,11 @@ export function formatValue(value: unknown): string {
     }
     // A material or a texture (#133): their values as text, never their handles (engine objects, circular on Babylon.js).
     const kind = (o.handle as { kind?: unknown } | null | undefined)?.kind;
+    // A Node Material (#138) has no spec: what it is, never a colour it does not have.
+    const nodeMaterial = o.nodeMaterial as { file?: unknown; blocks?: unknown } | null | undefined;
+    if (kind === 'material' && typeof nodeMaterial?.file === 'string' && typeof nodeMaterial.blocks === 'number') {
+      return `node material ${nodeMaterial.file} · ${nodeMaterial.blocks} blocks`;
+    }
     if (kind === 'material' && o.spec && typeof o.spec === 'object') {
       const s = o.spec as MaterialSpec;
       const extras = [s.unlit ? 'unlit' : `metal ${num(s.metalness)} rough ${num(s.roughness)}`, s.opacity < 1 ? `opacity ${num(s.opacity)}` : '', s.side !== 'front' ? s.side : ''];
