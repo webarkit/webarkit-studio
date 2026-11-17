@@ -107,6 +107,25 @@ describe('the Inspector shows a renderer info as text', () => {
     expect(formatValue({ ...info, gpuVendor: '', gpuRenderer: '' })).toContain('GPU: not given by the browser');
   });
 
+  test('an object with only some of the fields is not a renderer info: the generic formatter shows it (Qodo on #170)', () => {
+    const partial = { engine: 'Three.js', webgl: 2, extensions: [], drawCalls: 3 };
+    const text = formatValue(partial);
+    expect(text).not.toContain('Three.js · WebGL');
+    expect(text).toContain('engine: "Three.js"');
+    // Each field the formatter reads, with the wrong type, falls through too.
+    for (const [key, value] of Object.entries({ gpuVendor: 1, gpuRenderer: null, maxTextureSize: '8192', triangles: '1200', context: 'lost' })) {
+      expect(formatValue({ ...info, [key]: value }), key).not.toContain('Babylon.js · WebGL');
+    }
+    for (const [key, value] of Object.entries({ antialias: 'yes', stencil: 1, powerPreference: null })) {
+      expect(formatValue({ ...info, context: { ...info.context, [key]: value } }), `context.${key}`).not.toContain('Babylon.js · WebGL');
+    }
+  });
+
+  test('a full value is a renderer info, with a context or with context null', () => {
+    expect(formatValue(info)).toContain('Babylon.js · WebGL 2');
+    expect(formatValue({ ...info, context: null })).toContain('Babylon.js · WebGL 2');
+  });
+
   test('a lost context says so; no context at all says only that', () => {
     expect(formatValue({ ...info, context: null })).toContain('context: lost');
     const none = formatValue({ ...info, ...readContextInfo(undefined) });

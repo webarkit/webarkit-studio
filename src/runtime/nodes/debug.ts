@@ -27,7 +27,21 @@ function isGeometryValue(o: Record<string, unknown>): o is Record<string, unknow
 
 /** A rendererInfo value (#137): plain data, recognised by its fields. */
 function isRendererInfo(o: Record<string, unknown>): o is Record<string, unknown> & RendererInfoValue {
-  return typeof o.engine === 'string' && typeof o.webgl === 'number' && Array.isArray(o.extensions) && typeof o.drawCalls === 'number';
+  // Every field formatRendererInfo reads, with its type, so an object that only looks like one falls through to the
+  // generic formatter (Qodo on #170).
+  const c = o.context as Record<string, unknown> | null | undefined;
+  const context = c === null || (typeof c === 'object' && typeof c?.antialias === 'boolean' && typeof c.stencil === 'boolean' && typeof c.powerPreference === 'string');
+  return (
+    typeof o.engine === 'string' &&
+    typeof o.webgl === 'number' &&
+    typeof o.gpuVendor === 'string' &&
+    typeof o.gpuRenderer === 'string' &&
+    typeof o.maxTextureSize === 'number' &&
+    Array.isArray(o.extensions) &&
+    typeof o.drawCalls === 'number' &&
+    typeof o.triangles === 'number' &&
+    context
+  );
 }
 
 const yesNo = (v: boolean) => (v ? 'yes' : 'no');
