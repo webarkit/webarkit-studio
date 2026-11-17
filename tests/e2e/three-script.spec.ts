@@ -66,13 +66,15 @@ test('pinball-three-script: the script-built scene follows the marker, and hides
   expect(errors).toEqual([]);
 });
 
-test('with the Babylon.js renderer, the node says it needs Three.js, as any node that fails to start does', async ({ page }) => {
+// The engine rule (#138) refuses it before it runs; the node's own init check stays as a second guard
+// (tests/unit/three-script.test.ts), which the studio no longer reaches.
+test('with the Babylon.js renderer, Run refuses the graph naming the node, before anything starts (#138)', async ({ page }) => {
   await openStudio(page);
   await importGraph(page, babylon(photoGraph()));
   await trustDialog(page).locator('button[value="run"]').click(); // imported, not loaded as a demo: it asks
   await page.click('#btn-run');
-  await expect(page.locator('#log')).toContainText('three.js Script needs the Three.js renderer (three.renderer); this scene is rendered by Babylon.js', NEXT);
-  await expect(page.locator('.studio-node:has(.title span:text-is("three.js Script")) pre.status.error')).toContainText('needs the Three.js renderer');
+  await expect(page.locator('#log')).toContainText('node scenery (three.js Script) is a Three.js node, but its scene renders with Babylon.js', NEXT);
+  await expect(page.locator('#log')).not.toContainText('init three.script');
   await expect(page.locator('#btn-run')).toBeEnabled(); // stopped: the graph can be run again
 });
 

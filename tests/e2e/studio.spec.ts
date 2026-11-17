@@ -389,8 +389,10 @@ test.describe('editor', () => {
   test('the palette filter hides nodes that do not match', async ({ page }) => {
     await loadDemo(page, 'pinball-three');
     await page.fill('#palette-search', 'babylon');
-    await expect(page.locator('#palette button:visible')).toHaveCount(1);
-    await expect(page.locator('#palette button:visible')).toContainText('Babylon.js Renderer');
+    // The Babylon.js nodes: the renderer and the Node Material (#138).
+    await expect(page.locator('#palette button:visible')).toHaveCount(2);
+    await expect(page.locator('#palette button:visible', { hasText: 'Babylon.js Renderer' })).toHaveCount(1);
+    await expect(page.locator('#palette button:visible', { hasText: 'Babylon.js Node Material' })).toHaveCount(1);
   });
 });
 
