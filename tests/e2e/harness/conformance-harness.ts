@@ -189,7 +189,12 @@ export type AdapterOp =
    * A frame drawn between two operations. With `capture`, the frame is read back and `onCapture(capture)` is called, so
    * a case can check it; otherwise what is read back is the frame after the last operation.
    */
-  | { op: 'render'; capture?: string };
+  | { op: 'render'; capture?: string }
+  /**
+   * #137: live options of the renderer (RendererAdapter.setOption), each engine with its own names, so a case states
+   * both: the renderer nodes have no common option layer. The engine's own map is applied, in order.
+   */
+  | { op: 'setRendererOption'; three?: Record<string, unknown>; babylon?: Record<string, unknown> };
 
 const DEG = Math.PI / 180;
 
@@ -1008,6 +1013,9 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
             break;
           case 'setEnvironment':
             await handle.setEnvironment(get(step.id), step.spec, step.hdr && environmentHdr(step.hdr));
+            break;
+          case 'setRendererOption':
+            for (const [key, value] of Object.entries(step[engine] ?? {})) renderer.setOption(key, value);
             break;
           case 'render':
             // Babylon.js skips a mesh whose shaders are not compiled yet: an intermediate frame counts only once ready.
