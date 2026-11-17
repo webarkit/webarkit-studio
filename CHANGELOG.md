@@ -8,6 +8,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Added
 
+- Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
+  adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected
+  one too; Escape clears. Delete or Backspace removes the selection and its wires, Delete in a selected node's menu
+  too, and Ctrl+X cuts it, each as one undo step. Keys typed in a field, a select or the log stay theirs.
+
 - Geometry nodes and the Mesh node (#132): Box, Sphere, Cylinder (a cone with a top radius of 0), Plane, Torus,
   Torus Knot and Capsule, each with its own sizes in mm, every one live, in a new Geometry category; and Mesh, which
   shows a geometry on the marker with its position, rotation, scale per axis, colour, spin and Rest on the marker
