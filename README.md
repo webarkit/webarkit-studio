@@ -695,8 +695,8 @@ Planned split once the format stabilises (npm workspaces):
 | `tracking.selectMarker` | ✅ ⚡ | markers → pose, found, onFound, onLost, markerInfo |
 | `jsartoolkitNFT.nativeFilter` | ✅ | → poseFilter (the tracker's `'native'` filter) |
 | `filter.oneEuro` | ✅ | → poseFilter (One Euro, @webarkit/oneeurofilter-ts inside the tracker) |
-| `three.renderer` | ✅ | → renderer |
-| `babylon.renderer` | ✅ | → renderer |
+| `three.renderer` | ✅ ⚡ | → renderer, info (*antialias*, *power preference*, *preserve drawing buffer*, *stencil* recreate it; ⚡ *max pixel ratio*, *tone mapping*, *exposure*, *output colour space*) |
+| `babylon.renderer` | ✅ ⚡ | → renderer, info (*antialias*, *power preference*, *preserve drawing buffer*, *stencil* recreate it; ⚡ *max pixel ratio*, *tone mapping* on / off, *tone mapping type*, *exposure*) |
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
 | `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient / point / spot; position, target, distance, spot angle and penumbra; point and spot intensity in candela at 1 m; directional and spot cast shadows, map size and bias) |

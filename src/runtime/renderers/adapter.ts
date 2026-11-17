@@ -18,6 +18,7 @@ import type { MaterialSpec, TextureSpec } from '../../core/material';
 import type { LightSpec, ShadowCatcherSpec } from '../../core/light';
 import type { EnvironmentSpec } from '../../core/environment';
 import { transformMatrix } from '../../core/math';
+import type { RendererContextInfo, RendererFrameStats } from './renderer-info';
 
 export interface SceneObject {
   /** Scene that created the object: objects cannot cross scenes. */
@@ -131,9 +132,31 @@ export interface RendererAdapter {
   /** The canvas this renderer draws into (created with the adapter). */
   readonly canvas: HTMLCanvasElement;
   createScene(options: SceneOptions): SceneHandle;
+  /** The drawing buffer's size in device pixels (AR View: the video's size times the capped pixel ratio). */
   setSize(width: number, height: number): void;
+  /**
+   * The cap on devicePixelRatio AR View sizes this renderer's canvas with (#137, the ruling on the issue): 0 is no cap.
+   * The same on both engines; AR View sizes the buffer again when it changes.
+   */
+  readonly maxPixelRatio: number;
+  /**
+   * A live option of this engine (#137), under its renderer node's param name, with the engine's own meaning: the node
+   * calls it from onParamChange. `maxPixelRatio` is one on both. An unknown value gives the option's default; an unknown
+   * key does nothing.
+   */
+  setOption(key: string, value: unknown): void;
+  /** What the WebGL context was granted, read once at creation (#137). */
+  readonly info: RendererContextInfo;
+  /** Draw calls and triangles of this renderer's last render (#137), read without resetting what the engine counts. */
+  lastFrame(): RendererFrameStats;
   dispose(): void;
 }
+
+// Read the same way by the source export (#137).
+export { exposureOf, pixelRatioCap } from '../../core/renderer';
+/** WebGL's powerPreference: an unknown value is the engine's default, never passed to the browser. */
+export const powerPreferenceOf = (value: unknown, fallback: WebGLPowerPreference): WebGLPowerPreference =>
+  value === 'default' || value === 'high-performance' || value === 'low-power' ? value : fallback;
 
 export interface SceneHandle {
   readonly renderer: RendererAdapter;

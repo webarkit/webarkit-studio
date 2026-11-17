@@ -28,10 +28,14 @@ import {
   type TextureObject,
   type TextureSource,
   type ModelSpec,
+  exposureOf,
+  pixelRatioCap,
+  powerPreferenceOf,
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
 } from './adapter';
+import { readContextInfo } from './renderer-info';
 import { environmentRotation, normalizeEnvironment, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../core/environment';
 import { disposeObject3D } from './three-dispose';
 import { applyArProjection } from './three-ar';
@@ -131,10 +135,60 @@ interface ModelClips {
   current: { name: string; action: THREE.AnimationAction; stopped: boolean } | null;
 }
 
-export function createThreeAdapter(opts: { antialias: boolean }): RendererAdapter {
+/**
+ * three.renderer's params (#137), with three.js's names. Left out, three 0.186.1's defaults (WebGLRenderer.js:76-82;
+ * toneMapping NoToneMapping, toneMappingExposure 1, outputColorSpace SRGBColorSpace), so a graph from before #137
+ * renders as it did.
+ */
+export interface ThreeRendererOptions {
+  antialias: boolean;
+  powerPreference?: string;
+  preserveDrawingBuffer?: boolean;
+  stencil?: boolean;
+  maxPixelRatio?: number;
+  toneMapping?: string;
+  toneMappingExposure?: number;
+  outputColorSpace?: string;
+}
+
+/** The node's tone mapping names, three.js's constants (CustomToneMapping needs a shader: not offered). */
+const TONE_MAPPINGS: Record<string, THREE.ToneMapping> = {
+  NoToneMapping: THREE.NoToneMapping,
+  LinearToneMapping: THREE.LinearToneMapping,
+  ReinhardToneMapping: THREE.ReinhardToneMapping,
+  CineonToneMapping: THREE.CineonToneMapping,
+  ACESFilmicToneMapping: THREE.ACESFilmicToneMapping,
+  AgXToneMapping: THREE.AgXToneMapping,
+  NeutralToneMapping: THREE.NeutralToneMapping,
+};
+const COLOR_SPACES: Record<string, string> = { srgb: THREE.SRGBColorSpace, 'srgb-linear': THREE.LinearSRGBColorSpace };
+
+export function createThreeAdapter(opts: ThreeRendererOptions): RendererAdapter {
   const canvas = document.createElement('canvas');
-  // setSize() receives device pixels (AR View multiplies by devicePixelRatio).
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: opts.antialias });
+  // setSize() receives device pixels (AR View multiplies by the capped devicePixelRatio). alpha stays fixed: the camera
+  // video is under the canvas.
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    alpha: true,
+    antialias: opts.antialias,
+    powerPreference: powerPreferenceOf(opts.powerPreference, 'default'),
+    preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
+    stencil: opts.stencil ?? false,
+  });
+  let maxPixelRatio = pixelRatioCap(opts.maxPixelRatio);
+  // A change of toneMapping or outputColorSpace recompiles the materials on its own: both are in the program's cache
+  // key (WebGLPrograms.js, getProgramCacheKey). three.js applies the exposure inside a tone mapping only.
+  const setOption = (key: string, value: unknown) => {
+    if (key === 'maxPixelRatio') maxPixelRatio = pixelRatioCap(value);
+    else if (key === 'toneMapping') renderer.toneMapping = typeof value === 'string' && Object.hasOwn(TONE_MAPPINGS, value) ? TONE_MAPPINGS[value] : THREE.NoToneMapping;
+    else if (key === 'toneMappingExposure') renderer.toneMappingExposure = exposureOf(value);
+    else if (key === 'outputColorSpace') renderer.outputColorSpace = (typeof value === 'string' && Object.hasOwn(COLOR_SPACES, value) ? COLOR_SPACES[value] : THREE.SRGBColorSpace) as THREE.ColorSpace;
+  };
+  setOption('toneMapping', opts.toneMapping ?? 'NoToneMapping');
+  setOption('toneMappingExposure', opts.toneMappingExposure ?? 1);
+  setOption('outputColorSpace', opts.outputColorSpace ?? 'srgb');
+  // (A renderer stand-in in Node tests has no context.)
+  const info = readContextInfo(typeof renderer.getContext === 'function' ? renderer.getContext() : null);
   // Shadow maps on from the start (#134): a program reads it only when a light casts (WebGLPrograms.js, shadowMapEnabled
   // is `shadowMap.enabled && shadows.length > 0`), so a scene without one draws as before. PCF, as the report measured.
   // (A renderer stand-in in Node tests may have no shadowMap.)
@@ -151,6 +205,13 @@ export function createThreeAdapter(opts: { antialias: boolean }): RendererAdapte
     canvas,
     createScene: (options) => createThreeScene(adapter, renderer, disposables, options.defaultLights, life),
     setSize: (w, h) => renderer.setSize(w, h, false),
+    get maxPixelRatio() {
+      return maxPixelRatio;
+    },
+    setOption,
+    info,
+    // renderer.info counts the last render() (autoReset: reset at the start of each render, never by reading it).
+    lastFrame: () => ({ drawCalls: renderer.info?.render.calls ?? 0, triangles: renderer.info?.render.triangles ?? 0 }),
     dispose() {
       life.disposed = true;
       disposables.forEach((d) => d.dispose());

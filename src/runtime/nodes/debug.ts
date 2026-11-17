@@ -5,7 +5,7 @@
  *  - debug.stats shows frame rates and tracker timings (optionally on the AR view);
  *  - debug.trace records a tracker's trace and downloads it (studio only).
  */
-import type { GeometryValue, NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
+import type { GeometryValue, NodeFactory, RendererInfoValue, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
 import { rgbaToHex } from '../../core/color';
 import type { MaterialSpec, TextureSpec } from '../../core/material';
@@ -23,6 +23,25 @@ function isGeometryValue(o: Record<string, unknown>): o is Record<string, unknow
   const bounds = o.bounds as { min?: unknown; max?: unknown } | null | undefined;
   const spec = o.spec as { shape?: unknown } | null | undefined;
   return handle?.kind === 'geometry' && typeof spec?.shape === 'string' && Array.isArray(bounds?.min) && Array.isArray(bounds?.max);
+}
+
+/** A rendererInfo value (#137): plain data, recognised by its fields. */
+function isRendererInfo(o: Record<string, unknown>): o is Record<string, unknown> & RendererInfoValue {
+  return typeof o.engine === 'string' && typeof o.webgl === 'number' && Array.isArray(o.extensions) && typeof o.drawCalls === 'number';
+}
+
+const yesNo = (v: boolean) => (v ? 'yes' : 'no');
+
+/** The renderer's info as lines: what the author checks first (the GPU, antialias granted), the extensions as a count. */
+function formatRendererInfo(i: RendererInfoValue): string {
+  const c = i.context;
+  return [
+    `${i.engine} · ${i.webgl ? `WebGL ${i.webgl}` : 'no WebGL context'}`,
+    i.gpuVendor || i.gpuRenderer ? `GPU: ${[i.gpuVendor, i.gpuRenderer].filter(Boolean).join(' · ')}` : 'GPU: not given by the browser',
+    ...(c ? [`antialias: ${yesNo(c.antialias)} · stencil: ${yesNo(c.stencil)} · power: ${c.powerPreference}`] : i.webgl ? ['context: lost'] : []),
+    `max texture ${i.maxTextureSize} · ${i.extensions.length} extensions`,
+    `${i.drawCalls} draw calls · ${i.triangles} triangles`,
+  ].join('\n');
 }
 
 /** Readable text for any socket value. */
@@ -56,6 +75,7 @@ export function formatValue(value: unknown): string {
     if (typeof o.count === 'number' && typeof o.time === 'number') {
       return o.count === 0 ? 'event: not fired yet' : `event fired ${o.count}× · last ${new Date(o.time).toLocaleTimeString()}`;
     }
+    if (isRendererInfo(o)) return formatRendererInfo(o);
     // Engine handles (renderer, scene, objects) are not data: show their kind.
     if ('renderer' in o && typeof (o.renderer as { kind?: string })?.kind === 'string') {
       return `${(o.renderer as { kind: string }).kind} scene`;

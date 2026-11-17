@@ -21,6 +21,8 @@ export const CORE_SOCKET_TYPES = {
   projection: { label: 'Projection', color: '#ba68c8' },
   camera: { label: 'Camera', color: '#9575cd' },
   renderer: { label: 'Renderer', color: '#e57373' },
+  /** What a renderer's WebGL context was granted, and its last frame's numbers (#137): a studio internal, plain data. */
+  rendererInfo: { label: 'Renderer info', color: '#ef9a9a' },
   scene: { label: 'Scene', color: '#f48fb1' },
   sceneObject: { label: 'Scene object', color: '#90a4ae' },
   geometry: { label: 'Geometry', color: '#a5d6a7' },

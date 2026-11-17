@@ -38,6 +38,13 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   Both renderers draw the same light and the same shadows; a spot's penumbra fades differently on each (the cone's edge
   is the same). The source code export writes them. A new demo, "pinball · a model standing on the poster, with its
   shadow", shows it. Saved graphs keep their lights as they were.
+- The renderer nodes expose their engine's options (#137), each with its engine's names and defaults, so a saved graph
+  renders as before: antialias, power preference, preserve drawing buffer and stencil; a max pixel ratio that caps the
+  device pixel ratio the AR view is drawn at (on a phone, a cap of 1 draws fewer pixels), live; tone mapping and
+  exposure, live; and Three.js's output colour space, live. A new Info output shows in an Inspector what the browser
+  granted (WebGL version, GPU where the browser tells it, antialias, the maximum texture size, the extensions) and the
+  last frame's draw calls and triangles, once a second. The source code export writes the Three.js renderer's options.
+- Plugin API: the Renderer info socket is a studio internal (plugin API types package 1.8.0).
 - Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
   editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
 
