@@ -41,7 +41,7 @@ A change is not verified until these pass locally. For new nodes, add at least:
 The JSON graph is the source of truth of a project. A change that renames or removes a node type, a port or a param, or changes what a value means, is a format change:
 
 - bump `GRAPH_VERSION` in `src/core/graph.ts` and describe the change in its comment;
-- add its migration to `src/core/migrations.ts`, with a test that an older document opens;
+- add its migration to `src/core/migrations.ts`, with a test that an older document opens; a step that changes nodes changes those inside the document's macro definitions (`macros`) too;
 - update the demo graphs in `public/graphs/`;
 - add a line to `CHANGELOG.md`.
 
@@ -49,7 +49,7 @@ Adding an optional param with a default, or a new node type, is not a format cha
 
 ## Naming
 
-Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
+Node types are namespaced by the library they wrap: `jsartoolkitNFT.*`, `three.*`, `babylon.*`. Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`. `macro` is the type of the macro node, and reserved. `webarkit.*` is reserved for the trackers of [webarkit/webarkit](https://github.com/webarkit/webarkit) (`@webarkit/nft-tracker`, `@webarkit/cv-backend-spec`).
 
 ## Commit messages
 

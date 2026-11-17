@@ -604,7 +604,8 @@ Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
 use functional namespaces (`scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`,
 `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`).
-**`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
+`macro` is reserved for the macro node, whose ports come from its definition in the
+graph (#140). **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
 defined by its plugin and prefixed with the plugin id
@@ -833,6 +834,12 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
+- A graph may hold macro definitions (`macros`, #140): a `macro` node's ports and params are
+  the inner ports and params its definition exposes. The studio checks and runs the flat graph,
+  where each macro node is its inner nodes, named `<macro node>/<inner node>`; an inner node's
+  report or error shows on its macro node. The `.json`, the autosave, the project and the app's
+  `graph.json` keep the macros. Creating, dissolving and entering a macro in the editor are not
+  there yet.
 - Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
   and the file itself is not touched. v2 and v3, prototype formats, are refused, and
   a newer document asks for a newer studio. An unfinished graph, with a required

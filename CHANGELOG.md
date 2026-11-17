@@ -8,6 +8,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Added
 
+- Macro nodes in the graph format (#140, first part): a graph may hold macro definitions, and a `macro` node's ports
+  and params are those its definition exposes and promotes. The studio, the player, the exports and the MCP server
+  run the graph flat, and an inner node's status or error shows on its macro node; a promoted param applies live.
+  The `.json`, the autosave, the project, the app's graph and copy and paste keep the definitions, and a script
+  inside a macro asks before it runs as one outside does.
+
 - Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
   adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected
   one too; Escape clears. Delete or Backspace removes the selection and its wires, Delete in a selected node's menu

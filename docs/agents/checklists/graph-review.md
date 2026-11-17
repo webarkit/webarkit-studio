@@ -67,7 +67,7 @@ key by key; a renamed key looks like one removal plus one addition.
 - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
   nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
 - Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
-- `webarkit.*` is reserved for webarkit/webarkit trackers.
+- `webarkit.*` is reserved for webarkit/webarkit trackers; `macro` is reserved for the macro node (#140).
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 - A node that needs one engine declares `engine` (`'three'` or `'babylon'`): every `three.*` and `babylon.*` node, renderers
   included (#138). The engine rule of `validateGraph()` reads it, never the name.

@@ -6,7 +6,17 @@
 import type { GraphDocument } from '../../src/core/graph';
 import type { MacroDefinition } from '../../src/core/macros';
 
-export function foldIntoMacro(doc: GraphDocument, ids: readonly string[], { node = 'm1', definition = 'def1', name = 'Folded' } = {}): GraphDocument {
+export function foldIntoMacro(
+  doc: GraphDocument,
+  ids: readonly string[],
+  {
+    node = 'm1',
+    definition = 'def1',
+    name = 'Folded',
+    /** Promoted params: [name on the macro, inner node, inner param, label]. */
+    promote = [] as Array<[string, string, string, string?]>,
+  } = {},
+): GraphDocument {
   const inside = new Set(ids);
   const out = structuredClone(doc);
   const def: MacroDefinition = {
@@ -15,7 +25,7 @@ export function foldIntoMacro(doc: GraphDocument, ids: readonly string[], { node
     edges: out.edges.filter((e) => inside.has(e.from.node) && inside.has(e.to.node)),
     inputs: {},
     outputs: {},
-    params: {},
+    params: Object.fromEntries(promote.map(([key, inner, param, label]) => [key, { node: inner, param, ...(label && { label }) }])),
   };
   const edges = out.edges.filter((e) => !(inside.has(e.from.node) && inside.has(e.to.node)));
   for (const e of edges) {
