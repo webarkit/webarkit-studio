@@ -18,7 +18,7 @@ import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } fro
 import type { MenuItem } from './context-menu';
 import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
-import { searchNodes } from './node-search';
+import { addable, searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
 
 type AreaExtra = Area2D<Schemes> | RenderSignal;
@@ -219,7 +219,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       if (context === 'root') {
         // Where the menu opened: the node goes there, not where the pointer is when an item is picked.
         const at = { ...area.area.pointer };
-        const list: MenuItem[] = searchNodes('', Object.values(NODE_CATALOG)).map((def) => ({
+        const list: MenuItem[] = searchNodes('', Object.values(NODE_CATALOG).filter(addable)).map((def) => ({
           label: def.label,
           key: def.type,
           detail: def.provider !== 'core' ? `${def.category} · ${def.provider}` : def.category,

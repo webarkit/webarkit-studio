@@ -5,7 +5,7 @@ import { createStudioEditor } from '../editor/editor';
 import { commitPendingEdit, renderInspector } from '../editor/inspector';
 import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { CATEGORY_ORDER, searchNodes } from '../editor/node-search';
+import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
@@ -190,7 +190,7 @@ mountAssetsPanel($('assets-panel'), assetStore, log, (id) =>
 const palette = $('palette');
 const paletteButtons = new Map<string, HTMLButtonElement>();
 for (const category of CATEGORY_ORDER) {
-  const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category);
+  const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category && addable(d));
   if (!defs.length) continue;
   const group = document.createElement('div');
   group.className = 'palette-group';

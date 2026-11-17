@@ -9,6 +9,7 @@ import { compareVersions, isVersion, LOADED_PLUGINS } from './plugins';
 import { effectiveDefinition, isScriptType } from './script';
 import { engineProblems, ownPort } from './engine';
 import { socketsCompatible } from './sockets';
+import { checkMacros, flattenGraph, type MacroDefinitions } from './macros';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
 /** Format id used by the prototype when it was called WebAR-Studio; still accepted on load. */
@@ -18,7 +19,7 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
  * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
- * v6: scene.primitive replaced by the geometry.* nodes and scene.mesh (#132).
+ * v6: scene.primitive replaced by the geometry.* nodes and scene.mesh (#132); the optional `macros` (#140).
  * v4 and v5 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
  * formats, stay rejected. A bump ships its migration, and a test that an older document opens.
  */
@@ -63,6 +64,11 @@ export interface GraphDocument {
   plugins?: PluginRef[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * Macro definitions by id (v6, #140): each a small graph, with the ports it exposes and the params it promotes. A
+   * `macro` node names one in its `definition` param. Absent: none. See src/core/macros.ts.
+   */
+  macros?: MacroDefinitions;
 }
 
 /** Namespace of a node type: "jsartoolkitNFT.controller" → "jsartoolkitNFT". */
@@ -70,7 +76,8 @@ export const namespaceOf = (type: unknown) => (typeof type === 'string' ? type.s
 
 /**
  * The `plugins` a document of these nodes must list: every loaded plugin a
- * node comes from, at its loaded version. The editor writes it on save.
+ * node comes from, at its loaded version. The editor writes it on save. Give it the nodes inside the document's macros
+ * too (everyNode(), src/core/macros.ts): a plugin's node in a macro needs its plugin as one outside does.
  */
 export function graphPlugins(nodes: readonly GraphNode[], loaded: Record<string, string> = LOADED_PLUGINS): PluginRef[] {
   const ids = new Set(nodes.map((n) => namespaceOf(n.type)).filter((ns) => Object.hasOwn(loaded, ns)));
@@ -104,6 +111,9 @@ export class GraphValidationError extends Error {
  * types, existing ports, matching socket types, single connection on
  * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136), no node of one engine
  * in a scene of the other (#138, src/core/engine.ts).
+ * Macros (#140): the definitions are checked, then the graph is flattened (src/core/macros.ts) and every check below
+ * runs on the flat graph, whose inner nodes are named `<macro node>/<inner node>`. The document is returned as it is,
+ * with its macros: the runtime flattens it again.
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
  * `unfinished`: a graph still being built may leave required inputs unconnected, may wire an object into more than
@@ -117,17 +127,24 @@ export function validateGraph(
   { unfinished = false }: { unfinished?: boolean } = {},
 ): GraphDocument {
   const problems: string[] = [];
-  const g = doc as GraphDocument;
+  const source = doc as GraphDocument;
 
-  if (!g || typeof g !== 'object') throw new GraphValidationError(['document is not an object']);
-  if (g.format !== GRAPH_FORMAT && !LEGACY_GRAPH_FORMATS.includes(String(g.format))) problems.push(`format must be "${GRAPH_FORMAT}"`);
+  if (!source || typeof source !== 'object') throw new GraphValidationError(['document is not an object']);
+  if (source.format !== GRAPH_FORMAT && !LEGACY_GRAPH_FORMATS.includes(String(source.format))) problems.push(`format must be "${GRAPH_FORMAT}"`);
   // Another version's nodes and fields follow other rules: checking them against this one only adds noise.
-  if (g.version !== GRAPH_VERSION) {
-    throw new GraphValidationError([...problems, `unsupported version ${String(g.version)} (this studio reads version ${GRAPH_VERSION})`]);
+  if (source.version !== GRAPH_VERSION) {
+    throw new GraphValidationError([...problems, `unsupported version ${String(source.version)} (this studio reads version ${GRAPH_VERSION})`]);
   }
-  if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) {
+  if (!Array.isArray(source.nodes) || !Array.isArray(source.edges)) {
     throw new GraphValidationError([...problems, 'nodes and edges must be arrays']);
   }
+
+  // Macros (#140): the definitions' own problems, then the flat graph, which every check below reads.
+  const macroProblems = checkMacros(source.macros, (n) => effectiveDefinition(n, catalog), (type) => Object.hasOwn(catalog, type));
+  if (macroProblems.length) throw new GraphValidationError([...problems, ...macroProblems]);
+  const flat = flattenGraph(source);
+  if (flat.problems.length) throw new GraphValidationError([...problems, ...flat.problems]);
+  const g = flat.doc;
 
   // A missing plugin is reported once, by name, rather than as unknown types of its nodes.
   const listed = new Set<string>();
@@ -248,7 +265,7 @@ export function validateGraph(
   }
 
   if (problems.length) throw new GraphValidationError(problems);
-  return g;
+  return source;
 }
 
 /** Kahn's algorithm. Throws if the graph has a cycle. */

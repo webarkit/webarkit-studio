@@ -7,7 +7,13 @@
  */
 import type { NodeCategory, NodeDefinition } from '../nodes/catalog';
 
-export const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'geometry', 'output', 'math', 'color', 'logic', 'action', 'debug'];
+export const CATEGORY_ORDER: NodeCategory[] = ['source', 'tracking', 'filter', 'renderer', 'scene', 'geometry', 'output', 'math', 'color', 'logic', 'action', 'debug', 'macro'];
+
+/**
+ * The node types one can add on their own, from the palette or the context menu: not `macro`, which needs a definition
+ * (#140: a macro is made from a selection).
+ */
+export const addable = (def: NodeDefinition) => def.type !== 'macro';
 
 /** Lower-case words, split on punctuation and camelCase ("ARControllerNFT" → ar, controller, nft). */
 const words = (text: string) =>

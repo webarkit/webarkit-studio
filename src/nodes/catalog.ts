@@ -59,7 +59,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'geometry' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'geometry' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug' | 'macro';
 
 export interface NodeDefinition {
   type: string;
@@ -1641,6 +1641,25 @@ export const CORE_NODES: NodeDefinition[] = [
     },
   },
 ];
+
+/**
+ * A macro node (#140): its ports and its promoted params come from its definition in the document's `macros`, per
+ * instance (src/core/macros.ts, through effectiveDefinition()). The graph is flattened before it runs, so no factory
+ * implements this type, and the palette does not list it: a macro is made from a selection.
+ */
+export const MACRO_NODE: NodeDefinition = {
+  type: 'macro',
+  label: 'Macro',
+  category: 'macro',
+  provider: 'core',
+  description:
+    'A group of nodes folded into one, defined in the graph’s macros: its ports are the inner ports its definition exposes, its params the ' +
+    'inner params it promotes. An edit inside the definition changes every macro node that uses it.',
+  inputs: {},
+  outputs: {},
+  params: { definition: { kind: 'string', label: 'Definition', default: '' } },
+};
+CORE_NODES.push(MACRO_NODE);
 
 /** Every node type of this page: the core nodes, then those of the loaded plugins. */
 export const NODE_CATALOG: Record<string, NodeDefinition> = Object.fromEntries(CORE_NODES.map((d) => [d.type, d]));

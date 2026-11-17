@@ -18,6 +18,7 @@
   --cat-logic: #9fa8da;
   --cat-action: #ffab91;
   --cat-debug: #bdbdbd;
+  --cat-macro: #80cbc4;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -67,6 +68,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-logic { --c: var(--cat-logic); }
 .cat-action { --c: var(--cat-action); }
 .cat-debug { --c: var(--cat-debug); }
+.cat-macro { --c: var(--cat-macro); }
 
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */
 .studio-node { width: 230px; background: var(--node); border: 1px solid var(--border); border-top: 3px solid var(--c, var(--border)); border-radius: 8px; padding-bottom: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.35); user-select: none; }
