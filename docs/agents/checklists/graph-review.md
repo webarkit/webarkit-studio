@@ -44,7 +44,8 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 2. Catalog / registry consistency
 
 - Every `type` in `src/nodes/catalog.ts` has a factory in `NODE_REGISTRY`
-  (`src/runtime/registry.ts`), and the other way round.
+  (`src/runtime/registry.ts`), and the other way round; `macro` (#140) is the exception, flattened
+  before anything runs, with no factory.
 - The catalog holds metadata only: no imports of renderers, workers or tracker
   builds into `src/nodes/` or `src/core/`.
 - The editor (`src/editor/`) and the runtime (`src/runtime/`) never import each other.

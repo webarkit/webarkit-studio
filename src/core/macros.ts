@@ -129,9 +129,12 @@ export function macroInstanceDefinition(
 
 /**
  * The definitions' own problems, whether or not a node uses them: the shape, unknown or nested types, wires and
- * exposed ports and promoted params that do not resolve. `known(type)`: whether the catalog has the type.
+ * exposed ports and promoted params that do not resolve. `known(type)`: whether the catalog has the type (or its
+ * plugin is reported missing). `runsCode(type)`: whether the type runs its `script` param (isScriptType()): that
+ * param is never promoted, because the trust prompt reads the scripts in the definitions, and a promoted value set on
+ * a macro node would run another text than the one it asked about.
  */
-export function checkMacros(macros: unknown, resolve: Resolve, known: (type: string) => boolean): string[] {
+export function checkMacros(macros: unknown, resolve: Resolve, known: (type: string) => boolean, runsCode: (type: string) => boolean = () => false): string[] {
   if (macros === undefined) return [];
   if (!macros || typeof macros !== 'object' || Array.isArray(macros)) return ['macros must be an object of definitions by id'];
   const problems: string[] = [];
@@ -213,6 +216,9 @@ export function checkMacros(macros: unknown, resolve: Resolve, known: (type: str
       }
       const innerDef = defOf(ref.node);
       if (innerDef && !own(innerDef.params, ref.param)) problems.push(`${what} maps to ${ref.node}.${ref.param}, which ${innerDef.label} (${ref.node}) does not have`);
+      else if (ref.param === 'script' && runsCode(nodes.get(ref.node)!.type)) {
+        problems.push(`${what} maps to ${ref.node}.script, the code of a script node, which a macro does not promote`);
+      }
     }
   }
   return problems;
@@ -261,7 +267,14 @@ export function flattenGraph(doc: GraphDocument): FlatGraph {
     // Two top-level nodes with one id are validateGraph()'s to report ("duplicate node id"), as without macros.
     if (!taken.has(n?.id)) taken.set(n?.id, `node ${n?.id}`);
   }
-  for (const n of doc.nodes) if (n?.type === MACRO_TYPE && !taken.has(n.id)) taken.set(n.id, `macro node ${n.id}`);
+  // A macro node never reaches the flat graph, where validateGraph() finds two nodes with one id: checked here.
+  for (const n of doc.nodes) {
+    if (n?.type !== MACRO_TYPE) continue;
+    if (taken.has(n.id)) problems.push(`duplicate node id ${n.id}`);
+    else taken.set(n.id, `macro node ${n.id}`);
+  }
+  // A wire names its ends by id: with two nodes behind one, it would be joined to either. Nothing more to say.
+  if (problems.length) return { doc: { ...doc, macros: undefined }, origin, problems };
   for (const n of doc.nodes) {
     if (n?.type !== MACRO_TYPE) continue;
     const found = definitionOf(n, macros);

@@ -379,3 +379,12 @@ describe('one parent per scene object (#136)', () => {
 
   // Every demo graph holds: "demo graph … is valid against the real catalog" above runs the strict check on each.
 });
+
+describe('catalog and registry (#140)', () => {
+  it('hold the same core types, but for macro, which is flattened before it runs and has no factory', async () => {
+    const { NODE_REGISTRY } = await import('../../src/runtime/registry');
+    const catalog = Object.keys(NODE_CATALOG).filter((t) => t !== 'macro').sort();
+    expect(Object.keys(NODE_REGISTRY).sort()).toEqual(catalog);
+    expect(Object.hasOwn(NODE_REGISTRY, 'macro')).toBe(false);
+  });
+});

@@ -840,7 +840,7 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   report or error shows on its macro node. The `.json`, the autosave, the project and the app's
   `graph.json` keep the macros. Creating, dissolving and entering a macro in the editor are not
   there yet.
-- Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
+- Graph format is `webarkit-studio/graph` v6. A v4 or v5 graph upgrades when it is opened,
   and the file itself is not touched. v2 and v3, prototype formats, are refused, and
   a newer document asks for a newer studio. An unfinished graph, with a required
   input not connected, reopens from an autosave or a file on **Import…** (a `.json` or

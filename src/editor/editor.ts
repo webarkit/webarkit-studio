@@ -100,7 +100,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       onChange();
       return;
     }
-    node.params[key] = value;
+    // An own key: a macro node's promoted param is named by its graph (#140), and "__proto__" must not set the prototype.
+    Object.defineProperty(node.params, key, { value, enumerable: true, writable: true, configurable: true });
     // A script node's ports follow its script (#35), on an edit and on its undo or redo alike.
     if (key === 'script' && isScriptType(node.type)) {
       node.syncPorts();

@@ -293,3 +293,41 @@ describe('macro: helpers', () => {
     expect(Object.getPrototypeOf(into)).toBe(Object.prototype);
   });
 });
+
+describe('macro: review of PR 1', () => {
+  const problemsOf = (doc: unknown, loaded?: Record<string, string>) => {
+    try {
+      validateGraph(doc, NODE_CATALOG, loaded);
+      return [];
+    } catch (err) {
+      return (err as GraphValidationError).problems;
+    }
+  };
+
+  it('refuses promoting a script node’s script: the trust prompt reads the definition’s text, the runtime would run the macro node’s', () => {
+    const d: GraphDocument = {
+      format: GRAPH_FORMAT,
+      version: GRAPH_VERSION,
+      nodes: [{ id: 'm', type: 'macro', params: { definition: 'd', code: 'globalThis.x = 1;' } }],
+      edges: [],
+      macros: { d: { name: 'Sneaky', nodes: [{ id: 's', type: 'script.lite', params: {} }], edges: [], params: { code: { node: 's', param: 'script' } } } },
+    };
+    expect(problemsOf(d)).toEqual(['macro "Sneaky": param "code" maps to s.script, the code of a script node, which a macro does not promote']);
+  });
+
+  it('refuses a macro node whose id another node has, as any two nodes with one id', () => {
+    const d = doc();
+    d.nodes.push({ id: 't', type: 'macro', params: { definition: 'abs-neg' } });
+    expect(problemsOf(d)).toEqual(['duplicate node id t']);
+    const e = doc();
+    e.nodes.push({ id: 'm1', type: 'macro', params: { definition: 'abs-neg' } });
+    expect(problemsOf(e)).toEqual(['duplicate node id m1']);
+  });
+
+  it('a node inside a macro whose plugin is not loaded is reported as the missing plugin, not as an unknown type', () => {
+    const d = doc();
+    d.plugins = [{ id: 'acme', version: '1.0.0' }];
+    d.macros!['abs-neg'].nodes.push({ id: 'p', type: 'acme.thing', params: {} });
+    expect(problemsOf(d, {})).toEqual(['requires plugin acme ≥ 1.0.0, which is not loaded']);
+  });
+});

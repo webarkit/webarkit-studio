@@ -20,7 +20,7 @@ import { mountAssetsPanel } from './assets-panel';
 import { createLoadQueue } from './load-queue';
 import { loadPlugins } from '../plugins/host';
 import studioConfig from '../../webarkit-studio.config';
-import { isScriptType, nodeScriptText } from '../core/script';
+import { isScriptType, nodeScriptText, scriptNodesIn } from '../core/script';
 import { ALL_SCRIPT_EXAMPLES } from '../editor/script-examples';
 import type { ScriptHandlers } from '../editor/script-ui';
 import { createScriptPanel } from './script-panel';
@@ -146,6 +146,11 @@ const studio = await createStudioEditor($('editor'), {
     }
     // A macro node's promoted param goes to its inner node in the running flat graph; its definition needs a restart (#140).
     const targets = paramTargets(studio.toDocument(), nodeId, key);
+    // A script's code is never promoted (checkMacros), but a pasted definition is not validated until Run: never live.
+    if (targets.some((t) => t.key === 'script')) {
+      log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
+      return;
+    }
     const results = targets.map((t) => runtime!.setParam(t.node, t.key, value));
     if (!targets.length || results.includes('restart')) log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
   },
@@ -259,7 +264,7 @@ async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
     return;
   }
   // A demo ships with the studio: its scripts are trusted.
-  if (doc && typeof doc === 'object' && Array.isArray((doc as GraphDocument).nodes)) await trustScripts(scriptTexts((doc as GraphDocument).nodes));
+  if (doc && typeof doc === 'object' && Array.isArray((doc as GraphDocument).nodes)) await trustScripts(scriptNodesIn(doc as GraphDocument).map(nodeScriptText)); // inside its macros too
   if (ticket.current()) await load(doc, ticket);
 }
 

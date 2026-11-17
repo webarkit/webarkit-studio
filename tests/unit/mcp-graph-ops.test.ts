@@ -180,6 +180,10 @@ describe('applyOps: macros (#140)', () => {
     expect(() => applyOps(withMacro(), [{ op: 'addNode', type: 'macro' }])).toThrow(/no macro definition ""/);
   });
 
+  it('setting a macro node’s definition to one the graph does not have is refused at once', () => {
+    expect(() => applyOps(withMacro(), [{ op: 'setParam', node: 'm', key: 'definition', value: 'gone' }])).toThrow(/no macro definition "gone"/);
+  });
+
   it('removing the last macro node of a definition leaves the definition out, as the editor saves it', () => {
     const out = applyOps(withMacro(), [{ op: 'removeNode', id: 'm' }]);
     expect(out.macros).toBeUndefined();

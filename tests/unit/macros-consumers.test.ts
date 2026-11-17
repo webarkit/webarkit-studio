@@ -89,6 +89,16 @@ describe('macros: assets', () => {
     expect(doc.nodes[0].params).toEqual({ definition: 'model' });
   });
 
+  it('rewrites a promoted asset param named "__proto__" as an own key', async () => {
+    const doc = modelDoc();
+    doc.macros!.model.params = JSON.parse('{"__proto__": {"node": "g", "param": "url"}}');
+    doc.nodes = [JSON.parse(`{"id": "m3", "type": "macro", "params": {"definition": "model", "__proto__": ${JSON.stringify(assetRef('g2', 'promoted.glb'))}}}`)];
+    const files = await collectAssets(doc, base, ctx);
+    expect(Object.keys(files).sort()).toEqual(['data/assets/g1/inner.glb', 'data/assets/g2/promoted.glb']);
+    expect(Object.getOwnPropertyDescriptor(doc.nodes[0].params, '__proto__')?.value).toBe('data/assets/g2/promoted.glb');
+    expect(Object.getPrototypeOf(doc.nodes[0].params)).toBe(Object.prototype);
+  });
+
   it('usesUploadedAssets sees an upload inside a macro', () => {
     const doc = modelDoc();
     doc.nodes = [doc.nodes[0]];

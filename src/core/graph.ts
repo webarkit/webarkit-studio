@@ -139,18 +139,11 @@ export function validateGraph(
     throw new GraphValidationError([...problems, 'nodes and edges must be arrays']);
   }
 
-  // Macros (#140): the definitions' own problems, then the flat graph, which every check below reads.
-  const macroProblems = checkMacros(source.macros, (n) => effectiveDefinition(n, catalog), (type) => Object.hasOwn(catalog, type));
-  if (macroProblems.length) throw new GraphValidationError([...problems, ...macroProblems]);
-  const flat = flattenGraph(source);
-  if (flat.problems.length) throw new GraphValidationError([...problems, ...flat.problems]);
-  const g = flat.doc;
-
   // A missing plugin is reported once, by name, rather than as unknown types of its nodes.
   const listed = new Set<string>();
   const missing = new Set<string>();
-  if (g.plugins !== undefined && !Array.isArray(g.plugins)) problems.push('plugins must be an array of { id, version }');
-  for (const ref of Array.isArray(g.plugins) ? g.plugins : []) {
+  if (source.plugins !== undefined && !Array.isArray(source.plugins)) problems.push('plugins must be an array of { id, version }');
+  for (const ref of Array.isArray(source.plugins) ? source.plugins : []) {
     const id = String(ref?.id);
     listed.add(id);
     if (!isVersion(ref?.version)) {
@@ -162,6 +155,19 @@ export function validateGraph(
       problems.push(`requires plugin ${id} ≥ ${ref.version}, but version ${loaded[id]} is loaded`);
     }
   }
+
+  // Macros (#140): the definitions' own problems, then the flat graph, which every check below reads. A node of a
+  // missing plugin inside a definition is that plugin's, reported above, not an unknown type.
+  const macroProblems = checkMacros(
+    source.macros,
+    (n) => effectiveDefinition(n, catalog),
+    (type) => Object.hasOwn(catalog, type) || missing.has(namespaceOf(type)),
+    (type) => isScriptType(type, catalog),
+  );
+  if (macroProblems.length) throw new GraphValidationError([...problems, ...macroProblems]);
+  const flat = flattenGraph(source);
+  if (flat.problems.length) throw new GraphValidationError([...problems, ...flat.problems]);
+  const g = flat.doc;
 
   const nodes = new Map<string, GraphNode>();
   for (const n of g.nodes) {

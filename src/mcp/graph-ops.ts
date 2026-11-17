@@ -130,6 +130,9 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       const def = own(catalog, n.type);
       if (!def) throw new Error(`node "${n.id}" has an unknown type "${n.type}"`);
       checkParam(effective(n) ?? def, op.key, op.value);
+      if (n.type === MACRO_TYPE && op.key === DEFINITION_PARAM && !definitionOf({ params: { [DEFINITION_PARAM]: op.value } }, doc.macros)) {
+        throw new Error(`no macro definition ${JSON.stringify(op.value)} in the graph's macros (${Object.keys(doc.macros ?? {}).join(', ') || 'none'})`);
+      }
       const params = { ...n.params };
       Object.defineProperty(params, op.key, { value: op.value, enumerable: true, writable: true, configurable: true });
       n.params = params;

@@ -74,7 +74,7 @@ In Claude Code, the `tracking-debugger` skill (`.claude/skills/tracking-debugger
 ## Architecture rules
 
 - **The JSON graph is the source of truth.** The editor and the runtime both depend on `src/core`, and never on each other.
-- **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both.
+- **The catalog holds metadata only.** Implementations live in `src/runtime/nodes/` (core nodes) or in a plugin's factories, and are mapped by the registry. A node type must exist in both, except `macro` (#140), which is flattened before anything runs and has no factory (a unit test checks both).
 - **Read a node's ports through `effectiveDefinition()`** (`src/core/script.ts`), never `NODE_CATALOG[type].inputs` alone: a script node's ports and params come from its script's header, per node (#35). Validation, the runtime, the editor and the MCP server all do. A script runs in the page: the studio asks before running scripts from someone else, the player refuses them from a `?graph=` link, and the MCP server never runs them. A node runs code when its catalog definition says `runsCode: true` (`script.lite`, `three.script`, `three.renderScript`): those three refusals read that flag through `isScriptType()`, never a node's name.
 - **Plugins** (#12, [docs/plugins.md](docs/plugins.md)) add nodes, sockets, factories and export files through a `StudioPlugin` manifest (`src/plugin-api/index.ts`, types only), listed in `webarkit-studio.config.ts`. jsartoolkitNFT is one (`plugins/jsartoolkit-nft/`).
   - A plugin's node and socket types start with its id; its code imports only the plugin API (as types), its own files and npm packages, never `src/`.

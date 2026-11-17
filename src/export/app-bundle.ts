@@ -17,7 +17,7 @@ import type { GraphDocument, GraphNode } from '../core/graph';
 import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition } from '../core/script';
-import { everyNode, flattenGraph, MACRO_TYPE, usedMacros } from '../core/macros';
+import { everyNode, flattenGraph, MACRO_TYPE, macrosFor, usedMacros } from '../core/macros';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
@@ -247,6 +247,10 @@ function checkSelfContained(data: Uint8Array, where: string): void {
  * Macros (#140): the nodes inside the definitions the graph uses are rewritten in their definition, and a macro node's
  * promoted asset param where the node sets it; one it leaves unset keeps the definition's value, collected there.
  */
+/** Writes a param as an own key: a macro node's promoted param is named by its graph (#140), maybe "__proto__". */
+const setParam = (node: GraphNode, key: string, value: string) =>
+  Object.defineProperty(node.params, key, { value, enumerable: true, writable: true, configurable: true });
+
 /** Exported for tests. */
 export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
@@ -278,7 +282,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
           files[path] = await bytes(asset.files['']);
           if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
-        node.params[key] = path;
+        setParam(node, key, path);
         ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''} (uploaded)`);
         continue;
       }
@@ -306,7 +310,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
         files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
         if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
-      if (rewritten) node.params[key] = path;
+      if (rewritten) setParam(node, key, path);
       ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
     }
   }
@@ -332,6 +336,9 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
   // The app's graph.json keeps the macros, and the player flattens it at load as the studio does (#140). What the
   // graph needs (engines, plugin files, isolation) is read from the flat graph, which has every inner node.
   const doc = loaded.doc;
+  const macros = macrosFor(doc.nodes, doc.macros); // what the editor writes: a definition no node uses is left out
+  if (macros) doc.macros = macros;
+  else delete doc.macros;
   const flat = () => flattenGraph(doc).doc;
   const upgraded = upgradeNote(loaded);
   if (upgraded) ctx.log(upgraded);
