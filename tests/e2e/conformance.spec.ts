@@ -680,6 +680,9 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
     parent ? { op: 'addChild', parent, child: id } : { op: 'addRoot', id },
   ];
 
+  /** #137: the centre of a 40 mm plane 80 mm away (px 48..79), and a corner of the canvas it leaves empty. */
+  const TONE_REGIONS: Record<string, Region> = { centre: [60, 60, 8, 8], corner: [4, 4, 8, 8] };
+
   const CASES: Case[] = [
     ...(['box', 'sphere', 'torusKnot'] as const).map(
       (shape): Case => ({
@@ -1557,6 +1560,31 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         ...drawnEverywhere(),
         ...Object.keys(ENV_REGIONS).map((region): Rule => ({ region, is: 'look' })),
         { region: 'top', is: 'changed', from: 'upright' },
+      ],
+    },
+    // #137: tone mapping, each engine with its own names (neither promises the other's look): a mid-grey plane before
+    // and after it, with an exposure of 2, which both apply under a tone mapping. The canvas stays transparent around
+    // the plane: the camera video under it is never tone-mapped.
+    {
+      name: 'tone mapping on (#137): the object is drawn differently, and the canvas around it stays transparent',
+      ops: [
+        { op: 'createMaterial', id: 'grey', spec: mat({ color: [0.5, 0.5, 0.5] }) },
+        ...plane('p', 40, 40, [0, 0, -80], 'grey'),
+        { op: 'render', capture: 'plain' },
+        {
+          op: 'setRendererOption',
+          three: { toneMapping: 'ACESFilmicToneMapping', toneMappingExposure: 2 },
+          babylon: { toneMappingEnabled: true, toneMappingType: 'TONEMAPPING_ACES', exposure: 2 },
+        },
+      ],
+      regions: TONE_REGIONS,
+      rules: [
+        { frame: 'plain', region: 'centre', is: 'drawn' },
+        { frame: 'plain', region: 'corner', is: 'empty' },
+        { frame: 'plain', region: 'centre', is: 'same' },
+        { region: 'centre', is: 'drawn' },
+        { region: 'corner', is: 'empty' },
+        { region: 'centre', is: 'changed', from: 'plain' },
       ],
     },
   ];
@@ -2548,6 +2576,73 @@ test.describe('conformance: material defaults', () => {
     console.log('materialDefaults', JSON.stringify(r));
     expect(r.three).toEqual({ color: 'ffffff', metalness: 0, roughness: 1, emissive: '000000', opacity: 1, side: 'front' });
     expect(r.babylon).toEqual({ color: '#FFFFFF', metalness: null, roughness: null, emissive: '#000000', opacity: 1, backFaceCulling: true });
+  });
+});
+
+// #137: what each renderer node's options mean on its own engine, through the adapters' setOption. Not a table case:
+// the nodes keep their engine's names and meaning, and neither promises the other's look (the node descriptions say so).
+test.describe('conformance: renderer options, each engine its own (#137)', () => {
+  /** An unlit mid-grey plane filling the centre of the frame (the SceneHandle table's 40 mm at 80 mm). */
+  const GREY_PLANE: AdapterOp[] = [
+    { op: 'createMaterial', id: 'grey', spec: { color: [0.5, 0.5, 0.5], metalness: 0, roughness: 1, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1, side: 'front', unlit: true } },
+    { op: 'createGeometry', id: 'p_g', spec: { shape: 'plane', width: 40, depth: 40 } },
+    { op: 'createMesh', id: 'p', geometry: 'p_g' },
+    { op: 'setPosition', id: 'p', position: [0, 0, -80] },
+    { op: 'addRoot', id: 'p' },
+    { op: 'setMeshMaterial', mesh: 'p', material: 'grey' },
+  ];
+  const CENTRE_8: [number, number, number, number] = [60, 60, 8, 8];
+
+  /** The centre's RGBA in each frame the ops capture, and in the final one. */
+  async function frames(page: Page, engine: Engine, ops: AdapterOp[]): Promise<Record<string, number[]>> {
+    await open(page, engine, 128);
+    return page.evaluate(
+      async ([o, [x, y, w, h]]) => {
+        const H = (window as never as { H: Harness }).H;
+        const out: Record<string, number[]> = {};
+        await H.buildAdapterScene(o, (frame) => (out[frame] = H.region(x, y, w, h)));
+        H.render();
+        out.final = H.region(x, y, w, h);
+        return out;
+      },
+      [ops, CENTRE_8] as const,
+    );
+  }
+  const option = (three: Record<string, unknown> | undefined, babylon?: Record<string, unknown>): AdapterOp => ({ op: 'setRendererOption', three, babylon });
+
+  test('Three.js: the exposure does nothing without a tone mapping, and applies under one', async ({ page }) => {
+    const r = await frames(page, 'three', [...GREY_PLANE, { op: 'render', capture: 'plain' }, option({ toneMappingExposure: 2 }), { op: 'render', capture: 'exposed' }, option({ toneMapping: 'LinearToneMapping' })]);
+    expect(r.plain[3]).toBeGreaterThanOrEqual(250);
+    expect(maxDiff(r.plain, [128, 128, 128])).toBeLessThanOrEqual(SAME);
+    expect(maxDiff(r.exposed, r.plain), 'exposure 2 with no tone mapping').toBeLessThanOrEqual(SAME);
+    // Linear: the linear 0.214 times 2, 0.43, encoded: 174.
+    expect(maxDiff(r.final, [174, 174, 174]), 'exposure 2 under Linear').toBeLessThanOrEqual(SAME);
+  });
+
+  test('Three.js: the output colour space changes live; linear sRGB leaves the linear value unencoded', async ({ page }) => {
+    const r = await frames(page, 'three', [...GREY_PLANE, { op: 'render', capture: 'plain' }, option({ outputColorSpace: 'srgb-linear' })]);
+    expect(maxDiff(r.plain, [128, 128, 128])).toBeLessThanOrEqual(SAME);
+    // sRGB 0.5 is 0.214 linear, written as it is: 55.
+    expect(maxDiff(r.final, [55, 55, 55])).toBeLessThanOrEqual(SAME);
+  });
+
+  test('Babylon.js: the image processing applies the exposure with tone mapping off', async ({ page }) => {
+    const r = await frames(page, 'babylon', [...GREY_PLANE, { op: 'render', capture: 'plain' }, option(undefined, { exposure: 2 })]);
+    expect(r.plain[3]).toBeGreaterThanOrEqual(250);
+    expect(maxDiff(r.plain, [128, 128, 128])).toBeLessThanOrEqual(SAME);
+    expect(maxDiff(r.final, r.plain), 'exposure 2 with tone mapping off').toBeGreaterThan(LOOK);
+  });
+
+  test('Babylon.js: tone mapping turns on and off live', async ({ page }) => {
+    const r = await frames(page, 'babylon', [
+      ...GREY_PLANE,
+      { op: 'render', capture: 'plain' },
+      option(undefined, { toneMappingEnabled: true, toneMappingType: 'TONEMAPPING_ACES' }),
+      { op: 'render', capture: 'aces' },
+      option(undefined, { toneMappingEnabled: false }),
+    ]);
+    expect(maxDiff(r.aces, r.plain), 'tone mapping on').toBeGreaterThan(LOOK);
+    expect(maxDiff(r.final, r.plain), 'tone mapping off again').toBeLessThanOrEqual(SAME);
   });
 });
 

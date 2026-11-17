@@ -121,7 +121,7 @@ array when its values change, and keep the old one when they do not. The core's 
 nodes do so; a plugin's node that feeds them should too. The helper that does this (`src/runtime/computed.ts`)
 is the studio's own, not part of the plugin API.
 
-The values of the `renderer`, `scene`, `sceneObject`, `geometry`, `material` and `texture` sockets are studio internals, not part of
+The values of the `renderer`, `rendererInfo`, `scene`, `sceneObject`, `geometry`, `material` and `texture` sockets are studio internals, not part of
 plugin API v1: a plugin may pass them through (wire them from one port to another) but must not
 call methods on them. The plugin API exports no type for them.
 

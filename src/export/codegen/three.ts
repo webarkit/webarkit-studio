@@ -11,6 +11,7 @@ import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type T
 import { rgbaToHex } from '../../core/color';
 import { DIRECTIONAL_SHADOW_NEAR, directionalShadowFar, engineIntensity, lightSpec, normalizeLight, shadowCatcherSpec, SHADOW_EXTENT, SPOT_SHADOW_FAR, SPOT_SHADOW_NEAR, type NormalLight } from '../../core/light';
 import { environmentSpec } from '../../core/environment';
+import { exposureOf, pixelRatioCap } from '../../core/renderer';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -53,16 +54,40 @@ await ${video}.play();`,
   };
 };
 
-const renderer: CodeEmitter = ({ name, params }) => {
+/** three.renderer's tone mappings (#137): the node's option names are three.js's constants. */
+const TONE_MAPPINGS = new Set(['NoToneMapping', 'LinearToneMapping', 'ReinhardToneMapping', 'CineonToneMapping', 'ACESFilmicToneMapping', 'AgXToneMapping', 'NeutralToneMapping']);
+const COLOR_SPACES: Record<string, string> = { 'srgb-linear': 'THREE.LinearSRGBColorSpace' };
+const POWER_PREFERENCES = new Set(['high-performance', 'low-power']);
+
+/**
+ * three.renderer (#137): the options the Three.js adapter gives it. Only those set away from three.js's defaults are
+ * written, so a renderer with the defaults is written as before. The pixel ratio cap goes to AR View's sizing, through
+ * the `pixelRatio` the scene passes on.
+ */
+const renderer: CodeEmitter = ({ name, params, literal }) => {
   const r = name();
+  const options: string[] = ['alpha: true', `antialias: ${Boolean(params.antialias)}`];
+  if (typeof params.powerPreference === 'string' && POWER_PREFERENCES.has(params.powerPreference)) options.push(`powerPreference: ${literal(params.powerPreference)}`);
+  if (params.preserveDrawingBuffer === true) options.push('preserveDrawingBuffer: true');
+  if (params.stencil === true) options.push('stencil: true');
+  const lines: string[] = [];
+  const toneMapping = typeof params.toneMapping === 'string' && TONE_MAPPINGS.has(params.toneMapping) ? params.toneMapping : 'NoToneMapping';
+  if (toneMapping !== 'NoToneMapping') lines.push(`${r}.toneMapping = THREE.${toneMapping};`);
+  const exposure = exposureOf(params.toneMappingExposure);
+  if (exposure !== 1) lines.push(`${r}.toneMappingExposure = ${exposure};`);
+  if (typeof params.outputColorSpace === 'string' && Object.hasOwn(COLOR_SPACES, params.outputColorSpace)) lines.push(`${r}.outputColorSpace = ${COLOR_SPACES[params.outputColorSpace]};`);
+  const cap = pixelRatioCap(params.maxPixelRatio);
+  const capped = cap > 0;
+  const pixelRatio = capped ? name('pixel_ratio') : 'devicePixelRatio';
+  if (capped) lines.push('// AR View sizes the canvas at the device pixel ratio, capped.', `const ${pixelRatio} = Math.min(devicePixelRatio, ${cap});`);
   return {
     imports: [THREE_IMPORT],
     setup: `// Transparent: the camera video shows through.
-const ${r} = new THREE.WebGLRenderer({ alpha: true, antialias: ${Boolean(params.antialias)} });
+const ${r} = new THREE.WebGLRenderer({ ${options.join(', ')} });${lines.map((line) => `\n${line}`).join('')}
 // Shadow maps, as the studio's renderer: used only when a light casts.
 ${r}.shadowMap.enabled = true;
 ${r}.shadowMap.type = THREE.PCFShadowMap;`,
-    outputs: { renderer: r },
+    outputs: { renderer: r, pixelRatio },
   };
 };
 
@@ -141,7 +166,7 @@ const scene: CodeEmitter = (ctx) => {
   return {
     imports: [THREE_IMPORT],
     setup: `const ${s} = new THREE.Scene();${lights}`,
-    outputs: { scene: s, renderer: r },
+    outputs: { scene: s, renderer: r, pixelRatio: ctx.from('renderer')?.pixelRatio ?? 'devicePixelRatio' },
   };
 };
 
@@ -509,6 +534,7 @@ const arView: CodeEmitter = (ctx) => {
   const video = required(ctx, 'video');
   const r = from('scene')?.renderer;
   if (!r) throw new Error('its scene has no renderer');
+  const pixelRatio = from('scene')?.pixelRatio ?? 'devicePixelRatio';
   const view = name();
   const fps = name('fps');
   const fpsFrames = name('fps_frames');
@@ -528,7 +554,7 @@ ${view}.className = 'ar-view';
 ${view}.style.cssText = \`position:relative;width:100%;aspect-ratio:\${${video}.videoWidth}/\${${video}.videoHeight};overflow:hidden;background:#000\`;
 ${video}.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:fill';
 ${r}.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-${r}.setSize(${video}.videoWidth * devicePixelRatio, ${video}.videoHeight * devicePixelRatio, false);
+${r}.setSize(${video}.videoWidth * ${pixelRatio}, ${video}.videoHeight * ${pixelRatio}, false);
 ${view}.append(${video}, ${r}.domElement);${stats}
 stage.append(${view});${objects.length ? `\n${s}.add(${objects.join(', ')});` : ''}`,
     frame: `${r}.render(${s}, ${camera});${

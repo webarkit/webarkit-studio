@@ -317,6 +317,9 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
   }),
 ];
 
+/** WebGL's powerPreference (#137), the same names on both renderers; each node keeps its engine's default. */
+const POWER_PREFERENCES = { Default: 'default', 'High performance': 'high-performance', 'Low power': 'low-power' };
+
 /** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 export const CORE_NODES: NodeDefinition[] = [
   // ------------------------------------------------------------ sources
@@ -539,20 +542,69 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Three.js Renderer',
     category: 'renderer',
     provider: 'Three.js',
-    description: 'Three.js WebGL renderer (engine + canvas). Connect it to Scene nodes.',
+    description:
+      'Three.js WebGL renderer (engine + canvas). Connect it to Scene nodes. Its options are three.js\'s own, with its defaults; ' +
+      'antialias, power preference, preserve drawing buffer and stencil recreate the renderer. Max pixel ratio caps the ' +
+      'device pixel ratio AR View sizes the canvas with (0: no cap). Three.js applies the exposure only with a tone mapping ' +
+      'on. The camera video under the canvas is never tone-mapped. Info: the WebGL context granted, and the last frame\'s ' +
+      'draw calls and triangles (shadow passes included), once a second, for an Inspector.',
     inputs: {},
-    outputs: { renderer: { type: 'renderer', label: 'Renderer' } },
-    params: { antialias: { kind: 'boolean', label: 'Antialias', default: true } },
+    outputs: { renderer: { type: 'renderer', label: 'Renderer' }, info: { type: 'rendererInfo', label: 'Info' } },
+    params: {
+      antialias: { kind: 'boolean', label: 'Antialias', default: true },
+      powerPreference: { kind: 'select', label: 'Power preference', default: 'default', options: POWER_PREFERENCES },
+      preserveDrawingBuffer: { kind: 'boolean', label: 'Preserve drawing buffer', default: false },
+      stencil: { kind: 'boolean', label: 'Stencil', default: false },
+      maxPixelRatio: { kind: 'number', label: 'Max pixel ratio', default: 0, min: 0, max: 4, step: 0.25, live: true },
+      toneMapping: {
+        kind: 'select',
+        label: 'Tone mapping',
+        default: 'NoToneMapping',
+        options: {
+          None: 'NoToneMapping',
+          Linear: 'LinearToneMapping',
+          Reinhard: 'ReinhardToneMapping',
+          Cineon: 'CineonToneMapping',
+          'ACES Filmic': 'ACESFilmicToneMapping',
+          AgX: 'AgXToneMapping',
+          Neutral: 'NeutralToneMapping',
+        },
+        live: true,
+      },
+      toneMappingExposure: { kind: 'number', label: 'Exposure', default: 1, min: 0, max: 10, step: 0.05, live: true },
+      outputColorSpace: { kind: 'select', label: 'Output colour space', default: 'srgb', options: { sRGB: 'srgb', 'Linear sRGB': 'srgb-linear' }, live: true },
+    },
   },
   {
     type: 'babylon.renderer',
     label: 'Babylon.js Renderer',
     category: 'renderer',
     provider: 'Babylon.js',
-    description: 'Babylon.js engine + canvas (loaded on demand). Connect it to Scene nodes.',
+    description:
+      'Babylon.js engine + canvas (loaded on demand). Connect it to Scene nodes. Its options are Babylon.js\'s own, with its ' +
+      'defaults; antialias, power preference, preserve drawing buffer and stencil recreate the engine. Max pixel ratio caps ' +
+      'the device pixel ratio AR View sizes the canvas with (0: no cap). Tone mapping and exposure go to the image processing ' +
+      'of every scene of the engine, which applies the exposure with tone mapping on or off. The output is always encoded ' +
+      'with the exact sRGB curve. The camera video under the canvas is never tone-mapped. Info: the WebGL context granted, ' +
+      'and the last frame\'s draw calls and triangles (of the active meshes), once a second, for an Inspector.',
     inputs: {},
-    outputs: { renderer: { type: 'renderer', label: 'Renderer' } },
-    params: { antialias: { kind: 'boolean', label: 'Antialias', default: true } },
+    outputs: { renderer: { type: 'renderer', label: 'Renderer' }, info: { type: 'rendererInfo', label: 'Info' } },
+    params: {
+      antialias: { kind: 'boolean', label: 'Antialias', default: true },
+      powerPreference: { kind: 'select', label: 'Power preference', default: 'high-performance', options: POWER_PREFERENCES },
+      preserveDrawingBuffer: { kind: 'boolean', label: 'Preserve drawing buffer', default: false },
+      stencil: { kind: 'boolean', label: 'Stencil', default: true },
+      maxPixelRatio: { kind: 'number', label: 'Max pixel ratio', default: 0, min: 0, max: 4, step: 0.25, live: true },
+      toneMappingEnabled: { kind: 'boolean', label: 'Tone mapping', default: false, live: true },
+      toneMappingType: {
+        kind: 'select',
+        label: 'Tone mapping type',
+        default: 'TONEMAPPING_STANDARD',
+        options: { Standard: 'TONEMAPPING_STANDARD', ACES: 'TONEMAPPING_ACES', 'KHR PBR Neutral': 'TONEMAPPING_KHR_PBR_NEUTRAL' },
+        live: true,
+      },
+      exposure: { kind: 'number', label: 'Exposure', default: 1, min: 0, max: 10, step: 0.05, live: true },
+    },
   },
 
   // --------------------------------------------------------------- scene

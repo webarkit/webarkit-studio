@@ -305,8 +305,11 @@ case. Intensity: the same scale; must not promise the same look above intensity 
 **#136, `scene.group`** (done: a child under a moved, turned and per-axis scaled group, and a group in a group, within 1e-4 mm; hiding a group turns off its lights; a hemisphere light and the environment under nested groups follow a turn on the same frame; under a scaled group a light's position scales, not a point light's range or a directional light's shadow extents). Equivalent through `setMatrix` on both, including negative scale. Tolerance 1e-4 per matrix
 element. A direction-only light (hemispheric) in a group must keep the adapter's compensation.
 
-**#137, renderer options.** Names as in the table. `outputColorSpace` has no Babylon equivalent: on Babylon the
-choice is the creation option `useExactSrgbConversions` (a restart), which this report asks #131 to set always.
+**#137, renderer options** (done). Names as in the table. `outputColorSpace` has no Babylon equivalent: on Babylon the
+choice is the creation option `useExactSrgbConversions` (a restart), which this report asks #131 to set always. The
+pixel ratio cap is not the table's `setPixelRatio` / hardware scaling level: AR View sizes the drawing buffer for both
+engines (`mountArFrame`), so the cap goes there, the same on both (the ruling on #137). Tone mapping keeps each
+engine's meaning; the cases are in `tests/e2e/conformance.spec.ts` ("renderer options, each engine its own").
 
 **#138, engine-specific nodes.** Fog, if Phase 5 adds it, is a candidate for `three.*` / `babylon.*` (above). Spot
 penumbra and point decay are candidates for engine-specific params if a common node cannot document them.

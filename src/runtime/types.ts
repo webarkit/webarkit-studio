@@ -3,6 +3,7 @@ import type { ParamValue } from '../core/graph';
 import type { Bounds, GeometrySpec } from '../core/geometry';
 import type { MaterialSpec, TextureSpec } from '../core/material';
 import type { GeometryObject, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from './renderers/adapter';
+import type { RendererContextInfo, RendererFrameStats } from './renderers/renderer-info';
 import type { PoseFilterConfig } from './filters/pose-filter';
 import type { TraceHeader, TraceRecord } from './trackers/trace';
 
@@ -80,6 +81,11 @@ export interface CameraValue {
   projection: ProjectionValue;
 }
 export type RendererValue = RendererAdapter;
+/**
+ * rendererInfo (#137): what the renderer's WebGL context was granted, read once, and its last frame's draw calls and
+ * triangles, refreshed once a second. Plain data: a studio internal, for the Inspector.
+ */
+export type RendererInfoValue = RendererContextInfo & RendererFrameStats & { engine: string };
 export type SceneValue = SceneHandle;
 export type SceneObjectValue = SceneObject;
 /**

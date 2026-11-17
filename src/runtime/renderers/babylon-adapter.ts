@@ -8,6 +8,7 @@
  */
 // Deep imports keep the lazily-loaded Babylon chunk to what is used.
 import { Engine } from '@babylonjs/core/Engines/engine';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
 import { Scene } from '@babylonjs/core/scene';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
@@ -85,10 +86,14 @@ import {
   type TextureObject,
   type TextureSource,
   type ModelSpec,
+  exposureOf,
+  pixelRatioCap,
+  powerPreferenceOf,
   type RendererAdapter,
   type SceneHandle,
   type SceneObject,
 } from './adapter';
+import { readContextInfo, type RendererFrameStats } from './renderer-info';
 
 /**
  * Light intensities are authored on the Three.js scale (the graph is engine-agnostic). On PBRMaterial, Babylon.js's
@@ -208,29 +213,109 @@ function bindPoseOf(groups: AnimationGroup[]): () => void {
 /** Seconds per frame of an animation group's own timeline (the loader's frame rate, not a constant here). */
 const secondsPerFrame = (group: AnimationGroup) => 1 / (group.targetedAnimations[0]?.animation.framePerSecond ?? 60);
 
-export function createBabylonAdapter(opts: { antialias: boolean }): RendererAdapter {
+/**
+ * babylon.renderer's params (#137), with Babylon.js's names. Left out, Babylon.js 9.30.0's defaults (stencil true,
+ * abstractEngine.pure.js:1181; powerPreference "high-performance" and preserveDrawingBuffer false, thinEngine.pure.js:137,
+ * 196; the image processing's tone mapping off, type TONEMAPPING_STANDARD, exposure 1), so a graph from before #137
+ * renders as it did. No colour space: the encode is the exact sRGB #131 always sets (the ruling on #137), and no
+ * adaptToDeviceRatio (the ruling on the pixel ratio cap): the engine is created as before.
+ */
+export interface BabylonRendererOptions {
+  antialias: boolean;
+  powerPreference?: string;
+  preserveDrawingBuffer?: boolean;
+  stencil?: boolean;
+  maxPixelRatio?: number;
+  toneMappingEnabled?: boolean;
+  toneMappingType?: string;
+  exposure?: number;
+}
+
+/** The node's tone mapping type names, Babylon.js's constants (imageProcessingConfiguration.pure.js). */
+const TONE_MAPPING_TYPES: Record<string, number> = {
+  TONEMAPPING_STANDARD: ImageProcessingConfiguration.TONEMAPPING_STANDARD,
+  TONEMAPPING_ACES: ImageProcessingConfiguration.TONEMAPPING_ACES,
+  TONEMAPPING_KHR_PBR_NEUTRAL: ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL,
+};
+
+/** What the adapter shares with its scenes (#137): the image processing to apply to each, and the last render's numbers. */
+interface BabylonShared {
+  imaging(scene: Scene): void;
+  last: RendererFrameStats;
+  /** The engine's live scenes: a live option reaches each. */
+  scenes: Set<Scene>;
+}
+
+export function createBabylonAdapter(opts: BabylonRendererOptions): RendererAdapter {
   const canvas = document.createElement('canvas');
   // The framebuffer holds colour × alpha, as Three.js's does, so the page must composite it as premultiplied: with
   // premultipliedAlpha false it multiplied by alpha a second time, and a half-transparent object looked darker over the
   // camera than on Three.js (#144). True is Babylon.js's default; it is written out here for that reason.
   // useExactSrgbConversions: the output is encoded with the sRGB curve, as Three.js does, not pow(x, 1/2.2), which is up
-  // to 4 levels brighter in the darks (#131).
-  const engine = new Engine(canvas, opts.antialias, { alpha: true, premultipliedAlpha: true, useExactSrgbConversions: true }, true);
+  // to 4 levels brighter in the darks (#131). alpha stays fixed: the camera video is under the canvas.
+  const engine = new Engine(
+    canvas,
+    opts.antialias,
+    {
+      alpha: true,
+      premultipliedAlpha: true,
+      useExactSrgbConversions: true,
+      powerPreference: powerPreferenceOf(opts.powerPreference, 'high-performance'),
+      preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
+      stencil: opts.stencil ?? true,
+    },
+    true,
+  );
+  let maxPixelRatio = pixelRatioCap(opts.maxPixelRatio);
+  const image = { toneMappingEnabled: false, toneMappingType: ImageProcessingConfiguration.TONEMAPPING_STANDARD, exposure: 1 };
+  // Each setter of the configuration marks the materials that use it for a rebuild of their defines (_updateParameters):
+  // a live change needs nothing more. The image processing stays enabled (its default; the calibration of the report):
+  // it applies the exposure with tone mapping on or off (prepareDefines, EXPOSURE is exposure !== 1).
+  const shared: BabylonShared = {
+    imaging(scene) {
+      Object.assign(scene.imageProcessingConfiguration, image);
+    },
+    last: { drawCalls: 0, triangles: 0 },
+    scenes: new Set(),
+  };
+  const setOption = (key: string, value: unknown) => {
+    if (key === 'maxPixelRatio') maxPixelRatio = pixelRatioCap(value);
+    else if (key === 'toneMappingEnabled') image.toneMappingEnabled = value === true;
+    else if (key === 'toneMappingType')
+      image.toneMappingType = typeof value === 'string' && Object.hasOwn(TONE_MAPPING_TYPES, value) ? TONE_MAPPING_TYPES[value] : ImageProcessingConfiguration.TONEMAPPING_STANDARD;
+    else if (key === 'exposure') image.exposure = exposureOf(value);
+    else return;
+    for (const scene of shared.scenes) shared.imaging(scene);
+  };
+  setOption('toneMappingEnabled', opts.toneMappingEnabled ?? false);
+  setOption('toneMappingType', opts.toneMappingType ?? 'TONEMAPPING_STANDARD');
+  setOption('exposure', opts.exposure ?? 1);
+  // The engine's own context (a NullEngine in Node tests has none).
+  const info = readContextInfo((engine as { _gl?: WebGL2RenderingContext })._gl);
 
   const adapter: RendererAdapter = {
     kind: 'Babylon.js',
     canvas,
-    createScene: (options) => createBabylonScene(adapter, engine, options.defaultLights),
+    createScene: (options) => createBabylonScene(adapter, engine, options.defaultLights, shared),
     setSize: (w, h) => engine.setSize(w, h),
+    get maxPixelRatio() {
+      return maxPixelRatio;
+    },
+    setOption,
+    info,
+    lastFrame: () => ({ ...shared.last }),
     dispose: () => engine.dispose(), // also disposes its scenes
   };
   return adapter;
 }
 
-function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLights: boolean): SceneHandle {
+function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLights: boolean, shared: BabylonShared): SceneHandle {
   const scene = new Scene(engine);
   scene.useRightHandedSystem = true;
   scene.clearColor = new Color4(0, 0, 0, 0);
+  shared.imaging(scene);
+  shared.scenes.add(scene);
+  scene.onDisposeObservable.addOnce(() => shared.scenes.delete(scene));
 
   // Camera at the origin looking down -Z: identity view matrix, as in OpenGL.
   const camera = new FreeCamera('ar-camera', Vector3.Zero(), scene);
@@ -825,7 +910,16 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         if (parent) Vector3.TransformNormalToRef(localDirection, parent.computeWorldMatrix(true), hemi.direction);
       }
       for (const texture of videoTextures) texture.update();
+      // The draw calls of this render (#137), read as a difference: the engine's counter only adds up
+      // (abstractEngine.pure.js, _reportDrawCall), and only a SceneInstrumentation resets it (fetchNewFrame, before the
+      // scene's animations). Reading never resets it, so a script's own instrumentation counts as it would alone; if it
+      // reset the counter during this render, what it counted since is this render's.
+      const drawCalls = engine._drawCalls;
+      const before = drawCalls?.current ?? 0;
       scene.render();
+      const after = drawCalls?.current ?? 0;
+      // The active meshes' indices, which the scene itself starts again at each render: triangles, for triangle lists.
+      shared.last = { drawCalls: after >= before ? after - before : after, triangles: Math.floor(scene.getActiveIndices() / 3) };
     },
   };
 
