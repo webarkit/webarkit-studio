@@ -223,6 +223,17 @@ test.describe('where the selection shortcuts do not apply (#139)', () => {
     }
   });
 
+  test("Ctrl+X with the header's demo select or a header button focused leaves the graph as it is (Qodo on #172)", async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await selectRow(page);
+    for (const control of [page.locator('#demo-select'), page.locator('#btn-demo')]) {
+      await control.focus();
+      await page.keyboard.press('Control+x');
+      await expect(nodes(page)).toHaveCount(4);
+      await expect(selected(page)).toHaveCount(3);
+    }
+  });
+
   test("Ctrl+A in the log is the browser's select-all", async ({ page }) => {
     await selectRow(page);
     await page.keyboard.press('Escape');

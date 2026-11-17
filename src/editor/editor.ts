@@ -405,14 +405,16 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const selectedIds = () => editor.getNodes().filter((n) => n.selected).map((n) => n.id);
 
   /**
-   * Whether the editor has the keyboard for Delete, Backspace, Ctrl/Cmd+A and Escape: not while a context menu or a
+   * Whether the editor has the keyboard for Delete, Backspace, Ctrl/Cmd+A, Escape and cut: not while a context menu or a
    * dialog is open (an Escape there closes only it), and only on the editor's own elements, never a form control. The
    * page body counts when the last click was in the editor (or there was none): the log is not focusable, so a key
    * pressed after a click in it targets the body, and Ctrl+A there is the browser's select-all.
    */
-  function editorHasKeys(e: KeyboardEvent) {
+  function editorHasKeys() {
     if (document.querySelector('.context-menu, dialog[open]')) return false;
-    const target = e.target;
+    // The focused element: a key event's target, and what a clipboard event concerns. Chrome targets `cut` at the node
+    // holding the selection's caret (a hint paragraph outside the editor, with the body focused), not at the focus.
+    const target = document.activeElement ?? document.body;
     if (target === document.body || target === document.documentElement) return !lastPointer || lastPointer.inEditor;
     return target instanceof HTMLElement && container.contains(target) && !isFormControl(target);
   }
@@ -421,7 +423,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     if (e.altKey || e.isComposing) return false;
     const mod = e.ctrlKey || e.metaKey;
     if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
-      if (!editorHasKeys(e)) return false;
+      if (!editorHasKeys()) return false;
       const ids = selectedIds();
       if (!ids.length) return false;
       e.preventDefault();
@@ -429,13 +431,13 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       return true;
     }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'a') {
-      if (!editorHasKeys(e)) return false;
+      if (!editorHasKeys()) return false;
       e.preventDefault();
       void serial(selectAll);
       return true;
     }
     if (!mod && !e.shiftKey && e.key === 'Escape') {
-      if (!editorHasKeys(e)) return false;
+      if (!editorHasKeys()) return false;
       void serial(async () => {
         await selector.unselectAll();
         followSelection();
@@ -481,7 +483,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const onCut = (e: ClipboardEvent) => {
     const ids = selectedIds();
     const textSelected = !(document.getSelection()?.isCollapsed ?? true);
-    if (isEditable(e.target) || textSelected || !ids.length || !e.clipboardData) return;
+    // Cut removes nodes, so it follows Delete's rule (editorHasKeys), not copy's: a focused select or button in the
+    // header is not the editor (Qodo on #172).
+    if (!editorHasKeys() || textSelected || !ids.length || !e.clipboardData) return;
     e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
     e.preventDefault();
     void serial(() => removeNodes(ids));
