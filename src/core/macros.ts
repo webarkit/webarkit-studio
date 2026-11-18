@@ -396,6 +396,22 @@ export function definitionParamTargets(doc: Pick<GraphDocument, 'nodes' | 'macro
 }
 
 /**
+ * Whether an inner node's own value of `param`, in definition `macro`, is read by some instance: true unless every macro
+ * node using the definition sets a promoted param that maps to it (its value wins there). The app export collects a
+ * definition's asset only then (Qodo on #174): a default that no instance reads must not block it.
+ */
+export function definitionValueRead(doc: Pick<GraphDocument, 'nodes' | 'macros'>, macro: string, inner: string, param: string): boolean {
+  const def = own(doc.macros, macro);
+  const promotedAs = entries(def?.params)
+    .filter(([name, ref]) => name !== DEFINITION_PARAM && ref?.node === inner && ref.param === param)
+    .map(([name]) => name);
+  if (!promotedAs.length) return true;
+  return doc.nodes
+    .filter((n) => n.type === MACRO_TYPE && definitionOf(n, doc.macros)?.id === macro)
+    .some((n) => !promotedAs.some((name) => Object.hasOwn(n.params ?? {}, name)));
+}
+
+/**
  * Where a report or an error of a flat node shows in the editor: on its macro node, prefixed with the inner node's
  * label ("Negate: …"); a node of the outer graph shows its own. `label`: an inner node's label, from its definition.
  */

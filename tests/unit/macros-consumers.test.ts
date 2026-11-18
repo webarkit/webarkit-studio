@@ -94,9 +94,32 @@ describe('macros: assets', () => {
     doc.macros!.model.params = JSON.parse('{"__proto__": {"node": "g", "param": "url"}}');
     doc.nodes = [JSON.parse(`{"id": "m3", "type": "macro", "params": {"definition": "model", "__proto__": ${JSON.stringify(assetRef('g2', 'promoted.glb'))}}}`)];
     const files = await collectAssets(doc, base, ctx);
-    expect(Object.keys(files).sort()).toEqual(['data/assets/g1/inner.glb', 'data/assets/g2/promoted.glb']);
+    // Its only instance overrides the definition's url: only the promoted asset is collected.
+    expect(Object.keys(files)).toEqual(['data/assets/g2/promoted.glb']);
     expect(Object.getOwnPropertyDescriptor(doc.nodes[0].params, '__proto__')?.value).toBe('data/assets/g2/promoted.glb');
     expect(Object.getPrototypeOf(doc.nodes[0].params)).toBe(Object.prototype);
+  });
+
+  it('skips a definition’s asset that every instance overrides, and collects it when one instance leaves it unset (Qodo on #174)', async () => {
+    // The definition's own value is an upload that is not in this project; both instances set the promoted url.
+    const overridden = () => {
+      const doc = modelDoc();
+      doc.macros!.model.nodes[0].params.url = assetRef('gone', 'missing.glb');
+      doc.nodes = [
+        { id: 'm1', type: 'macro', params: { definition: 'model', url: assetRef('g1', 'inner.glb') } },
+        { id: 'm2', type: 'macro', params: { definition: 'model', url: assetRef('g2', 'promoted.glb') } },
+      ];
+      return doc;
+    };
+    const doc = overridden();
+    const files = await collectAssets(doc, base, ctx);
+    expect(Object.keys(files).sort()).toEqual(['data/assets/g1/inner.glb', 'data/assets/g2/promoted.glb']);
+    // The definition's value is left as it is: no instance reads it.
+    expect(doc.macros!.model.nodes[0].params.url).toBe(assetRef('gone', 'missing.glb'));
+    // One instance that leaves the promoted url unset reads the definition's value: the export fails, naming it.
+    const unset = overridden();
+    unset.nodes[1].params = { definition: 'model' };
+    await expect(collectAssets(unset, base, ctx)).rejects.toThrow('model:g.url: asset "missing.glb" is not in this project');
   });
 
   it('usesUploadedAssets sees an upload inside a macro', () => {

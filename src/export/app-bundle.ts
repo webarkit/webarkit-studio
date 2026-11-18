@@ -17,7 +17,7 @@ import type { GraphDocument, GraphNode } from '../core/graph';
 import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition } from '../core/script';
-import { everyNode, flattenGraph, MACRO_TYPE, macrosFor, usedMacros } from '../core/macros';
+import { definitionValueRead, everyNode, flattenGraph, MACRO_TYPE, macrosFor, usedMacros } from '../core/macros';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
@@ -245,7 +245,8 @@ function checkSelfContained(data: Uint8Array, where: string): void {
  * and rewrites the params that point elsewhere (uploads, other origins).
  * Uploaded assets go under data/assets/<id>/. `doc` is modified.
  * Macros (#140): the nodes inside the definitions the graph uses are rewritten in their definition, and a macro node's
- * promoted asset param where the node sets it; one it leaves unset keeps the definition's value, collected there.
+ * promoted asset param where the node sets it; one it leaves unset keeps the definition's value, collected there. A
+ * definition's value that every instance overrides is not collected, and stays as it is (Qodo on #174).
  */
 /** Writes a param as an own key: a macro node's promoted param is named by its graph (#140), maybe "__proto__". */
 const setParam = (node: GraphNode, key: string, value: string) =>
@@ -266,6 +267,8 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
       if (node.type === MACRO_TYPE && !Object.hasOwn(node.params, key)) continue;
+      // A definition's value that every instance overrides with a promoted param is read by none: not collected.
+      if (macro !== undefined && !definitionValueRead(doc, macro, n.id, key)) continue;
       const value = String(node.params[key] ?? spec.default);
       // No file to bundle (a Texture fed by a video, #133): `new URL('', base)` would be the studio page itself.
       if (!value.trim()) continue;
