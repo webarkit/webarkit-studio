@@ -13,6 +13,12 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   run the graph flat, and an inner node's status or error shows on its macro node; a promoted param applies live.
   The `.json`, the autosave, the project, the app's graph and copy and paste keep the definitions, and a script
   inside a macro asks before it runs as one outside does.
+- Macros in the editor (#140): Create macro folds a selection into a macro node, whose ports are the wires that
+  crossed its border; Dissolve puts the nodes back, and dissolving a macro just made gives the same graph back. Enter
+  macro shows its inside, editable, with a bar to go back: an edit there changes every instance, and a live param
+  applies in each while the preview runs. Inside, Promote sets an inner param on the macro node, and Unpromote takes
+  it back. Rename macro, in its menu or in the bar inside it, renames every instance. Each is one undo step; the edits
+  made inside are one step once back in the graph.
 
 - Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
   adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected

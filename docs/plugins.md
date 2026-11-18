@@ -101,6 +101,24 @@ Older documents upgrade when they are loaded (`src/core/migrations.ts`), but tho
 studio's format. **A plugin cannot declare a migration yet:** a plugin that renames its own node,
 port or param has no path for the graphs that use the old name, and they fail validation.
 
+### A plugin's nodes inside a macro
+
+A plugin's nodes can be folded into a macro (#140) like the studio's own:
+
+- **The graph still lists the plugin.** `plugins` counts the nodes inside the document's macro
+  definitions too, and a missing plugin is reported by name for a node inside a macro as for one
+  outside.
+- **Its sockets cross the macro's border as they are.** An exposed port has the socket type of the
+  inner port it maps to, a plugin's socket type included (`acme.thing`), so it connects only to the
+  same type outside. A promoted param keeps the kind of the inner param.
+- **A factory sees the flat graph.** Every macro node is replaced by its inner nodes before the graph
+  runs, so a factory runs as it does outside a macro, with a node id `<macro node>/<inner node>`
+  (`m1/acme_node`): do not parse a node id, or assume it has no `/`. Its reports and errors show on
+  the macro node, prefixed with the inner node's label, and in full on the inner node when the macro
+  is entered.
+- **An edit inside the macro changes every instance:** a live param reaches the plugin's node in
+  each instance through `onParamChange`, as a promoted param set on one instance reaches that one.
+
 A string param may set `syntax: 'expression'` only for a `math.expression`-style formula: the
 editor checks it against that node's variables (a–d, t).
 

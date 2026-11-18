@@ -52,6 +52,22 @@ Editing:
 - **Delete:** Delete or Backspace removes the selected nodes and their wires, and so does Delete in a selected
   node's menu. Each of these is one undo step. Keys typed in a field, a select or the log are never taken as
   shortcuts.
+- **Macros** (#140): fold nodes into one reusable node.
+  - **Create macro** in a node's menu folds the selection into a macro node. The wires that crossed the selection's
+    border become its ports, named after the inner node and port (`select_pinball_pose`, shown as "Select Marker
+    Pose"). A selection that holds a macro node is refused (no macro inside a macro). On an input that takes several
+    wires, such as the tracker's datasets, the order of its wires is kept; a selection that cannot keep it (a
+    selected node's input wired from outside before it is wired from inside) is refused.
+  - **Dissolve macro** puts its nodes back where it is, rewired, with the values set on the macro node. Dissolving a
+    macro just made gives the same graph back.
+  - **Enter macro** shows its inside, editable; the bar above the editor names it, and **← Graph** goes back. An edit
+    inside changes the definition, so every instance of it, and a running preview applies a live param in each.
+    Inside, **Promote** next to a param in Properties sets it on the macro node, per instance; **Unpromote** takes it
+    back. A script's code is never promoted.
+  - **Rename macro** in its menu, or the name field in the bar inside it, renames the definition: every instance's
+    title follows. A blank name is refused.
+  - Create, Dissolve and Rename are one undo step each. Inside a macro, undo and redo reach only the edits made
+    inside; back in the graph, all of them are one step, which one undo reverts.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 
@@ -838,8 +854,8 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
   the inner ports and params its definition exposes. The studio checks and runs the flat graph,
   where each macro node is its inner nodes, named `<macro node>/<inner node>`; an inner node's
   report or error shows on its macro node. The `.json`, the autosave, the project and the app's
-  `graph.json` keep the macros. Creating, dissolving and entering a macro in the editor are not
-  there yet.
+  `graph.json` keep the macros. In the editor, a macro is made from a selection, dissolved,
+  entered, renamed, and its inner params promoted (see "Editing").
 - Graph format is `webarkit-studio/graph` v6. A v4 or v5 graph upgrades when it is opened,
   and the file itself is not touched. v2 and v3, prototype formats, are refused, and
   a newer document asks for a newer studio. An unfinished graph, with a required
