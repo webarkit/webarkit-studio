@@ -55,13 +55,16 @@ export class MacroFileError extends Error {
  * macro clash, and the user chooses to replace it or keep both.
  */
 export function macroFileId(name: string): string {
+  // Latin accents dropped ("Ü" → "u"); every other script's letters, marks and numbers kept (Qodo on #176), recomposed.
+  // Anything else, "/" included, becomes one "-".
   const slug = name
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
+    .normalize('NFC')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '');
-  return slug || 'macro';
+  return /[\p{L}\p{N}]/u.test(slug) ? slug : 'macro';
 }
 
 /** The file for definition `id`, a copy: a later edit of the document does not change it. */

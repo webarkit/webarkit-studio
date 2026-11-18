@@ -87,6 +87,18 @@ describe('.wmacro: the id a file is exported under', () => {
     expect(macroFileId('')).toBe('macro');
     expect(macroFileId('__proto__')).toBe('proto');
   });
+
+  it('keeps Unicode letters and numbers: two different non-Latin names get two ids, never one with a "/"', () => {
+    const a = macroFileId('立方体 2');
+    const b = macroFileId('Куб');
+    expect([a, b]).toEqual(['立方体-2', 'куб']);
+    expect(macroFileId('Сфера')).not.toBe(b);
+    expect(macroFileId('a/b')).toBe('a-b');
+    for (const id of [a, b, macroFileId('١٢٣ ثلاثة')]) expect(id).not.toContain('/');
+    // No letter or number at all: still "macro".
+    expect(macroFileId('★ — ★')).toBe('macro');
+    expect(macroFileId('🙂🙂')).toBe('macro');
+  });
 });
 
 describe('.wmacro: read', () => {
