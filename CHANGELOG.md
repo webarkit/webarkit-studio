@@ -19,6 +19,13 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   applies in each while the preview runs. Inside, Promote sets an inner param on the macro node, and Unpromote takes
   it back. Rename macro, in its menu or in the bar inside it, renames every instance. Each is one undo step; the edits
   made inside are one step once back in the graph.
+- The macro library (#141): Export macro… saves a macro's definition as a `.wmacro` file (format `webarkit-macro`,
+  version 1), with a description, and lists the project assets it uses, kept as references. Import macro… adds one to
+  the project's library, the palette's new Macros section, checked as a graph is: an unknown node type or a missing
+  plugin refuses it by name. A library macro is added like any node, its definition copied into the graph; an id the
+  graph already uses for another content asks whether to replace it or keep both. The library is kept beside the
+  autosave and in project files (`library.json`). Presets ship with it: Box, Sphere, Cylinder, Plane, Torus, Torus knot
+  and Capsule, each a geometry node wired into a Mesh, added expanded, so a cube is one palette entry away again.
 
 - Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
   adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected

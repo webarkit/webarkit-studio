@@ -23,6 +23,8 @@ export interface ExportContext {
   log: (message: string) => void;
   /** Uploaded assets (asset:// params). */
   assets?: ProjectAssets;
+  /** The project's macro library (#141), as writeLibrary() gives it: the project file saves it as library.json. */
+  library?: () => unknown;
 }
 
 /** True if any param of the graph references an uploaded asset. */
@@ -100,10 +102,10 @@ const project: Exporter = {
   mime: 'application/zip',
   extension: '.zip',
   label: 'Project (.zip)',
-  description: 'The graph and its uploaded assets, to open in another browser with Import…',
+  description: 'The graph, its uploaded assets and its macro library, to open in another browser with Import…',
   async run(doc, ctx) {
     const { packProject } = await import('./project');
-    const zip = await packProject(doc, ctx.assets?.list() ?? []);
+    const zip = await packProject(doc, ctx.assets?.list() ?? [], ctx.library?.());
     return { filename: `${slugify(doc.name)}.webarkit.zip`, blob: new Blob([zip as BlobPart], { type: 'application/zip' }) };
   },
 };

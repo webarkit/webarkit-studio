@@ -12,11 +12,11 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
-import { checkMacros, definitionOf, everyNode, freeMacroId, MACRO_TYPE, macrosFor, sameDefinition, type MacroDefinition, type MacroDefinitions } from '../core/macros';
+import { checkMacros, DEFINITION_PARAM, definitionOf, everyNode, freeMacroId, MACRO_TYPE, macrosFor, sameDefinition, type MacroDefinition, type MacroDefinitions } from '../core/macros';
 import { applyDefinition, planCreate, planDissolve, promotedKey, promoteParam, pruneDefinition, staleInstanceParams, staleMacroWires, unpromoteParam } from '../core/macro-edit';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
-import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
+import { CLIPBOARD_FORMAT, CLIPBOARD_VERSION, copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
 import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue, ValueAction } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
@@ -43,6 +43,8 @@ export interface StudioEditorEvents {
   onNotice?: (text: string) => void;
   /** Rename macro from a macro node's menu (#140): the new name, or null if the user cancelled. */
   askMacroName?: (current: string) => string | null | Promise<string | null>;
+  /** Export macro… from a macro node's menu (#141): the studio saves the definition as a .wmacro. */
+  onExportMacro?: (macro: { id: string; definition: MacroDefinition }) => void;
   /** The node shown in the Inspector changed: the last one picked, null once none is selected. */
   onInspect?: (node: StudioNode | null) => void;
   /** A wire was added or removed (a running preview applies it on the next Run). */
@@ -121,6 +123,21 @@ export interface StudioEditor {
    * its definition is open, prefixed with the macro node's id. Null clears it.
    */
   setInnerStatus(macro: string, inner: string, status: StudioNode['status']): void;
+  /**
+   * The macro library (#141). Whether definition `id` clashes with one the document uses: `different` when the
+   * document uses that id for another content, which the user decides on (replace it, or keep both).
+   */
+  macroClash(id: string, definition: MacroDefinition): 'none' | 'same' | 'different';
+  /**
+   * Adds a macro node of `definition`, copied into the document, as one undo step, selected; on the outer graph only
+   * (no macro inside a macro). On a clash, `replace` replaces the document's definition (every instance follows, in the
+   * same step), and `keep-both` adds it under a free id. False if it was refused.
+   */
+  addMacro(id: string, definition: MacroDefinition, choice?: 'replace' | 'keep-both'): Promise<boolean>;
+  /** Replaces the document's definition `id` (an import chose Replace), as one undo step. False if refused. */
+  replaceMacro(id: string, definition: MacroDefinition): Promise<boolean>;
+  /** Adds a fragment of nodes and wires (a preset), as a paste: one undo step, the new nodes selected. */
+  insertFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']): Promise<void>;
   destroy(): void;
 }
 
@@ -332,6 +349,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
           macroItems.push(
             { label: 'Enter macro', key: 'enter-macro', handler: () => serial(() => enterMacro(target.id)) },
             { label: 'Rename macro', key: 'rename-macro', handler: () => serial(() => renameMacro(target.id)) },
+            { label: 'Export macro…', key: 'export-macro', handler: () => exportMacro(target.id) },
             { label: 'Dissolve macro', key: 'dissolve-macro', handler: () => serial(() => dissolveMacro(target.id)) },
           );
         }
@@ -608,7 +626,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const data = parseClipboard(e.clipboardData?.getData('text/plain') ?? '');
     if (!data) return;
     e.preventDefault();
-    void serial(() => paste(data, pastePoint()));
+    void serial(async () => void (await paste(data, pastePoint())));
   };
   // Cut (#139): the copy, then the selection removed, as one undo step; through the clipboard event, as copy is.
   const onCut = (e: ClipboardEvent) => {
@@ -660,8 +678,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return { x: (at.x - x) / k, y: (at.y - y) / k };
   }
 
-  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
-  async function paste(data: ClipboardData, at: { x: number; y: number }) {
+  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes; how many were added. */
+  async function paste(data: ClipboardData, at: { x: number; y: number }): Promise<number> {
     // Inside a macro, no macro node: a macro inside a macro is not supported (#140). Their wires go with them.
     if (inside && data.nodes.some((n) => n.type === MACRO_TYPE)) {
       const skipped = data.nodes.filter((n) => n.type === MACRO_TYPE).length;
@@ -675,8 +693,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     // The copies replace the selection (before adding: a selected node would drag them along).
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
-    for (const n of nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+    const added = nodes.filter((n) => editor.getNode(n.id));
+    for (const n of added) await selectable.select(n.id, true);
     followSelection();
+    return added.length;
   }
 
   async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
@@ -1026,6 +1046,91 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     notifyHistory();
   }
 
+  // ------------------------------------------------------- macro library (#141)
+
+  /** Export macro…: the definition of macro node `nodeId`, as the document stores it, to the studio. */
+  function exportMacro(nodeId: string) {
+    const node = editor.getNode(nodeId);
+    const found = node && node.type === MACRO_TYPE ? definitionOf(node, macros) : undefined;
+    if (found) events.onExportMacro?.({ id: found.id, definition: structuredClone(found.def) });
+  }
+
+  /** A clash with a definition the document uses (an unused one of the session is renamed as a paste renames it). */
+  function clashWithDocument(id: string, def: MacroDefinition): 'none' | 'same' | 'different' {
+    const used = toDocument().macros;
+    if (!used || !Object.hasOwn(used, id)) return 'none';
+    return sameDefinition(used[id], def) ? 'same' : 'different';
+  }
+
+  /**
+   * Replaces definition `id` inside the current step, as Leave records an edit (#140): the wires and the instance values
+   * the new definition no longer has first, so undo restores the definition before them.
+   */
+  async function replaceDefinitionInStep(id: string, after: MacroDefinition) {
+    const before = macros[id];
+    const doc = toDocument();
+    for (const wire of staleMacroWires(doc, id, after, resolve)) if (editor.getConnection(wire)) await editor.removeConnection(wire);
+    for (const { node, key } of staleInstanceParams(doc, id, after, resolve)) {
+      const n = editor.getNode(node);
+      if (n) removeInStep(n, key);
+    }
+    history.add(new ValueAction(before, after, (def) => setDefinition(id, def)));
+    setDefinition(id, after);
+  }
+
+  /** Whether the document's definitions accept `def` under `id`, as a paste checks clipboard definitions. */
+  function definitionProblems(id: string, def: MacroDefinition): string[] {
+    const one: MacroDefinitions = {};
+    Object.defineProperty(one, id, { value: def, enumerable: true, writable: true, configurable: true });
+    return checkMacros(one, resolve, (type) => Object.hasOwn(NODE_CATALOG, type), (type) => isScriptType(type));
+  }
+
+  async function replaceMacro(id: string, def: MacroDefinition): Promise<boolean> {
+    if (inside) {
+      events.onNotice?.('Replace macro: leave the macro shown first');
+      return false;
+    }
+    if (!Object.hasOwn(macros, id) || definitionProblems(id, def).length) return false;
+    if (sameDefinition(macros[id], def)) return true;
+    await oneStep(() => replaceDefinitionInStep(id, structuredClone(def)));
+    return true;
+  }
+
+  async function addMacro(id: string, def: MacroDefinition, choice: 'replace' | 'keep-both' = 'keep-both'): Promise<boolean> {
+    if (inside) {
+      events.onNotice?.('a macro inside a macro is not supported: leave the macro shown to add one');
+      return false;
+    }
+    const problems = definitionProblems(id, def);
+    if (problems.length) {
+      events.onNotice?.(`macro not added: ${problems.join('; ')}`);
+      return false;
+    }
+    const at = pastePoint();
+    const data: ClipboardData = {
+      format: CLIPBOARD_FORMAT,
+      version: CLIPBOARD_VERSION,
+      nodes: [{ id: 'macro', type: MACRO_TYPE, params: { [DEFINITION_PARAM]: id }, position: { x: 0, y: 0 } }],
+      edges: [],
+      macros: {},
+    };
+    Object.defineProperty(data.macros, id, { value: structuredClone(def), enumerable: true, writable: true, configurable: true });
+    if (choice === 'replace' && clashWithDocument(id, def) === 'different') {
+      // The definition replaced and the new node using it, as one step.
+      const nodes = [{ ...data.nodes[0], id: getUID(), position: at }];
+      await selector.unselectAll();
+      await oneStep(async () => {
+        await replaceDefinitionInStep(id, structuredClone(def));
+        await addFragment(nodes, []);
+      });
+      for (const n of nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+      followSelection();
+      return true;
+    }
+    // Otherwise as a paste: the same content is shared, another content under a taken id gets a free one.
+    return (await paste(data, at)) > 0;
+  }
+
   /** Rename macro, from the outer graph: one step that changes the definition, so every instance's title. */
   async function renameMacro(nodeId: string) {
     if (inside) return;
@@ -1285,6 +1390,19 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     viewDocument,
     promotion,
     togglePromote: (nodeId, key) => serial(() => togglePromote(nodeId, key)),
+    macroClash: clashWithDocument,
+    addMacro: async (id, def, choice) => {
+      let added = false;
+      await serial(async () => void (added = await addMacro(id, def, choice)));
+      return added;
+    },
+    replaceMacro: async (id, def) => {
+      let replaced = false;
+      await serial(async () => void (replaced = await replaceMacro(id, def)));
+      return replaced;
+    },
+    insertFragment: (nodes, edges) =>
+      serial(async () => void await paste({ format: CLIPBOARD_FORMAT, version: CLIPBOARD_VERSION, nodes: structuredClone(nodes), edges: structuredClone(edges) }, pastePoint())),
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);

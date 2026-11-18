@@ -189,3 +189,12 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .script-trust ul { font-family: ui-monospace, monospace; }
 .script-trust form { display: flex; justify-content: flex-end; gap: 8px; }
 .script-trust .primary { border-color: var(--accent); }
+/* The macro library (#141): its dialogs, and its entries in the palette, each with a remove button. */
+.macro-dialog label { display: block; margin: 8px 0; }
+.macro-dialog textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; }
+.macro-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.palette .macro-entry { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+.palette .macro-entry[hidden] { display: none; }
+.palette .macro-entry .macro-remove { width: auto; margin: 0 0 4px 4px; padding: 0 6px; border: none; background: transparent; color: var(--muted); font-size: 16px; }
+.palette .macro-entry .macro-remove:hover { color: var(--accent); }
+.palette .macro-preset, .palette .macro-add { --c: var(--accent); }
