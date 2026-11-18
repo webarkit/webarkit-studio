@@ -141,6 +141,26 @@ test('a pasted definition that its checks refuse is left out, and the autosave s
   await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
 });
 
+test('a promoted live param named "script" on a macro node applies live to its inner node (Qodo on #174)', async ({ page }) => {
+  const doc = foldIntoMacro(demo(), ['select_pinball', 'anchor_pinball', 'prim_pinball', 'prim_pinball_geometry'], {
+    name: 'Pinball',
+    definition: 'pinball',
+    promote: [['script', 'select_pinball', 'marker', 'Marker']],
+  });
+  await openStudio(page);
+  await importGraph(page, doc);
+  await expect(macroNode(page)).toHaveCount(1);
+  await run(page);
+  const status = nodeStatus(page, 'Pinball');
+  await expect(status).toContainText('→ 0: pinball', { timeout: 30_000 });
+  const marker = macroNode(page).locator('.param input');
+  await marker.fill('nope');
+  await marker.press('Enter');
+  await expect(status).toContainText('no marker "nope"');
+  await expect(page.locator('#log')).not.toContainText('press Reload');
+  await expect(page.locator('#log')).not.toContainText('never allowed');
+});
+
 test('a project file keeps the macro', async ({ page }) => {
   const doc = pinballMacro();
   await openStudio(page);

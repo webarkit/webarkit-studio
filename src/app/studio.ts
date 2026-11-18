@@ -126,16 +126,20 @@ const studio = await createStudioEditor($('editor'), {
   // While the preview runs, live params reach the running node immediately.
   onParamChange(nodeId, key, value) {
     if (!runtime) return;
+    const edited = studio.toDocument();
+    // The edited node's type, by its id; a node not in the document is taken as a script, the safe side.
+    const editedType = edited.nodes.find((n) => n.id === nodeId)?.type ?? 'script.lite';
     // A script reaches the running preview only if it is allowed: an undo can bring back one that never was (#35).
-    // Any value, text or not: the check reads it as the runtime does. The latest change per node wins.
-    if (key === 'script') {
+    // Any value, text or not: the check reads it as the runtime does. The latest change per node wins. Only a script
+    // node's `script` is its code: a macro node may promote an ordinary param under that name (Qodo on #174).
+    if (key === 'script' && isScriptType(editedType)) {
       const target = runtime;
       const seq = (scriptEdits.get(nodeId) ?? 0) + 1;
       scriptEdits.set(nodeId, seq);
       void (async () => {
         await trusting;
         const current = studio.toDocument();
-        const type = current.nodes.find((n) => n.id === nodeId)?.type ?? 'script.lite';
+        const type = current.nodes.find((n) => n.id === nodeId)?.type ?? editedType;
         const doc = { ...current, nodes: [{ id: nodeId, type, params: { script: value } }] };
         const untrusted = (await scriptTrust.untrusted(doc)).length > 0;
         if (scriptEdits.get(nodeId) !== seq || runtime !== target) return; // a later change, or another run
@@ -145,7 +149,7 @@ const studio = await createStudioEditor($('editor'), {
       return;
     }
     // A macro node's promoted param goes to its inner node in the running flat graph; its definition needs a restart (#140).
-    const targets = paramTargets(studio.toDocument(), nodeId, key);
+    const targets = paramTargets(edited, nodeId, key);
     // A script's code is never promoted (checkMacros), but a pasted definition is not validated until Run: never live.
     if (targets.some((t) => t.key === 'script')) {
       log(`⟳ ${nodeId}.${key} changed: press Reload to apply it`);
