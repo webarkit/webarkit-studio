@@ -11,7 +11,7 @@
  * Pure: the functions return a new library and leave the one they were given as it was.
  */
 import { freeMacroId, sameDefinition, type MacroDefinition } from './macros';
-import { MACRO_FILE_FORMAT, MacroFileError, readMacroFile, type MacroFile } from './macro-file';
+import { MACRO_FILE_FORMAT, MacroFileError, macroAssetRefs, readMacroFile, type MacroFile } from './macro-file';
 import { LOADED_PLUGINS } from './plugins';
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 
@@ -121,6 +121,14 @@ export function addToLibrary(
   }
   const id = freeMacroId(file.id, (candidate) => !free(candidate));
   return { library: { ...library, files: [...library.files, { ...file, id }] }, id, outcome: 'added' };
+}
+
+/**
+ * Whether a usable entry of the library uses the project's uploaded asset `id` (macroAssetRefs()): the Assets panel
+ * asks before removing it, as for one the graph uses (Qodo on #176).
+ */
+export function libraryUsesAsset(library: MacroLibrary, id: string): boolean {
+  return library.files.some((file) => macroAssetRefs(file.definition).some((ref) => ref.id === id));
 }
 
 export function removeFromLibrary(library: MacroLibrary, id: string): MacroLibrary {

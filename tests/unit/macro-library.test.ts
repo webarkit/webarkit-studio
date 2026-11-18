@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { GRAPH_FORMAT, GRAPH_VERSION, validateGraph } from '../../src/core/graph';
 import type { MacroDefinition } from '../../src/core/macros';
 import { writeMacroFile } from '../../src/core/macro-file';
-import { addToLibrary, emptyLibrary, LIBRARY_FORMAT, LIBRARY_VERSION, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary } from '../../src/core/macro-library';
+import { addToLibrary, emptyLibrary, LIBRARY_FORMAT, LIBRARY_VERSION, libraryUsesAsset, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary } from '../../src/core/macro-library';
+import { assetInUseQuestion } from '../../src/app/assets-panel';
 import { MACRO_PRESETS, presetFragment } from '../../src/core/macro-presets';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 
@@ -156,6 +157,25 @@ describe('macro library: libraries a project replaced, kept together', () => {
     ]);
     // Read back, every entry is usable: nothing was lost or doubled.
     expect(readLibrary(json(merged)).library.files.map((f) => f.id)).toEqual(['a', 'b', 'b-2', 'c']);
+  });
+});
+
+describe('macro library: the project assets it uses (Qodo on #176)', () => {
+  it('a usable entry whose definition references the asset uses it; a public URL is not one', () => {
+    const def: MacroDefinition = { name: 'Model', nodes: [{ id: 'g', type: 'scene.gltf', params: { url: 'asset://a1/duck.glb' } }], edges: [] };
+    const lib = addToLibrary(emptyLibrary(), writeMacroFile('model', def, '')).library;
+    expect(libraryUsesAsset(lib, 'a1')).toBe(true);
+    expect(libraryUsesAsset(lib, 'a2')).toBe(false);
+    expect(libraryUsesAsset(emptyLibrary(), 'a1')).toBe(false);
+  });
+});
+
+describe('the question before removing an asset in use (Qodo on #176)', () => {
+  it('says where it is used: the graph, the macro library, or both; none asks nothing', () => {
+    expect(assetInUseQuestion('cube.glb', { graph: true, library: false })).toBe('The graph uses "cube.glb". Remove it from the project anyway?');
+    expect(assetInUseQuestion('cube.glb', { graph: false, library: true })).toBe('The macro library uses "cube.glb". Remove it from the project anyway?');
+    expect(assetInUseQuestion('cube.glb', { graph: true, library: true })).toBe('The graph and the macro library use "cube.glb". Remove it from the project anyway?');
+    expect(assetInUseQuestion('cube.glb', { graph: false, library: false })).toBeNull();
   });
 });
 

@@ -15,7 +15,7 @@
 import type { StudioEditor } from '../editor/editor';
 import type { MacroDefinition } from '../core/macros';
 import { MACRO_FILE_EXTENSION, MacroFileError, macroAssetRefs, macroClash, macroFileId, readMacroFile, writeMacroFile, type MacroAssetRef, type MacroFile } from '../core/macro-file';
-import { addToLibrary, emptyLibrary, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary, type MacroLibrary, type MacroLibraryData } from '../core/macro-library';
+import { addToLibrary, emptyLibrary, libraryUsesAsset, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary, type MacroLibrary, type MacroLibraryData } from '../core/macro-library';
 import { MACRO_PRESETS, presetFragment } from '../core/macro-presets';
 import { slugify } from '../export/names';
 import { saveFile, type SaveFailed } from './save-file';
@@ -48,6 +48,8 @@ export interface MacroLibraryUi {
   exportMacro(macro: { id: string; definition: MacroDefinition }): void;
   /** Shows the entries whose name or description matches, as the palette's search does. */
   filter(query: string): void;
+  /** Whether a usable library macro uses the uploaded asset `id` (the Assets panel asks before removing it). */
+  usesAsset(id: string): boolean;
 }
 
 const assetLine = (ref: MacroAssetRef) => `${ref.node}.${ref.param}: ${ref.name || ref.id} (asset ${ref.id})`;
@@ -305,6 +307,7 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
     importText,
     exportMacro,
     filter,
+    usesAsset: (id) => libraryUsesAsset(library, id),
   };
 }
 

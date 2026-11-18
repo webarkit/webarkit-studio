@@ -248,7 +248,8 @@ $('btn-undo').onclick = () => void studio.undo();
 $('btn-redo').onclick = () => void studio.redo();
 $('btn-arrange').onclick = () => void studio.arrange();
 
-mountAssetsPanel($('assets-panel'), assetStore, log, (id) => usesAsset(studio.toDocument(), id));
+// Where an asset is used: the graph, and the usable macros of the library (#141), asked before removing it.
+mountAssetsPanel($('assets-panel'), assetStore, log, (id) => ({ graph: usesAsset(studio.toDocument(), id), library: macroLibrary.usesAsset(id) }));
 
 // ---------------------------------------------------------------- palette
 const palette = $('palette');

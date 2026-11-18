@@ -3,6 +3,7 @@ import { strToU8, zipSync } from 'fflate';
 import { expect, test, type Page } from '@playwright/test';
 import type { GraphDocument } from '../../src/core/graph';
 import type { MacroDefinition } from '../../src/core/macros';
+import { cubeGlb } from '../helpers/cube-glb';
 import { foldIntoMacro } from '../helpers/fold-macro';
 import { openStudio, run, startupDone } from './helpers';
 
@@ -326,4 +327,37 @@ test('two project imports in a row keep both libraries they replaced (Qodo on #1
     ['second', 'Second'],
     ['first-2', 'First changed'],
   ]);
+});
+
+test('removing an asset a library macro uses asks first, and says where it is used (Qodo on #176)', async ({ page }) => {
+  await openStudio(page);
+  await page.click('#btn-new');
+  await page.setInputFiles('#assets-panel .asset-input', { name: 'cube.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from(cubeGlb()) });
+  const asset = page.locator('#assets-panel .asset:has(.asset-name:text-is("cube.glb"))');
+  await expect(asset).toHaveCount(1);
+  const ref = (await asset.getAttribute('data-ref'))!;
+  const def: MacroDefinition = { name: 'Cube', nodes: [{ id: 'g', type: 'scene.gltf', params: { url: ref } }], edges: [], outputs: { object: { node: 'g', port: 'object' } } };
+  await importMacro(page, wmacro('cube', def));
+  await expect(entry(page, 'cube')).toBeVisible();
+
+  // Only the library uses it: asked, and kept on No.
+  let question = '';
+  page.once('dialog', (d) => {
+    question = d.message();
+    void d.dismiss();
+  });
+  await asset.locator('.asset-remove').click();
+  await expect.poll(() => question).toBe('The macro library uses "cube.glb". Remove it from the project anyway?');
+  await expect(asset).toHaveCount(1);
+
+  // The graph uses it too: both named; removed on Yes.
+  await importGraph(page, { format: 'webarkit-studio/graph', version: 6, name: 'Uses it', nodes: [{ id: 'm', type: 'scene.gltf', params: { url: ref } }], edges: [] });
+  await expect(page.locator('.studio-node')).toHaveCount(1);
+  page.once('dialog', (d) => {
+    question = d.message();
+    void d.accept();
+  });
+  await asset.locator('.asset-remove').click();
+  await expect.poll(() => question).toBe('The graph and the macro library use "cube.glb". Remove it from the project anyway?');
+  await expect(asset).toHaveCount(0);
 });
