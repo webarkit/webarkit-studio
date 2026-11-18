@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GRAPH_FORMAT, GRAPH_VERSION, validateGraph } from '../../src/core/graph';
 import type { MacroDefinition } from '../../src/core/macros';
 import { writeMacroFile } from '../../src/core/macro-file';
-import { addToLibrary, emptyLibrary, LIBRARY_FORMAT, LIBRARY_VERSION, readLibrary, removeFromLibrary, writeLibrary } from '../../src/core/macro-library';
+import { addToLibrary, emptyLibrary, LIBRARY_FORMAT, LIBRARY_VERSION, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary } from '../../src/core/macro-library';
 import { MACRO_PRESETS, presetFragment } from '../../src/core/macro-presets';
 import { NODE_CATALOG } from '../../src/nodes/catalog';
 
@@ -130,6 +130,32 @@ describe('macro library: add and remove', () => {
     const lib = addToLibrary(emptyLibrary(), writeMacroFile('abs-neg', absNeg(), '')).library;
     expect(removeFromLibrary(lib, 'abs-neg').files).toEqual([]);
     expect(removeFromLibrary(lib, 'nope').files).toHaveLength(1);
+  });
+});
+
+describe('macro library: libraries a project replaced, kept together', () => {
+  const lib = (...files: ReturnType<typeof writeMacroFile>[]) => files.reduce((l, f) => addToLibrary(l, f).library, emptyLibrary());
+
+  it('nothing kept yet: the outgoing library as it is', () => {
+    const out = writeLibrary(lib(writeMacroFile('a', absNeg(1), '')));
+    expect(mergeLibraries(null, out)).toEqual(out);
+    expect(mergeLibraries('not a library', out)).toEqual(out);
+  });
+
+  it('adds the outgoing entries to those kept: the same id and content once, another content under a taken id under a free id', () => {
+    const first = json(writeLibrary(lib(writeMacroFile('a', absNeg(1), ''), writeMacroFile('b', absNeg(2), ''))));
+    const second = json(writeLibrary(lib(writeMacroFile('a', absNeg(1), ''), writeMacroFile('b', absNeg(9), ''), writeMacroFile('c', absNeg(3), ''))));
+    const merged = mergeLibraries(first, second);
+    expect([merged.format, merged.version]).toEqual([LIBRARY_FORMAT, LIBRARY_VERSION]);
+    const entries = merged.macros as Array<{ id: string; definition: MacroDefinition }>;
+    expect(entries.map((m) => [m.id, m.definition.nodes[0].params.x])).toEqual([
+      ['a', 1],
+      ['b', 2],
+      ['b-2', 9],
+      ['c', 3],
+    ]);
+    // Read back, every entry is usable: nothing was lost or doubled.
+    expect(readLibrary(json(merged)).library.files.map((f) => f.id)).toEqual(['a', 'b', 'b-2', 'c']);
   });
 });
 

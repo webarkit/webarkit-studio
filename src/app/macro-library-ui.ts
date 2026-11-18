@@ -15,7 +15,7 @@
 import type { StudioEditor } from '../editor/editor';
 import type { MacroDefinition } from '../core/macros';
 import { MACRO_FILE_EXTENSION, MacroFileError, macroAssetRefs, macroClash, macroFileId, readMacroFile, writeMacroFile, type MacroAssetRef, type MacroFile } from '../core/macro-file';
-import { addToLibrary, emptyLibrary, readLibrary, removeFromLibrary, writeLibrary, type MacroLibrary, type MacroLibraryData } from '../core/macro-library';
+import { addToLibrary, emptyLibrary, mergeLibraries, readLibrary, removeFromLibrary, writeLibrary, type MacroLibrary, type MacroLibraryData } from '../core/macro-library';
 import { MACRO_PRESETS, presetFragment } from '../core/macro-presets';
 import { slugify } from '../export/names';
 import { saveFile, type SaveFailed } from './save-file';
@@ -281,11 +281,18 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   return {
     data: () => writeLibrary(library),
     replace(next) {
-      // The library lives in this browser: the one a project replaces is kept for its owner, never lost.
+      // The library lives in this browser: the one a project replaces is kept for its owner, never lost. Added to
+      // those kept before, so a second project does not lose the first one's (Qodo on #176).
       const outgoing = writeLibrary(library);
       if (outgoing.macros.length && JSON.stringify(outgoing) !== JSON.stringify(writeLibrary(next))) {
         try {
-          localStorage.setItem(LIBRARY_REPLACED_KEY, JSON.stringify(outgoing));
+          let before: unknown = null;
+          try {
+            before = JSON.parse(localStorage.getItem(LIBRARY_REPLACED_KEY) ?? 'null');
+          } catch {
+            before = null; // not JSON: nothing the studio wrote
+          }
+          localStorage.setItem(LIBRARY_REPLACED_KEY, JSON.stringify(mergeLibraries(before, outgoing)));
           log(`⚠ the project replaces the macro library: the previous one is kept in localStorage as ${LIBRARY_REPLACED_KEY}`);
         } catch {
           log('⚠ the project replaces the macro library, and the previous one could not be kept');

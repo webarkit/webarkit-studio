@@ -10,7 +10,7 @@
  *
  * Pure: the functions return a new library and leave the one they were given as it was.
  */
-import { freeMacroId, sameDefinition } from './macros';
+import { freeMacroId, sameDefinition, type MacroDefinition } from './macros';
 import { MACRO_FILE_FORMAT, MacroFileError, readMacroFile, type MacroFile } from './macro-file';
 import { LOADED_PLUGINS } from './plugins';
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
@@ -125,4 +125,33 @@ export function addToLibrary(
 
 export function removeFromLibrary(library: MacroLibrary, id: string): MacroLibrary {
   return { ...library, files: library.files.filter((f) => f.id !== id) };
+}
+
+/** Whether two saved entries hold the same macro: their definitions alike (key order aside), or the same text. */
+function sameEntry(a: unknown, b: unknown): boolean {
+  if (isObject(a) && isObject(b) && isObject(a.definition) && isObject(b.definition)) {
+    return sameDefinition(a.definition as unknown as MacroDefinition, b.definition as unknown as MacroDefinition);
+  }
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The libraries a project replaced, kept together (Qodo on #176): `kept` (what is already set aside, any value; not a
+ * library: nothing) with the entries of `outgoing` added. An entry with the same id and content is kept once; another
+ * content under an id already there is kept under a free id. Entries are kept as they were saved, usable or not.
+ */
+export function mergeLibraries(kept: unknown, outgoing: MacroLibraryData): MacroLibraryData {
+  const entries: unknown[] = isObject(kept) && kept.format === LIBRARY_FORMAT && Array.isArray(kept.macros) ? [...kept.macros] : [];
+  const idOf = (e: unknown) => (isObject(e) && typeof e.id === 'string' ? e.id : undefined);
+  for (const entry of outgoing.macros) {
+    const id = idOf(entry);
+    if (entries.some((e) => idOf(e) === id && sameEntry(e, entry))) continue;
+    if (id === undefined || !entries.some((e) => idOf(e) === id)) {
+      entries.push(entry);
+      continue;
+    }
+    const free = freeMacroId(id, (candidate) => entries.some((e) => idOf(e) === candidate));
+    entries.push({ ...(entry as Record<string, unknown>), id: free });
+  }
+  return { format: LIBRARY_FORMAT, version: LIBRARY_VERSION, macros: entries };
 }

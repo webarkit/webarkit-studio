@@ -85,8 +85,9 @@ Editing:
       undo step). A file's id is its macro's name, so two versions of one macro clash and two different macros do
       not. × removes a macro from the library; the graphs that use it keep their copy.
     - The library is saved in the browser beside the autosave, and in project files (`library.json`). A project
-      without one opens with an empty library; the library it replaced is kept in localStorage
-      (`webarkit-studio:macro-library-replaced`). A `library.json` this studio cannot read leaves the library as it
+      without one opens with an empty library. Every library a project replaced is kept in localStorage, together
+      (`webarkit-studio:macro-library-replaced`): one entry per macro, and another content under an id already there
+      under a free id. A `library.json` this studio cannot read leaves the library as it
       was, and the rest of the project opens.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.

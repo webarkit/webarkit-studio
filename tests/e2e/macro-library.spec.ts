@@ -300,3 +300,30 @@ test('a project whose library.json cannot be read leaves the library as it was; 
   const setAside = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:macro-library-replaced') ?? 'null'));
   expect(setAside.macros.map((m: { id: string }) => m.id)).toEqual(['neg']);
 });
+
+/** A project of an empty graph, with this macro library (or none). */
+const projectZip = (macros?: unknown[]) =>
+  Buffer.from(
+    zipSync({
+      'graph.json': strToU8(JSON.stringify({ format: 'webarkit-studio/graph', version: 6, name: 'Empty', nodes: [], edges: [] })),
+      ...(macros && { 'library.json': strToU8(JSON.stringify({ format: 'webarkit-studio/macro-library', version: 1, macros })) }),
+    }),
+  );
+const importProject = (page: Page, buffer: Buffer) => page.setInputFiles('#file-import', { name: 'project.webarkit.zip', mimeType: 'application/zip', buffer });
+
+test('two project imports in a row keep both libraries they replaced (Qodo on #176)', async ({ page }) => {
+  await openStudio(page);
+  await importMacro(page, wmacro('first', negate(1, 'First')));
+  await expect(entry(page, 'first')).toBeVisible();
+  await importProject(page, projectZip([wmacro('second', negate(2, 'Second')), wmacro('first', negate(5, 'First changed'))]));
+  await expect(entry(page, 'second')).toBeVisible();
+  await importProject(page, projectZip());
+  await expect(page.locator('#log')).toContainText('0 macro(s) in the library');
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:macro-library-replaced') ?? 'null'));
+  // The user's own first library, and the project's: the same id with another content under a free id.
+  expect(kept.macros.map((m: { id: string; name: string }) => [m.id, m.name])).toEqual([
+    ['first', 'First'],
+    ['second', 'Second'],
+    ['first-2', 'First changed'],
+  ]);
+});
