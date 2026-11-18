@@ -225,6 +225,8 @@ const studio = await createStudioEditor($('editor'), {
     // The code panel names a node by its id, which another view may give another node.
     scriptPanel.close();
   },
+  // A new name for the definition shown: the bar only, never the code panel, whose unapplied text would be lost.
+  onMacroNameChange: (view) => showMacroPath(view),
   onDefinitionChange(definition) {
     if (runtime) log(`⟳ macro ${definition} changed: press Reload to apply it`);
   },

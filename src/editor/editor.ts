@@ -33,8 +33,10 @@ export interface StudioEditorEvents {
    * Enter (#140), and the edit changes the definition, so every instance of it.
    */
   onParamChange?: (nodeId: string, key: string, value: ParamValue, scope?: { definition: string }) => void;
-  /** The editor shows the outer graph (null), or the inside of a macro definition (#140). */
+  /** The editor shows the outer graph (null), or the inside of another macro definition (#140): Enter, Leave, a load. */
   onViewChange?: (view: EditorView | null) => void;
+  /** The definition shown inside got a new name, the same definition (a rename from the bar, its undo or redo). */
+  onMacroNameChange?: (view: EditorView) => void;
   /** A macro definition's content changed from the outer graph: a Leave after edits inside, its undo or redo (#140). */
   onDefinitionChange?: (definition: string) => void;
   /** Something the user asked for was refused, and why (Create macro on a macro node, #140). */
@@ -1056,7 +1058,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     if (!name || name === view.meta.name) return;
     const apply = (n: string) => {
       view.meta.name = n;
-      events.onViewChange?.({ definition: view.definition, name: n });
+      // The same view: what depends on the definition shown (the code panel) stays (Qodo on #175).
+      events.onMacroNameChange?.({ definition: view.definition, name: n });
       onChange();
     };
     const latest = history.getHistorySnapshot().at(-1)?.action;
@@ -1276,7 +1279,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     endMacroNameEdit() {
       macroNameEdit = undefined;
       // A blank field shows the name the definition kept.
-      if (inside) events.onViewChange?.({ definition: inside.definition, name: inside.meta.name });
+      if (inside) events.onMacroNameChange?.({ definition: inside.definition, name: inside.meta.name });
     },
     view: () => (inside ? { definition: inside.definition, name: inside.meta.name } : null),
     viewDocument,

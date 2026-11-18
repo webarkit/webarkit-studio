@@ -343,6 +343,44 @@ test('a loaded graph that reuses the ids never gets the old graph’s kept error
   await expect(page.locator('.studio-node .status')).toHaveCount(0);
 });
 
+test('renaming a macro from the bar, and its undo, leave an inner script’s code panel open with what was typed (Qodo on #175)', async ({ page }) => {
+  const script = "/*\nout y number\n*/\nreturn { y: 1 };";
+  const doc: GraphDocument = {
+    format: 'webarkit-studio/graph',
+    version: 6,
+    name: 'Scripted',
+    nodes: [{ id: 'm', type: 'macro', params: { definition: 'd' }, position: { x: 0, y: 0 } }],
+    edges: [],
+    macros: { d: { name: 'Scripted', nodes: [{ id: 's', type: 'script.lite', params: { script } }], edges: [] } },
+  };
+  await openStudio(page);
+  await importGraph(page, doc);
+  await page.locator('#script-trust button[value=run]').click();
+  await onNode(page, 'Scripted', 'Enter macro');
+  await page.locator('.studio-node .script-edit').click();
+  const panel = page.locator('#script-panel');
+  await expect(panel).toBeVisible();
+  const code = panel.locator('textarea');
+  await code.press('End');
+  await code.pressSequentially('\n// not applied yet');
+
+  const field = page.locator('#macro-name');
+  await field.fill('');
+  await field.pressSequentially('Renamed');
+  await field.press('Enter');
+  await expect(field).toHaveValue('Renamed');
+  await page.click('#btn-undo');
+  await expect(field).toHaveValue('Scripted');
+  await expect(panel).toBeVisible();
+  await expect(code).toHaveValue(/\/\/ not applied yet/);
+
+  // Leaving the macro still closes it: its node is not in the outer graph. (The open panel lies over the bar, so the
+  // click is dispatched to the button.)
+  await page.locator('#btn-leave-macro').dispatchEvent('click');
+  await expect(page.locator('#macro-path')).toBeHidden();
+  await expect(panel).toBeHidden();
+});
+
 test('a param promoted inside shows on every instance, applies live, and goes back', async ({ page }) => {
   test.setTimeout(180_000);
   await loadDemo(page, 'pinball-image');
