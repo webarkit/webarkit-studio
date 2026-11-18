@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { GraphDocument } from '../../src/core/graph';
+import { foldIntoMacro } from '../helpers/fold-macro';
 import { exportApp, loadDemo, nodeStatus, openStudio, run, serveDir } from './helpers';
 
 /**
@@ -313,6 +314,33 @@ test('a macro emptied inside opens again with a usable view: a node added there 
   await canvasMenu.locator('.item').nth(labels.indexOf('Time')).click();
   await expect(titled(page, 'Time')).toHaveCount(1);
   await expect(titled(page, 'Time')).toBeInViewport();
+});
+
+test('a loaded graph that reuses the ids never gets the old graph’s kept errors back on Enter or Leave (Qodo on #175)', async ({ page }) => {
+  /** The pinball demo with its dataset and controller in a macro `m1`, the dataset from `url`; the controller loads it. */
+  const folded = (name: string, url: string) => {
+    const demo = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8')) as GraphDocument;
+    demo.nodes.find((n) => n.id === 'dataset')!.params.url = url;
+    return foldIntoMacro(demo, ['dataset', 'controller'], { name });
+  };
+  await openStudio(page);
+  await importGraph(page, folded('Broken', 'data/DataNFT/missing'));
+  await expect(titled(page, 'Broken')).toHaveCount(1);
+  await page.click('#btn-run');
+  // A failed Run (an init error) keeps its error on the macro node, and on the inner node for Enter.
+  await expect(nodeStatus(page, 'Broken')).toContainText('cannot load NFT dataset', { timeout: 30_000 });
+  await expect(page.locator('#btn-run')).toBeEnabled();
+
+  // The same ids, a dataset that loads: nothing kept from the failed Run shows, outside or inside.
+  await importGraph(page, folded('Fine', 'data/DataNFT/pinball'));
+  await expect(titled(page, 'Fine')).toHaveCount(1);
+  await expect(page.locator('.studio-node .status')).toHaveCount(0);
+  await onNode(page, 'Fine', 'Enter macro');
+  await expect(page.locator('.studio-node')).toHaveCount(2);
+  await expect(page.locator('.studio-node .status')).toHaveCount(0);
+  await page.click('#btn-leave-macro');
+  await expect(titled(page, 'Fine')).toHaveCount(1);
+  await expect(page.locator('.studio-node .status')).toHaveCount(0);
 });
 
 test('a param promoted inside shows on every instance, applies live, and goes back', async ({ page }) => {

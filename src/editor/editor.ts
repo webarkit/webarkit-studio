@@ -1169,6 +1169,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       events.onViewChange?.(null);
     }
     await editor.clear();
+    // The statuses kept for Enter and Leave belong to the graph replaced: a failed Run keeps its error, and a graph
+    // reusing its ids would get it back (Qodo on #175).
+    outerStatus.clear();
+    innerStatus.clear();
     graphName = doc.name ?? 'Untitled';
     macros = structuredClone(doc.macros ?? {});
     events.onNameChange?.(graphName);
