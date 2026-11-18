@@ -72,11 +72,16 @@ export class StudioNode extends ClassicPreset.Node<
     return effectiveDefinition({ type: this.type, params: this.params }, NODE_CATALOG, this.macros())!;
   }
 
-  /** Makes the Rete ports match the definition: a port that is gone or changed type is removed, a new one added. */
+  /**
+   * Makes the Rete ports match the definition: a port that is gone or changed type is removed, a new one added. An
+   * input that changed between one wire and several is rebuilt too: a macro's exposed input can, with the same socket
+   * type, and the connection pipe reads the Rete input's limit (Qodo on #175).
+   */
   syncPorts(): void {
     const { inputs, outputs } = this.def;
     for (const [key, port] of Object.entries(this.inputs)) {
-      if ((port?.socket as TypedSocket | undefined)?.type !== inputs[key]?.type) this.removeInput(key);
+      const spec = Object.hasOwn(inputs, key) ? inputs[key] : undefined;
+      if ((port?.socket as TypedSocket | undefined)?.type !== spec?.type || Boolean(port?.multipleConnections) !== Boolean(spec?.multiple)) this.removeInput(key);
     }
     for (const [key, port] of Object.entries(this.outputs)) {
       if ((port?.socket as TypedSocket | undefined)?.type !== outputs[key]?.type) this.removeOutput(key);
