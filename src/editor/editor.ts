@@ -12,12 +12,13 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
-import { checkMacros, everyNode, macrosFor, type MacroDefinitions } from '../core/macros';
+import { checkMacros, definitionOf, everyNode, freeMacroId, MACRO_TYPE, macrosFor, sameDefinition, type MacroDefinition, type MacroDefinitions } from '../core/macros';
+import { applyDefinition, planCreate, planDissolve, promotedKey, promoteParam, pruneDefinition, staleInstanceParams, staleMacroWires, unpromoteParam } from '../core/macro-edit';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
-import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue } from './history';
+import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue, ValueAction } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
 import { addable, searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
@@ -27,8 +28,19 @@ type AreaExtra = Area2D<Schemes> | RenderSignal;
 export interface StudioEditorEvents {
   /** The graph changed (structure, params, positions). */
   onChange: () => void;
-  /** A param was edited by the user. */
-  onParamChange?: (nodeId: string, key: string, value: ParamValue) => void;
+  /**
+   * A param was edited by the user. `scope.definition`: the node is an inner node of that macro definition, shown by
+   * Enter (#140), and the edit changes the definition, so every instance of it.
+   */
+  onParamChange?: (nodeId: string, key: string, value: ParamValue, scope?: { definition: string }) => void;
+  /** The editor shows the outer graph (null), or the inside of a macro definition (#140). */
+  onViewChange?: (view: EditorView | null) => void;
+  /** A macro definition's content changed from the outer graph: a Leave after edits inside, its undo or redo (#140). */
+  onDefinitionChange?: (definition: string) => void;
+  /** Something the user asked for was refused, and why (Create macro on a macro node, #140). */
+  onNotice?: (text: string) => void;
+  /** Rename macro from a macro node's menu (#140): the new name, or null if the user cancelled. */
+  askMacroName?: (current: string) => string | null | Promise<string | null>;
   /** The node shown in the Inspector changed: the last one picked, null once none is selected. */
   onInspect?: (node: StudioNode | null) => void;
   /** A wire was added or removed (a running preview applies it on the next Run). */
@@ -71,7 +83,49 @@ export interface StudioEditor {
    * Undo brings back the script, its wires and its values. False, with nothing changed, when the header has mistakes.
    */
   applyScript(nodeId: string, text: string, file?: string): Promise<boolean>;
+  /**
+   * Macros (#140). Create macro folds the nodes `ids` (the selection by default) into a macro node; Dissolve puts a
+   * macro node's inner nodes back. Each is one undo step. Enter shows a definition's inside, editable; Leave goes
+   * back to the outer graph, where the edits made inside are one undo step.
+   */
+  createMacro(ids?: string[]): Promise<void>;
+  dissolveMacro(nodeId: string): Promise<void>;
+  enterMacro(nodeId: string): Promise<void>;
+  leaveMacro(): Promise<void>;
+  /**
+   * Renames the definition of macro node `nodeId`, asked through askMacroName, as one undo step: every instance's
+   * title follows. A blank name is refused, and the old one kept.
+   */
+  renameMacro(nodeId: string): Promise<void>;
+  /**
+   * Inside a macro: renames the definition shown, as a user edit (the bar's field). The keystrokes of one edit are one
+   * undo step; endMacroNameEdit() ends it. A blank name is not applied: the definition keeps its name.
+   */
+  setMacroName(name: string): void;
+  endMacroNameEdit(): void;
+  /** What the editor shows: null for the outer graph. */
+  view(): EditorView | null;
+  /**
+   * The graph the editor shows, as a document: the outer graph (toDocument()), or inside a macro its inner nodes and
+   * wires, whose ids are those of the definition (copy, the code panel). toDocument() is always the outer graph.
+   */
+  viewDocument(): GraphDocument;
+  /** Inside a macro: whether an inner node's param is promoted to the macro node, and whether it can be. */
+  promotion(nodeId: string, key: string): { promoted: boolean; allowed: boolean } | undefined;
+  /** Inside a macro: promotes an inner node's param, or takes it back, as one undo step. */
+  togglePromote(nodeId: string, key: string): Promise<void>;
+  /**
+   * A report of inner node `inner` of macro node `macro` in the running flat graph: shown on that inner node while
+   * its definition is open, prefixed with the macro node's id. Null clears it.
+   */
+  setInnerStatus(macro: string, inner: string, status: StudioNode['status']): void;
   destroy(): void;
+}
+
+/** A macro definition shown by Enter (#140). */
+export interface EditorView {
+  definition: string;
+  name: string;
 }
 
 export async function createStudioEditor(container: HTMLElement, events: StudioEditorEvents): Promise<StudioEditor> {
@@ -79,13 +133,39 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const editor = new NodeEditor<Schemes>();
   const area = new AreaPlugin<Schemes, AreaExtra>(container);
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
-  const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction | NameEditAction>();
+  // Each ValueAction carries its own value type (a definition, its promoted params).
+  const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction | NameEditAction | ValueAction<any>>();
   let graphName = 'Untitled';
   /**
    * The macro definitions of this session (#140): the loaded graph's, and those pasted since. A definition no node uses
    * any more stays here (undo of a deletion finds it), and is left out of every document toDocument() writes.
    */
   let macros: MacroDefinitions = {};
+
+  /**
+   * The inside of a macro definition, while it is shown (#140). The outer graph is kept as data, with the view it was
+   * seen in, and its history is set aside: inside, undo and redo reach only the edits made inside, and Leave records
+   * them as one step of the outer history, which changes the definition (ValueAction), valid from the outer view.
+   * `meta`: the definition's ports and promoted params, which promote / unpromote change inside; `baseline`: the
+   * definition as first shown, so a visit that changed nothing records nothing.
+   */
+  type Inside = {
+    definition: string;
+    outer: GraphDocument;
+    transform: { x: number; y: number; k: number };
+    stash: { produced: unknown[]; reserved: unknown[] };
+    meta: Pick<MacroDefinition, 'name' | 'inputs' | 'outputs' | 'params'>;
+    baseline?: MacroDefinition;
+  };
+  let inside: Inside | null = null;
+  /** While a view is being swapped (Enter, Leave): its node and wire events are not edits. */
+  let switching = false;
+  /** The plugin's own undo and redo stacks: Enter sets them aside, Leave puts them back (no public accessor). */
+  const stacks = () => (history as unknown as { history: { produced: unknown[]; reserved: unknown[] } }).history;
+  const resolve = (n: { type: string; params?: Record<string, ParamValue> }) => effectiveDefinition(n);
+  /** Runtime feedback by node, kept across views: an outer node's, and each inner node's per macro node. */
+  const outerStatus = new Map<string, NonNullable<StudioNode['status']>>();
+  const innerStatus = new Map<string, Map<string, NonNullable<StudioNode['status']>>>();
 
   /**
    * Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it.
@@ -108,7 +188,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       updateDriven(nodeId);
     }
     void area.update('node', nodeId);
-    events.onParamChange?.(nodeId, key, value);
+    events.onParamChange?.(nodeId, key, value, inside ? { definition: inside.definition } : undefined);
     onChange();
   }
 
@@ -241,8 +321,24 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       }
       // On a selected node, Duplicate acts on the whole selection.
       const ids = (target as StudioNode).selected ? selectedIds() : [target.id];
+      // Macros (#140), on the outer graph only: no macro inside a macro.
+      const macroItems: MenuItem[] = [];
+      if (!inside) {
+        if ((target as StudioNode).type === MACRO_TYPE) {
+          macroItems.push(
+            { label: 'Enter macro', key: 'enter-macro', handler: () => serial(() => enterMacro(target.id)) },
+            { label: 'Rename macro', key: 'rename-macro', handler: () => serial(() => renameMacro(target.id)) },
+            { label: 'Dissolve macro', key: 'dissolve-macro', handler: () => serial(() => dissolveMacro(target.id)) },
+          );
+        }
+        // Not on a selection that holds a macro node: no macro inside a macro.
+        if (!ids.some((id) => editor.getNode(id)?.type === MACRO_TYPE)) {
+          macroItems.push({ label: ids.length > 1 ? `Create macro of ${ids.length} nodes` : 'Create macro', key: 'create-macro', handler: () => serial(() => createMacro(ids)) });
+        }
+      }
       return {
         list: [
+          ...macroItems,
           { label: ids.length > 1 ? `Duplicate ${ids.length} nodes` : 'Duplicate', key: 'duplicate', handler: () => serial(() => duplicate(ids)) },
           // On a selected node, Delete removes the whole selection, as one undo step (#139).
           { label: ids.length > 1 ? `Delete ${ids.length} nodes` : 'Delete', key: 'delete', handler: () => serial(() => removeNodes(ids)) },
@@ -500,7 +596,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     // Selected text (the log, a node's status) is copied as text, even with nodes selected.
     const textSelected = !(document.getSelection()?.isCollapsed ?? true);
     if (isEditable(e.target) || textSelected || !ids.length || !e.clipboardData) return;
-    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
+    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(viewDocument(), ids)));
     e.preventDefault();
   };
   const onPaste = (e: ClipboardEvent) => {
@@ -517,7 +613,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     // Cut removes nodes, so it follows Delete's rule (editorHasKeys), not copy's: a focused select or button in the
     // header is not the editor (Qodo on #172).
     if (!editorHasKeys() || textSelected || !ids.length || !e.clipboardData) return;
-    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(toDocument(), ids)));
+    e.clipboardData.setData('text/plain', JSON.stringify(copySelection(viewDocument(), ids)));
     e.preventDefault();
     void serial(() => removeNodes(ids));
   };
@@ -562,6 +658,12 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
+    // Inside a macro, no macro node: a macro inside a macro is not supported (#140). Their wires go with them.
+    if (inside && data.nodes.some((n) => n.type === MACRO_TYPE)) {
+      const skipped = data.nodes.filter((n) => n.type === MACRO_TYPE).length;
+      events.onNotice?.(`paste: ${skipped} macro node(s) left out: a macro inside a macro is not supported`);
+      data = { ...data, nodes: data.nodes.filter((n) => n.type !== MACRO_TYPE), macros: undefined };
+    }
     // Its definitions are checked as validation checks them: a refused one is not merged, nor its macro nodes pasted.
     const check = (defs: MacroDefinitions) =>
       checkMacros(defs, (n) => effectiveDefinition(n), (type) => Object.hasOwn(NODE_CATALOG, type), (type) => isScriptType(type));
@@ -575,7 +677,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
     for (const n of nodes) {
-      if (!NODE_CATALOG[n.type]) {
+      if (!Object.hasOwn(NODE_CATALOG, n.type)) {
         console.warn(`[editor] paste: unknown node type "${n.type}" skipped`); // from a newer studio, or hand-edited
         continue;
       }
@@ -584,7 +686,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     for (const e of edges) {
       const source = editor.getNode(e.from.node);
       const target = editor.getNode(e.to.node);
-      if (!source?.outputs[e.from.port] || !target?.inputs[e.to.port]) continue;
+      // Port names come from a graph (a definition, a clipboard): own keys only.
+      if (!source || !target || !Object.hasOwn(source.outputs, e.from.port) || !Object.hasOwn(target.inputs, e.to.port)) continue;
       const conn = new StudioConnection(source, e.from.port, target, e.to.port);
       conn.id = e.id;
       await editor.addConnection(conn);
@@ -593,7 +696,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   async function duplicate(ids: string[]) {
     if (!ids.length) return;
-    const doc = toDocument();
+    const doc = viewDocument();
     const copied = doc.nodes.filter((n) => ids.includes(n.id));
     if (!copied.length) return; // removed (undone) while the menu was open
     // Next to the originals, offset so both stay visible.
@@ -615,10 +718,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
         if (taken) return;
       }
     }
-    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') {
-      updateDriven(context.data.target);
-      events.onWiresChange?.();
-    }
+    // A view being swapped (Enter, Leave, #140) is not an edit: no autosave of half a view, no "wires changed".
+    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') updateDriven(context.data.target);
+    if (switching) return context;
+    if (context.type === 'connectioncreated' || context.type === 'connectionremoved') events.onWiresChange?.();
     if (['nodecreated', 'noderemoved', 'connectioncreated', 'connectionremoved'].includes(context.type)) {
       onChange();
       notifyHistory();
@@ -626,7 +729,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return context;
   });
   area.addPipe((context) => {
-    if (context.type === 'nodetranslated') {
+    if (context.type === 'nodetranslated' && !switching) {
       onChange();
       notifyHistory();
     }
@@ -695,7 +798,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return node;
   }
 
-  function toDocument(): GraphDocument {
+  /** The graph on screen as a document, without macros: the outer graph, or a definition's inside. */
+  function shownGraph(): GraphDocument {
     const doc = emptyGraph(graphName);
     doc.format = GRAPH_FORMAT;
     doc.version = GRAPH_VERSION;
@@ -713,11 +817,301 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       from: { node: c.source, port: c.sourceOutput },
       to: { node: c.target, port: c.targetInput },
     }));
-    const used = macrosFor(doc.nodes, macros);
+    return doc;
+  }
+
+  /** The session's definitions as a new record of own keys (a definition may be called "__proto__"). */
+  function sessionMacros(): MacroDefinitions {
+    const out: MacroDefinitions = {};
+    for (const [id, def] of Object.entries(macros)) Object.defineProperty(out, id, { value: def, enumerable: true, writable: true, configurable: true });
+    return out;
+  }
+
+  /** The definition shown inside, as it is now: its nodes and wires from the view, its ports and params from `meta`. */
+  function liveDefinition(view: Inside): MacroDefinition {
+    const { nodes, edges } = shownGraph();
+    return structuredClone({ ...view.meta, nodes, edges });
+  }
+
+  /**
+   * The outer graph, always: what autosave, Run, the exports and the trust prompt read. Inside a macro, it is the outer
+   * graph kept at Enter with the definition as edited so far (pruned, and what that leaves dangling outside removed).
+   */
+  function toDocument(): GraphDocument {
+    let doc: GraphDocument;
+    if (!inside) {
+      doc = shownGraph();
+      doc.macros = sessionMacros();
+    } else {
+      const outer = { ...structuredClone(inside.outer), name: graphName, macros: sessionMacros() };
+      doc = applyDefinition(outer, inside.definition, liveDefinition(inside), resolve, isScriptType);
+    }
+    const used = macrosFor(doc.nodes, doc.macros);
     if (used) doc.macros = used;
+    else delete doc.macros;
     // A plugin's node inside a macro needs its plugin as one outside does.
     doc.plugins = graphPlugins(everyNode(doc).map((e) => e.node));
     return doc;
+  }
+
+  /** The graph the editor shows: inside a macro, its inner nodes and wires, under their own ids. */
+  function viewDocument(): GraphDocument {
+    return inside ? shownGraph() : toDocument();
+  }
+
+  // ------------------------------------------------------------- macros (#140)
+
+  /** Shows `nodes` and `wires` in place of what the editor shows, recording nothing and editing nothing. */
+  async function swapView(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
+    await selector.unselectAll();
+    switching = true;
+    try {
+      await editor.clear();
+      for (const n of nodes) {
+        if (!Object.hasOwn(NODE_CATALOG, n.type)) continue;
+        await addNode(n.type, n.position, n.id, n.params);
+      }
+      for (const e of edges) {
+        const source = editor.getNode(e.from.node);
+        const target = editor.getNode(e.to.node);
+        if (!source || !target || !Object.hasOwn(source.outputs, e.from.port) || !Object.hasOwn(target.inputs, e.to.port)) continue;
+        const conn = new StudioConnection(source, e.from.port, target, e.to.port);
+        conn.id = e.id;
+        await editor.addConnection(conn);
+      }
+    } finally {
+      switching = false;
+    }
+    followSelection();
+  }
+
+  /** Sets a definition's content without recording it (Leave, its undo or redo): the macro nodes shown follow it. */
+  function setDefinition(id: string, def: MacroDefinition) {
+    Object.defineProperty(macros, id, { value: def, enumerable: true, writable: true, configurable: true });
+    for (const node of editor.getNodes()) {
+      if (node.type !== MACRO_TYPE || definitionOf(node, macros)?.id !== id) continue;
+      node.label = node.def.label;
+      node.syncPorts();
+      updateDriven(node.id);
+      void area.update('node', node.id);
+    }
+    events.onDefinitionChange?.(id);
+    onChange();
+  }
+
+  /** Create macro: the nodes `ids` become one macro node, as one undo step. Its definition joins the session's. */
+  async function createMacro(ids: string[]) {
+    if (inside) return;
+    const doc = toDocument();
+    const definitionId = freeMacroId('macro', (k) => Object.hasOwn(macros, k));
+    const nodeId = getUID();
+    const plan = planCreate(doc, ids.filter((id) => editor.getNode(id)), { definitionId, nodeId }, resolve);
+    if ('error' in plan) {
+      events.onNotice?.(plan.error);
+      return;
+    }
+    // Not recorded: a definition stays with the session (an undo, then a redo, finds it) and is written only while used.
+    Object.defineProperty(macros, definitionId, { value: plan.definition, enumerable: true, writable: true, configurable: true });
+    await selector.unselectAll();
+    await oneStep(async () => {
+      for (const id of plan.removedEdges) if (editor.getConnection(id)) await editor.removeConnection(id);
+      for (const id of plan.removedNodes) await removeNode(id);
+      await addFragment([plan.node], plan.edges);
+    });
+    if (editor.getNode(nodeId)) await selectable.select(nodeId, true);
+    followSelection();
+  }
+
+  /** Dissolve: a macro node's inner nodes back in the outer graph, rewired, as one undo step. */
+  async function dissolveMacro(nodeId: string) {
+    if (inside) return;
+    const plan = planDissolve(toDocument(), nodeId);
+    if ('error' in plan) {
+      events.onNotice?.(plan.error);
+      return;
+    }
+    await selector.unselectAll();
+    await oneStep(async () => {
+      for (const id of plan.removedEdges) if (editor.getConnection(id)) await editor.removeConnection(id);
+      await removeNode(nodeId);
+      await addFragment(plan.nodes, plan.edges);
+    });
+    for (const n of plan.nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+    followSelection();
+  }
+
+  /** Enter: the editor shows the definition of macro node `nodeId`, editable; the outer history is set aside. */
+  async function enterMacro(nodeId: string) {
+    if (inside) return;
+    const outer = toDocument();
+    const node = outer.nodes.find((n) => n.id === nodeId);
+    const found = node && definitionOf(node, macros);
+    if (!found) {
+      events.onNotice?.(`Enter: ${nodeId} is not a macro node with a definition.`);
+      return;
+    }
+    const { x, y, k } = area.area.transform;
+    history.separate();
+    const h = stacks();
+    const stash = { produced: h.produced, reserved: h.reserved };
+    h.produced = [];
+    h.reserved = [];
+    const { name, inputs, outputs, params } = structuredClone(found.def);
+    inside = { definition: found.id, outer, transform: { x, y, k }, stash, meta: { name, inputs, outputs, params } };
+    await swapView(found.def.nodes, found.def.edges);
+    // What swapping the view recorded is not an edit.
+    h.produced = [];
+    h.reserved = [];
+    inside.baseline = liveDefinition(inside);
+    showStatuses();
+    events.onViewChange?.({ definition: found.id, name: found.def.name });
+    await AreaExtensions.zoomAt(area, editor.getNodes());
+    notifyHistory();
+  }
+
+  /**
+   * Leave: back to the outer graph and its history. Edits made inside are one step there, recorded with the outer
+   * wires and promoted values they leave dangling (removed first, so an undo brings the ports back before them).
+   */
+  async function leaveMacro() {
+    const view = inside;
+    if (!view) return;
+    const before = macros[view.definition];
+    const edited = liveDefinition(view);
+    const changed = !view.baseline || !sameDefinition(view.baseline, edited);
+    const after = pruneDefinition(edited, resolve, isScriptType);
+    history.separate();
+    const h = stacks();
+    await swapView(view.outer.nodes, view.outer.edges);
+    inside = null;
+    h.produced = view.stash.produced;
+    h.reserved = view.stash.reserved;
+    await area.area.zoom(view.transform.k, 0, 0);
+    await area.area.translate(view.transform.x, view.transform.y);
+    showStatuses();
+    events.onViewChange?.(null);
+    if (changed && !sameDefinition(before, after)) {
+      const doc = toDocument();
+      const wires = staleMacroWires(doc, view.definition, after, resolve);
+      const values = staleInstanceParams(doc, view.definition, after, resolve);
+      await oneStep(async () => {
+        for (const id of wires) if (editor.getConnection(id)) await editor.removeConnection(id);
+        for (const { node, key } of values) {
+          const n = editor.getNode(node);
+          if (n) removeInStep(n, key);
+        }
+        history.add(new ValueAction(before, after, (def) => setDefinition(view.definition, def)));
+        setDefinition(view.definition, after);
+      });
+    } else onChange();
+    notifyHistory();
+  }
+
+  /** Rename macro, from the outer graph: one step that changes the definition, so every instance's title. */
+  async function renameMacro(nodeId: string) {
+    if (inside) return;
+    const node = editor.getNode(nodeId);
+    const found = node && node.type === MACRO_TYPE ? definitionOf(node, macros) : undefined;
+    if (!found) return;
+    const answer = await events.askMacroName?.(found.def.name);
+    if (answer === null || answer === undefined) return;
+    const name = answer.trim();
+    if (!name) {
+      events.onNotice?.(`Rename macro: a macro needs a name; it is still "${found.def.name}".`);
+      return;
+    }
+    if (name === found.def.name) return;
+    const before = macros[found.id];
+    const after = { ...structuredClone(before), name };
+    await oneStep(async () => {
+      history.add(new ValueAction(before, after, (def) => setDefinition(found.id, def)));
+      setDefinition(found.id, after);
+    });
+  }
+
+  /** The open rename of the definition shown: the next keystroke folds into it while it is still the latest record. */
+  let macroNameEdit: ValueAction<string> | undefined;
+  function setMacroName(value: string) {
+    const view = inside;
+    if (!view) return;
+    const name = value.trim();
+    // Blank: not applied; the field's change event (endMacroNameEdit) puts the name back.
+    if (!name || name === view.meta.name) return;
+    const apply = (n: string) => {
+      view.meta.name = n;
+      events.onViewChange?.({ definition: view.definition, name: n });
+      onChange();
+    };
+    const latest = history.getHistorySnapshot().at(-1)?.action;
+    if (macroNameEdit && latest === macroNameEdit) {
+      macroNameEdit.after = name;
+      apply(name);
+      return;
+    }
+    const action = new ValueAction(view.meta.name, name, apply);
+    history.separate();
+    history.add(action);
+    history.separate();
+    macroNameEdit = action;
+    apply(name);
+    notifyHistory();
+  }
+
+  /** Inside: promotes an inner node's param to the macro node, or takes it back, as one undo step of the inside. */
+  async function togglePromote(nodeId: string, key: string) {
+    const view = inside;
+    const state = view && promotion(nodeId, key);
+    if (!view || !state) return;
+    const before = structuredClone(view.meta.params ?? {});
+    let after: NonNullable<MacroDefinition['params']>;
+    if (state.promoted) after = unpromoteParam(liveDefinition(view), promotedKey(view.meta, nodeId, key)!).params ?? {};
+    else {
+      const result = promoteParam(liveDefinition(view), nodeId, key, resolve, isScriptType);
+      if ('error' in result) {
+        events.onNotice?.(result.error);
+        return;
+      }
+      after = result.definition.params ?? {};
+    }
+    const apply = (params: NonNullable<MacroDefinition['params']>) => {
+      view.meta.params = structuredClone(params);
+      onChange();
+    };
+    history.separate();
+    history.add(new ValueAction(before, after, apply));
+    history.separate();
+    apply(after);
+    notifyHistory();
+  }
+
+  function promotion(nodeId: string, key: string) {
+    const node = inside && editor.getNode(nodeId);
+    if (!inside || !node || !Object.hasOwn(node.def.params, key)) return undefined;
+    return { promoted: promotedKey(inside.meta, nodeId, key) !== undefined, allowed: !(key === 'script' && isScriptType(node.type)) };
+  }
+
+  /** Puts the kept runtime feedback on the nodes shown: the outer nodes', or the open definition's inner nodes'. */
+  function showStatuses() {
+    for (const node of editor.getNodes()) {
+      let status: StudioNode['status'] = null;
+      if (!inside) status = outerStatus.get(node.id) ?? null;
+      else {
+        const lines: string[] = [];
+        let error = false;
+        for (const [macro, inner] of innerStatus) {
+          const instance = inside.outer.nodes.find((n) => n.id === macro);
+          if (!instance || definitionOf(instance, macros)?.id !== inside.definition) continue;
+          const s = inner.get(node.id);
+          if (!s) continue;
+          lines.push(`${macro}: ${s.text}`);
+          error ||= Boolean(s.error);
+        }
+        if (lines.length) status = { text: lines.join('\n'), ...(error && { error: true }) };
+      }
+      if (node.status?.text === status?.text && node.status?.error === status?.error) continue;
+      node.status = status;
+      void area.update('node', node.id);
+    }
   }
 
   /** Lays the graph out left to right, as one undo step. */
@@ -748,6 +1142,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   }
 
   async function loadGraph(doc: GraphDocument) {
+    // A load replaces everything, the definition shown and the outer graph kept with it (#140).
+    if (inside) {
+      inside = null;
+      events.onViewChange?.(null);
+    }
     await editor.clear();
     graphName = doc.name ?? 'Untitled';
     macros = structuredClone(doc.macros ?? {});
@@ -775,14 +1174,29 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       });
     },
 
+    // Kept by node id, and shown on the nodes of the outer graph only: inside a macro, an inner node may have the id
+    // of an outer node (#140).
     setNodeStatus(nodeId, status) {
+      if (status) outerStatus.set(nodeId, status);
+      else outerStatus.delete(nodeId);
+      if (inside) return;
       const node = editor.getNode(nodeId);
       if (!node) return;
       node.status = status;
       void area.update('node', nodeId);
     },
 
+    setInnerStatus(macro, inner, status) {
+      const own = innerStatus.get(macro) ?? new Map<string, NonNullable<StudioNode['status']>>();
+      innerStatus.set(macro, own);
+      if (status) own.set(inner, status);
+      else own.delete(inner);
+      if (inside) showStatuses();
+    },
+
     clearStatuses() {
+      outerStatus.clear();
+      innerStatus.clear();
       for (const node of editor.getNodes()) {
         if (node.status) {
           node.status = null;
@@ -824,6 +1238,25 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       await serial(async () => void (applied = await applyScript(nodeId, text, file)));
       return applied;
     },
+
+    createMacro: (ids) => serial(() => createMacro(ids ?? selectedIds())),
+    dissolveMacro: (nodeId) => serial(() => dissolveMacro(nodeId)),
+    enterMacro: (nodeId) => serial(() => enterMacro(nodeId)),
+    leaveMacro: () => serial(async () => {
+      macroNameEdit = undefined;
+      await leaveMacro();
+    }),
+    renameMacro: (nodeId) => serial(() => renameMacro(nodeId)),
+    setMacroName,
+    endMacroNameEdit() {
+      macroNameEdit = undefined;
+      // A blank field shows the name the definition kept.
+      if (inside) events.onViewChange?.({ definition: inside.definition, name: inside.meta.name });
+    },
+    view: () => (inside ? { definition: inside.definition, name: inside.meta.name } : null),
+    viewDocument,
+    promotion,
+    togglePromote: (nodeId, key) => serial(() => togglePromote(nodeId, key)),
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);
