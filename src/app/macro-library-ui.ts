@@ -220,7 +220,13 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
       log(`⚠ macro "${file.name}": the graph's definition was not replaced`);
     }
     const where = added.id === file.id ? '' : ` as ${added.id}`;
-    log(added.outcome === 'same' ? `✓ macro "${file.name}" is already in the library` : `✓ macro "${file.name}" ${added.outcome === 'replaced' ? 'replaced in' : 'imported into'} the library${where}`);
+    log(
+      added.outcome === 'same'
+        ? `✓ macro "${file.name}" is already in the library`
+        : added.outcome === 'moved'
+          ? `✓ macro "${file.name}" is already in the library: it is now ${added.id} there, apart from the graph's ${file.id}`
+          : `✓ macro "${file.name}" ${added.outcome === 'replaced' ? 'replaced in' : 'imported into'} the library${where}`,
+    );
     const missing = macroAssetRefs(file.definition).filter((ref) => !host.hasAsset(ref.id));
     for (const ref of missing) log(`⚠ macro "${file.name}" uses an asset this project does not have: ${assetLine(ref)}; it fails at Run until you pick a file`);
   }

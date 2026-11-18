@@ -115,6 +115,17 @@ describe('macro library: add and remove', () => {
     expect(both.library.files[0].id).toBe('abs-neg-2');
   });
 
+  it('keep both, with the same content in the library under an id the graph uses for another: the entry moves to a free id', () => {
+    const lib = addToLibrary(addToLibrary(emptyLibrary(), writeMacroFile('neg-2', absNeg(7), '')).library, writeMacroFile('neg', absNeg(5), '')).library;
+    // The graph uses "neg" (and nothing else) for another content.
+    const taken = (id: string) => id === 'neg';
+    const moved = addToLibrary(lib, writeMacroFile('neg', absNeg(5), ''), 'keep-both', taken);
+    expect([moved.outcome, moved.id]).toEqual(['moved', 'neg-3']);
+    expect(moved.library.files.map((f) => [f.id, f.definition.nodes[0].params.x])).toEqual([['neg-2', 7], ['neg-3', 5]]);
+    // Not taken in the graph: nothing to move.
+    expect(addToLibrary(lib, writeMacroFile('neg', absNeg(5), ''), 'keep-both').outcome).toBe('same');
+  });
+
   it('removes by id', () => {
     const lib = addToLibrary(emptyLibrary(), writeMacroFile('abs-neg', absNeg(), '')).library;
     expect(removeFromLibrary(lib, 'abs-neg').files).toEqual([]);

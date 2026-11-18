@@ -90,22 +90,30 @@ export function readLibrary(
 }
 
 /**
- * Adds `file`. An id the library does not have: added. The same content under that id: nothing changes (`same`).
- * Another content under it: `replace` puts the file in its place; `keep-both` adds it under a free id, free in the
- * library and for `taken` (the document's definitions, so the copy added from it does not clash there either).
+ * Adds `file`. An id the library does not have: added. The same content under that id: nothing changes (`same`),
+ * unless `keep-both` and `taken` (the graph uses that id for another content): the entry then moves to a free id
+ * (`moved`), so adding it from the palette asks nothing more (Qodo on #176). Another content under it: `replace` puts
+ * the file in its place; `keep-both` adds it under a free id, free in the library and for `taken` (the document's
+ * definitions, so the copy added from it does not clash there either).
  */
 export function addToLibrary(
   library: MacroLibrary,
   file: MacroFile,
   choice: 'replace' | 'keep-both' = 'keep-both',
   taken: (id: string) => boolean = () => false,
-): { library: MacroLibrary; id: string; outcome: 'added' | 'same' | 'replaced' } {
+): { library: MacroLibrary; id: string; outcome: 'added' | 'same' | 'moved' | 'replaced' } {
   const at = library.files.findIndex((f) => f.id === file.id);
   // A kept entry's id is taken too: once its plugin loads, it is usable under that id.
   const keptIds = new Set(library.kept.map((k) => (isObject(k) && typeof k.id === 'string' ? k.id : '')));
   const free = (id: string) => !taken(id) && !keptIds.has(id) && !library.files.some((f) => f.id === id);
   if (at < 0 && free(file.id)) return { library: { ...library, files: [...library.files, file] }, id: file.id, outcome: 'added' };
-  if (at >= 0 && sameDefinition(library.files[at].definition, file.definition)) return { library, id: file.id, outcome: 'same' };
+  if (at >= 0 && sameDefinition(library.files[at].definition, file.definition)) {
+    if (choice !== 'keep-both' || !taken(file.id)) return { library, id: file.id, outcome: 'same' };
+    const id = freeMacroId(file.id, (candidate) => !free(candidate));
+    const files = [...library.files];
+    files[at] = { ...files[at], id };
+    return { library: { ...library, files }, id, outcome: 'moved' };
+  }
   if (at >= 0 && choice === 'replace') {
     const files = [...library.files];
     files[at] = file;
