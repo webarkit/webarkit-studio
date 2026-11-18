@@ -89,6 +89,26 @@
         <button value="run" class="primary">Run the scripts</button>
       </form>
     </dialog>
+    <dialog id="macro-clash" class="script-trust macro-dialog" aria-label="Macro already in the graph">
+      <h2>This macro's id is already used</h2>
+      <p>The graph or the library already has the macro <strong class="macro-clash-name"></strong>, with another content.</p>
+      <p>Replace it, and every instance in the graph follows, or keep both, the new one under another id.</p>
+      <form method="dialog">
+        <button value="cancel">Cancel</button>
+        <button value="keep-both">Keep both</button>
+        <button value="replace" class="primary">Replace</button>
+      </form>
+    </dialog>
+    <dialog id="macro-export" class="script-trust macro-dialog" aria-label="Export macro">
+      <h2>Export macro · <span class="macro-export-name"></span></h2>
+      <label>Description <textarea rows="3" spellcheck="true" placeholder="What the macro does, for whoever imports it"></textarea></label>
+      <p>Project assets it uses, kept as references (the file does not carry them):</p>
+      <ul class="macro-export-assets"></ul>
+      <div class="macro-dialog-buttons">
+        <button type="button" class="macro-export-cancel">Cancel</button>
+        <button type="button" class="macro-export-save primary">Save…</button>
+      </div>
+    </dialog>
     <script type="module" src="/src/app/studio.ts"></script>
   </body>
 </html>

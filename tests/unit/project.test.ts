@@ -147,3 +147,40 @@ describe('project file', () => {
     await expect(unpackProject(zipSync({ 'readme.txt': new Uint8Array(1) }))).rejects.toThrow(/graph\.json/);
   });
 });
+
+// The macro library (#141) travels in a project as library.json, with its own format and version. A project without
+// one opens with an empty library; an older studio reads graph.json and assets.json only, so it ignores the file.
+describe('project file: the macro library', () => {
+  const library = {
+    format: 'webarkit-studio/macro-library',
+    version: 1,
+    macros: [{ format: 'webarkit-macro', version: 1, id: 'm', name: 'M', description: '', plugins: [], graphVersion: 6, definition: { name: 'M', nodes: [], edges: [] } }],
+  };
+
+  it('writes library.json beside the graph, and reads it back as it was written', async () => {
+    const bytes = await packProject(graph, [], library);
+    const files = unzipSync(bytes);
+    expect(Object.keys(files).sort()).toEqual(['assets.json', 'graph.json', 'library.json']);
+    expect(JSON.parse(strFromU8(files['library.json']))).toEqual(library);
+    expect((await unpackProject(bytes)).library).toEqual(library);
+  });
+
+  it('a project without library.json reads no library (an empty one)', async () => {
+    const back = await unpackProject(await packProject(graph, []));
+    expect(back.library).toBeNull();
+    const { readLibrary, emptyLibrary } = await import('../../src/core/macro-library');
+    expect(readLibrary(back.library).library).toEqual(emptyLibrary());
+  });
+
+  it('library.json changes nothing else that is read: the graph and the assets come back the same', async () => {
+    const without = await unpackProject(await packProject(graph, assets));
+    const withIt = await unpackProject(await packProject(graph, assets, library));
+    expect(withIt.graph).toEqual(without.graph);
+    expect(withIt.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)])).toEqual(without.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)]));
+  });
+
+  it('refuses a library.json that is not JSON, before anything is replaced', async () => {
+    const bytes = zipSync({ 'graph.json': strToU8('{}'), 'library.json': strToU8('{not json') });
+    await expect(unpackProject(bytes)).rejects.toThrow(/project file: library\.json is not JSON/);
+  });
+});

@@ -25,6 +25,8 @@ import { ALL_SCRIPT_EXAMPLES } from '../editor/script-examples';
 import type { ScriptHandlers } from '../editor/script-ui';
 import { createScriptPanel } from './script-panel';
 import { askToRunScripts, createScriptTrust } from './script-trust';
+import { loadSavedLibrary, mountMacroLibrary } from './macro-library-ui';
+import { readLibrary } from '../core/macro-library';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -232,6 +234,7 @@ const studio = await createStudioEditor($('editor'), {
   },
   onNotice: (text) => log(`✗ ${text}`),
   askMacroName: (current) => window.prompt('Macro name (every instance’s title):', current),
+  onExportMacro: (macro) => macroLibrary.exportMacro(macro),
 });
 showInspector();
 graphNameInput.value = studio.toDocument().name ?? '';
@@ -267,14 +270,29 @@ for (const category of CATEGORY_ORDER) {
   }
   palette.appendChild(group);
 }
+// The Macros section (#141): the presets, the project's macro library, Import macro…; first in the palette.
+const macroGroup = document.createElement('div');
+macroGroup.className = 'palette-group palette-macros';
+palette.prepend(macroGroup);
+const macroLibrary = mountMacroLibrary(
+  macroGroup,
+  {
+    studio,
+    log,
+    hasAsset: (id) => assetStore.get(id) !== undefined,
+    dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
+  },
+  loadSavedLibrary(log),
+);
 // Filter: same ranking as the context menu search; empty groups are hidden.
 const paletteSearch = $<HTMLInputElement>('palette-search');
 paletteSearch.oninput = () => {
   const shown = new Set(searchNodes(paletteSearch.value, Object.values(NODE_CATALOG)).map((d) => d.type));
   for (const [type, btn] of paletteButtons) btn.hidden = !shown.has(type);
-  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group')) {
+  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group:not(.palette-macros)')) {
     group.hidden = !group.querySelector('button:not([hidden])');
   }
+  macroLibrary.filter(paletteSearch.value);
 };
 
 // ----------------------------------------------------------- graph I/O
@@ -346,7 +364,7 @@ for (const exporter of EXPORTERS) {
       // What the exporter would refuse is refused here, before the dialog creates the chosen file.
       exporter.precheck?.(doc);
       const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
-      const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore }), accept);
+      const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore, library: () => macroLibrary.data() }), accept);
       if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
       else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
     } catch (err) {
@@ -374,10 +392,14 @@ fileInput.onchange = async () => {
       const project = await unpackProject(bytes);
       // An unusable project must not replace the current assets. Unfinished work opens, as an autosave does (#86).
       const loaded = loadUnfinishedGraphDocument(project.graph);
+      // Its macro library (#141), read before anything is replaced: one this studio refuses leaves all as it was.
+      const library = readLibrary(project.library);
       // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
       const applied = await loads.run(ticket, async () => {
         await assetStore.replaceAll(project.assets);
-        log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+        macroLibrary.replace(library.library);
+        log(`⇧ project ${file.name}: ${project.assets.length} asset(s), ${library.library.files.length} macro(s) in the library`);
+        for (const problem of library.problems) log(`⚠ library: ${problem}: kept, but this studio cannot use it`);
         await show(loaded);
       });
       if (applied && ticket.current()) void scriptsAllowed(loaded.doc, 'opened');

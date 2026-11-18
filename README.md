@@ -69,6 +69,22 @@ Editing:
     is taken.
   - Create, Dissolve and Rename are one undo step each. Inside a macro, undo and redo reach only the edits made
     inside; back in the graph, all of them are one step, which one undo reverts.
+  - **The macro library** (#141), the palette's **Macros** section, first in the palette:
+    - **Presets:** Box, Sphere, Cylinder, Plane, Torus, Torus knot and Capsule, each a geometry node already wired
+      into a Mesh, added expanded (its two nodes, not a macro node) as one undo step. Wire its scene, and the Mesh
+      into an anchor. They ship with the studio and cannot be removed.
+    - **Export macro…** in a macro node's menu saves its definition as a `.wmacro` file, with a description. It
+      lists the project assets the macro uses, by node and param: the file keeps them as references, not the files.
+    - **Import macro…** adds a `.wmacro` to the project's library. A file is checked as a graph is: an unknown
+      node type or a missing plugin refuses it by name. It names the project assets it uses that this project does
+      not have; those fail at Run, on the macro node, until you pick a file. A script inside asks before it runs,
+      as any script from someone else does.
+    - A library macro is added from the palette like any node, and its definition is copied into the graph: a graph
+      never depends on the library to open. When the graph already uses that macro's id for another content, the
+      studio asks: **Replace** it (every instance follows, one undo step), or **Keep both** (the new one under
+      another id). × removes a macro from the library; the graphs that use it keep their copy.
+    - The library is saved in the browser beside the autosave, and in project files (`library.json`). A project
+      without one opens with an empty library.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 
