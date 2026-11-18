@@ -27,6 +27,16 @@ describe('MCP tools and script nodes (#35)', () => {
     expect(String((result as { error: string }).error)).toContain('tracking_run never runs scripts: helper (script.lite)');
   });
 
+  it('tracking_run refuses a script that is only inside a macro (#140), by its flat id', async () => {
+    const graph = JSON.parse(readFileSync('public/graphs/pinball-image.json', 'utf8')) as GraphDocument;
+    graph.nodes.push({ id: 'm', type: 'macro', params: { definition: 'd' } });
+    graph.macros = { d: { name: 'Helper', nodes: [{ id: 'helper', type: 'script.lite', params: { script: MARKING } }], edges: [] } };
+    const result = await call(client, 'tracking_run', { graph, frames: [{ image: 'blank', count: 1 }] });
+    expect(result.ok).toBe(false);
+    expect(String((result as { error: string }).error)).toContain('tracking_run never runs scripts: m/helper (script.lite)');
+    expect(ran()).toBe(false);
+  });
+
   it('the headless evaluation refuses a script upstream of the node it evaluates, without running it', async () => {
     const doc: GraphDocument = {
       format: GRAPH_FORMAT,

@@ -12,13 +12,14 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
+import { checkMacros, everyNode, macrosFor, type MacroDefinitions } from '../core/macros';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
 import type { MenuItem } from './context-menu';
 import { mergeNameEdit, mergeParamEdit, NameEditAction, ParamEditAction, sameParamValue } from './history';
 import { LitRenderPlugin, type RenderSignal } from './lit-render-plugin';
-import { searchNodes } from './node-search';
+import { addable, searchNodes } from './node-search';
 import { StudioConnection, StudioNode, type Schemes, type TypedSocket } from './studio-node';
 
 type AreaExtra = Area2D<Schemes> | RenderSignal;
@@ -80,6 +81,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   const connection = new ConnectionPlugin<Schemes, AreaExtra>();
   const history = new HistoryPlugin<Schemes, HistoryActions<Schemes> | ParamEditAction | NameEditAction>();
   let graphName = 'Untitled';
+  /**
+   * The macro definitions of this session (#140): the loaded graph's, and those pasted since. A definition no node uses
+   * any more stays here (undo of a deletion finds it), and is left out of every document toDocument() writes.
+   */
+  let macros: MacroDefinitions = {};
 
   /**
    * Applies a param value as if the user edited it (re-render, live runtime, autosave), without recording it.
@@ -94,7 +100,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       onChange();
       return;
     }
-    node.params[key] = value;
+    // An own key: a macro node's promoted param is named by its graph (#140), and "__proto__" must not set the prototype.
+    Object.defineProperty(node.params, key, { value, enumerable: true, writable: true, configurable: true });
     // A script node's ports follow its script (#35), on an edit and on its undo or redo alike.
     if (key === 'script' && isScriptType(node.type)) {
       node.syncPorts();
@@ -219,7 +226,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       if (context === 'root') {
         // Where the menu opened: the node goes there, not where the pointer is when an item is picked.
         const at = { ...area.area.pointer };
-        const list: MenuItem[] = searchNodes('', Object.values(NODE_CATALOG)).map((def) => ({
+        const list: MenuItem[] = searchNodes('', Object.values(NODE_CATALOG).filter(addable)).map((def) => ({
           label: def.label,
           key: def.type,
           detail: def.provider !== 'core' ? `${def.category} · ${def.provider}` : def.category,
@@ -555,7 +562,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
-    const { nodes, edges } = pasteClipboard(data, getUID, at);
+    // Its definitions are checked as validation checks them: a refused one is not merged, nor its macro nodes pasted.
+    const check = (defs: MacroDefinitions) =>
+      checkMacros(defs, (n) => effectiveDefinition(n), (type) => Object.hasOwn(NODE_CATALOG, type), (type) => isScriptType(type));
+    const { nodes, edges } = pasteClipboard(data, getUID, at, macros, check);
     // The copies replace the selection (before adding: a selected node would drag them along).
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
@@ -678,7 +688,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   }
 
   async function addNode(type: string, position = { x: 0, y: 0 }, id?: string, params?: Record<string, ParamValue>) {
-    const node = new StudioNode(type, params);
+    const node = new StudioNode(type, params, () => macros);
     if (id) node.id = id;
     await editor.addNode(node);
     await area.translate(node.id, position);
@@ -703,7 +713,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       from: { node: c.source, port: c.sourceOutput },
       to: { node: c.target, port: c.targetInput },
     }));
-    doc.plugins = graphPlugins(doc.nodes);
+    const used = macrosFor(doc.nodes, macros);
+    if (used) doc.macros = used;
+    // A plugin's node inside a macro needs its plugin as one outside does.
+    doc.plugins = graphPlugins(everyNode(doc).map((e) => e.node));
     return doc;
   }
 
@@ -737,6 +750,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   async function loadGraph(doc: GraphDocument) {
     await editor.clear();
     graphName = doc.name ?? 'Untitled';
+    macros = structuredClone(doc.macros ?? {});
     events.onNameChange?.(graphName);
     for (const n of doc.nodes) await addNode(n.type, n.position, n.id, n.params);
     for (const e of doc.edges) {

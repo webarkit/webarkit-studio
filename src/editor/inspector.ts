@@ -10,7 +10,7 @@ import type { ParamValue } from '../core/graph';
 import { paramRow } from './param-editors';
 import { isScriptType } from '../core/script';
 import { scriptControls, SCRIPT_OWN_PARAMS, type ScriptHandlers } from './script-ui';
-import type { StudioNode } from './studio-node';
+import { hiddenParam, type StudioNode } from './studio-node';
 
 /**
  * Commits a value still being typed in the panel (its `change` fires on blur)
@@ -32,7 +32,7 @@ export function renderInspector(element: HTMLElement, node: StudioNode | null, s
   }
   const { def } = node;
   const isScript = isScriptType(node.type) && script;
-  const params = Object.entries(def.params).filter(([key]) => !(isScript && SCRIPT_OWN_PARAMS.includes(key)));
+  const params = Object.entries(def.params).filter(([key]) => !(isScript && SCRIPT_OWN_PARAMS.includes(key)) && !hiddenParam(node.type, key));
   // Keyed by node: fields of one node are never reused (with their typed text) for another.
   render(
     keyed(

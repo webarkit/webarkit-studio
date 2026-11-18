@@ -17,6 +17,7 @@ import type { GraphDocument, GraphNode } from '../core/graph';
 import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition } from '../core/script';
+import { definitionValueRead, everyNode, flattenGraph, MACRO_TYPE, macrosFor, usedMacros } from '../core/macros';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
@@ -243,16 +244,31 @@ function checkSelfContained(data: Uint8Array, where: string): void {
  * Collects the files the graph's asset params need, as bundle path → bytes,
  * and rewrites the params that point elsewhere (uploads, other origins).
  * Uploaded assets go under data/assets/<id>/. `doc` is modified.
+ * Macros (#140): the nodes inside the definitions the graph uses are rewritten in their definition, and a macro node's
+ * promoted asset param where the node sets it; one it leaves unset keeps the definition's value, collected there. A
+ * definition's value that every instance overrides is not collected, and stays as it is (Qodo on #174).
  */
+/** Writes a param as an own key: a macro node's promoted param is named by its graph (#140), maybe "__proto__". */
+const setParam = (node: GraphNode, key: string, value: string) =>
+  Object.defineProperty(node.params, key, { value, enumerable: true, writable: true, configurable: true });
+
 /** Exported for tests. */
 export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const names = bundleNames(); // the paths and files this export has given out (#88)
   const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
-  for (const node of doc.nodes) {
-    const def = effectiveDefinition(node)!; // a script's header never declares an asset param, but read it the one way
+  const used = usedMacros(doc.nodes, doc.macros);
+  for (const { node: n, macro } of everyNode(doc)) {
+    if (macro !== undefined && !used.has(macro)) continue; // a definition no node uses is not in the app
+    // A node inside a definition is named by it in the log and the errors: its flat ids are one per instance.
+    const node = macro === undefined ? n : { ...n, id: `${macro}:${n.id}`, params: n.params };
+    // A script's header never declares an asset param, but read it the one way; a macro node's come from its definition.
+    const def = effectiveDefinition(node, NODE_CATALOG, doc.macros)!;
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
+      if (node.type === MACRO_TYPE && !Object.hasOwn(node.params, key)) continue;
+      // A definition's value that every instance overrides with a promoted param is read by none: not collected.
+      if (macro !== undefined && !definitionValueRead(doc, macro, n.id, key)) continue;
       const value = String(node.params[key] ?? spec.default);
       // No file to bundle (a Texture fed by a video, #133): `new URL('', base)` would be the studio page itself.
       if (!value.trim()) continue;
@@ -269,7 +285,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
           files[path] = await bytes(asset.files['']);
           if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
-        node.params[key] = path;
+        setParam(node, key, path);
         ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''} (uploaded)`);
         continue;
       }
@@ -297,7 +313,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
         files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
         if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
-      if (rewritten) node.params[key] = path;
+      if (rewritten) setParam(node, key, path);
       ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
     }
   }
@@ -320,7 +336,13 @@ export async function collectPluginFiles(
 /** The app's files as bundle path → bytes, for the exports that package it. */
 export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): Promise<{ files: Record<string, Uint8Array>; doc: GraphDocument }> {
   const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
+  // The app's graph.json keeps the macros, and the player flattens it at load as the studio does (#140). What the
+  // graph needs (engines, plugin files, isolation) is read from the flat graph, which has every inner node.
   const doc = loaded.doc;
+  const macros = macrosFor(doc.nodes, doc.macros); // what the editor writes: a definition no node uses is left out
+  if (macros) doc.macros = macros;
+  else delete doc.macros;
+  const flat = () => flattenGraph(doc).doc;
   const upgraded = upgradeNote(loaded);
   if (upgraded) ctx.log(upgraded);
   const base = new URL(ctx.baseUrl);
@@ -335,7 +357,7 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
     throw new ExportError(`The standalone player is not built (${(err as Error).message}). Run "npm run build:player".`);
   }
   const entryHtml = new TextDecoder().decode(await fetchBytes(new URL(manifest.entry, playerBase).href, 'player page'));
-  const playerFiles = selectPlayerFiles(manifest, entryHtml, doc);
+  const playerFiles = selectPlayerFiles(manifest, entryHtml, flat());
   ctx.log(`player: ${playerFiles.size} of ${manifest.files.length} files (unused engines / builds left out)`);
   for (const file of playerFiles) {
     if (file === manifest.entry) continue;
@@ -344,11 +366,11 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
 
   // ---------------------------------------------------------------- assets
   Object.assign(files, await collectAssets(doc, base, ctx));
-  Object.assign(files, await collectPluginFiles(doc, base));
+  Object.assign(files, await collectPluginFiles(flat(), base));
 
   // ------------------------------------------------------- page and graph
   const title = graphTitle(doc.name);
-  const isolated = needsIsolation(doc);
+  const isolated = needsIsolation(flat());
   const page = entryHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
     .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`);
@@ -359,7 +381,7 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
     ctx.log(`cross-origin isolation: ${SERVICE_WORKER_FILE} and _headers (see README.txt)`);
   }
   files['graph.json'] = strToU8(JSON.stringify(doc, null, 2));
-  files['README.txt'] = strToU8(readme(doc, title) + (isolated ? README_SECTION : ''));
+  files['README.txt'] = strToU8(readme(flat(), title) + (isolated ? README_SECTION : ''));
   // A Pages site built from a branch runs Jekyll, which drops paths starting with "_", such as data/_ext/.
   files['.nojekyll'] = new Uint8Array(0);
   return { files, doc };

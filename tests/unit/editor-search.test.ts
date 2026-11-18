@@ -35,7 +35,7 @@ describe('node search', () => {
     const all = types('  ');
     expect(all).toHaveLength(defs.length);
     expect(all[0]).toBe('source.camera');
-    expect(all.at(-1)!.startsWith('debug.')).toBe(true);
+    expect(all.at(-1)).toBe('macro'); // the last category (#140)
   });
 
   it('ranks label prefixes first', () => {

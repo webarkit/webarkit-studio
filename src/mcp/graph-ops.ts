@@ -3,9 +3,14 @@
  * ports, set params. Each op is checked against the catalog when it is
  * applied, so an agent learns at once what it got wrong; whether the whole
  * graph is complete is validateGraph()'s job.
+ *
+ * Macros (#140): the document's `macros` are kept. A macro node's ports and params are its instance's, from its
+ * definition (effectiveDefinition() with the macros); a macro node is added only for a definition the graph has. The
+ * ops do not edit definitions. A definition no node uses any more is left out of the result, as the editor saves it.
  */
 import { ARRAY_PARAM_LENGTH, graphPlugins, namespaceOf, type GraphDocument, type ParamValue, type PortRef } from '../core/graph';
 import { LOADED_PLUGINS } from '../core/plugins';
+import { DEFINITION_PARAM, definitionOf, everyNode, MACRO_TYPE, macrosFor } from '../core/macros';
 import { effectiveDefinition } from '../core/script';
 import { socketsCompatible } from '../core/sockets';
 import { NODE_CATALOG, type NodeDefinition, type ParamSpec } from '../nodes/catalog';
@@ -55,6 +60,8 @@ function freeId(prefix: string, taken: Set<string>): string {
 }
 
 function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefinition>): void {
+  /** A node's effective definition: a script's from its header, a macro node's from its definition. */
+  const effective = (n: { type: string; params?: Record<string, ParamValue> }) => effectiveDefinition(n, catalog, doc.macros);
   const node = (id: string) => {
     const n = doc.nodes.find((x) => x.id === id);
     if (!n) throw new Error(`no node "${id}"`);
@@ -71,10 +78,17 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       const params: Record<string, ParamValue> = {};
       // A script node's params beyond `script` come from its header: read with the script given, if any.
       const script = op.params?.script;
-      const effective = effectiveDefinition({ type: op.type, params: typeof script === 'string' ? { script } : {} }, catalog) ?? def;
+      const definition = op.params?.[DEFINITION_PARAM];
+      // A macro node names a definition the graph has: its params beyond `definition` are the ones it promotes.
+      if (op.type === MACRO_TYPE && !definitionOf({ params: op.params ?? {} }, doc.macros)) {
+        throw new Error(`no macro definition ${JSON.stringify(typeof definition === 'string' ? definition : '')} in the graph's macros (${Object.keys(doc.macros ?? {}).join(', ') || 'none'})`);
+      }
+      const added: { type: string; params: Record<string, ParamValue> } =
+        op.type === MACRO_TYPE ? { type: op.type, params: { [DEFINITION_PARAM]: definition as string } } : { type: op.type, params: typeof script === 'string' ? { script } : {} };
+      const resolved = effective(added) ?? def;
       for (const [key, value] of Object.entries(op.params ?? {})) {
-        checkParam(effective, key, value);
-        params[key] = value;
+        checkParam(resolved, key, value);
+        Object.defineProperty(params, key, { value, enumerable: true, writable: true, configurable: true });
       }
       doc.nodes.push({ id, type: op.type, params, ...(op.position && { position: op.position }) });
       return;
@@ -88,11 +102,13 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       const src = node(op.from.node);
       const dst = node(op.to.node);
       // Effective ports: a script node's come from its header (src/core/script.ts).
-      const [srcDef, dstDef] = [own(catalog, src.type) && effectiveDefinition(src, catalog), own(catalog, dst.type) && effectiveDefinition(dst, catalog)];
+      const [srcDef, dstDef] = [own(catalog, src.type) && effective(src), own(catalog, dst.type) && effective(dst)];
       const out = own(srcDef?.outputs, op.from.port);
       const inp = own(dstDef?.inputs, op.to.port);
-      if (!out) throw new Error(`${src.type} has no output "${op.from.port}" (outputs: ${Object.keys(srcDef?.outputs ?? {}).join(', ') || 'none'})`);
-      if (!inp) throw new Error(`${dst.type} has no input "${op.to.port}" (inputs: ${Object.keys(dstDef?.inputs ?? {}).join(', ') || 'none'})`);
+      // A macro node is named by its definition: its ports are that instance's.
+      const name = (n: typeof src, def: NodeDefinition | undefined) => (n.type === MACRO_TYPE ? (def?.label ?? n.type) : n.type);
+      if (!out) throw new Error(`${name(src, srcDef || undefined)} has no output "${op.from.port}" (outputs: ${Object.keys(srcDef?.outputs ?? {}).join(', ') || 'none'})`);
+      if (!inp) throw new Error(`${name(dst, dstDef || undefined)} has no input "${op.to.port}" (inputs: ${Object.keys(dstDef?.inputs ?? {}).join(', ') || 'none'})`);
       if (!socketsCompatible(out.type, inp.type)) throw new Error(`cannot connect ${out.type} (${op.from.node}.${op.from.port}) to ${inp.type} (${op.to.node}.${op.to.port})`);
       const into = doc.edges.filter((e) => e.to.node === op.to.node && e.to.port === op.to.port);
       const same = into.find((e) => e.from.node === op.from.node && e.from.port === op.from.port);
@@ -113,8 +129,13 @@ function apply(doc: GraphDocument, op: GraphOp, catalog: Record<string, NodeDefi
       const n = node(op.node);
       const def = own(catalog, n.type);
       if (!def) throw new Error(`node "${n.id}" has an unknown type "${n.type}"`);
-      checkParam(effectiveDefinition(n, catalog) ?? def, op.key, op.value);
-      n.params = { ...n.params, [op.key]: op.value };
+      checkParam(effective(n) ?? def, op.key, op.value);
+      if (n.type === MACRO_TYPE && op.key === DEFINITION_PARAM && !definitionOf({ params: { [DEFINITION_PARAM]: op.value } }, doc.macros)) {
+        throw new Error(`no macro definition ${JSON.stringify(op.value)} in the graph's macros (${Object.keys(doc.macros ?? {}).join(', ') || 'none'})`);
+      }
+      const params = { ...n.params };
+      Object.defineProperty(params, op.key, { value: op.value, enumerable: true, writable: true, configurable: true });
+      n.params = params;
       return;
     }
     case 'setName':
@@ -142,9 +163,14 @@ export function applyOps(doc: GraphDocument, ops: readonly GraphOp[], catalog: R
       throw new Error(`op ${i + 1} (${op.op}): ${(err as Error).message}`);
     }
   });
-  const used = new Set(out.nodes.map((n) => namespaceOf(n.type)));
+  // A definition no macro node uses any more is left out, as the editor leaves it out of what it saves (#140).
+  const macros = macrosFor(out.nodes, out.macros);
+  if (macros) out.macros = macros;
+  else delete out.macros;
+  const nodes = everyNode(out).map((e) => e.node); // a plugin's node inside a macro needs its plugin too
+  const used = new Set(nodes.map((n) => namespaceOf(n.type)));
   const absent = Array.isArray(doc.plugins) ? doc.plugins.filter((p) => !Object.hasOwn(LOADED_PLUGINS, String(p?.id)) && used.has(String(p?.id))) : [];
-  const plugins = [...graphPlugins(out.nodes), ...absent];
+  const plugins = [...graphPlugins(nodes), ...absent];
   if (plugins.length) out.plugins = plugins;
   else delete out.plugins;
   return out;

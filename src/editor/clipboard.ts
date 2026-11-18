@@ -3,8 +3,14 @@
  * document (as JSON text, so it can move between tabs): the selected nodes and
  * the wires between them, positioned relative to the selection's top-left
  * corner. Pasting gives every node and wire a new id.
+ *
+ * Macros (#140): a copied macro node carries its definition, so a paste into another tab works. A paste shares a
+ * definition the editor already has with the same content, and gives one whose id is taken by another content a new id.
+ * Clipboard text can come from anywhere: its definitions are checked first (checkMacros(), as validation does), and one
+ * with problems is not merged; the macro nodes that use it are skipped, as an unknown type is (Qodo on #174).
  */
 import { ARRAY_PARAM_LENGTH, type GraphEdge, type GraphNode, type GraphDocument } from '../core/graph';
+import { DEFINITION_PARAM, MACRO_TYPE, macrosFor, mergeMacros, type MacroDefinitions } from '../core/macros';
 
 export const CLIPBOARD_FORMAT = 'webarkit-studio/clipboard';
 export const CLIPBOARD_VERSION = 1;
@@ -16,16 +22,19 @@ export interface ClipboardData {
   version: typeof CLIPBOARD_VERSION;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** The definitions of the copied macro nodes (#140). Absent: none. */
+  macros?: MacroDefinitions;
 }
 
 type Point = { x: number; y: number };
 
 const clone = <T>(value: T): T => structuredClone(value);
 
-/** The nodes `ids` of `doc` and the wires whose both ends are among them. */
+/** The nodes `ids` of `doc`, the wires whose both ends are among them, and the definitions of its macro nodes. */
 export function copySelection(doc: GraphDocument, ids: string[]): ClipboardData {
   const selected = new Set(ids);
   const nodes = doc.nodes.filter((n) => selected.has(n.id));
+  const macros = macrosFor(nodes, doc.macros);
   const corner = {
     x: Math.min(...nodes.map((n) => n.position?.x ?? 0)),
     y: Math.min(...nodes.map((n) => n.position?.y ?? 0)),
@@ -38,16 +47,52 @@ export function copySelection(doc: GraphDocument, ids: string[]): ClipboardData 
       position: { x: (n.position?.x ?? 0) - corner.x, y: (n.position?.y ?? 0) - corner.y },
     })),
     edges: doc.edges.filter((e) => selected.has(e.from.node) && selected.has(e.to.node)).map(clone),
+    ...(macros && { macros }),
   };
 }
 
-/** New nodes and wires for `data`, placed from `at`; `newId` gives the ids (nodes first, then wires). */
-export function pasteClipboard(data: ClipboardData, newId: () => string, at: Point): { nodes: GraphNode[]; edges: GraphEdge[] } {
+/** The problems of some definitions, as checkMacros() reports them with the editor's catalog. */
+export type CheckDefinitions = (macros: MacroDefinitions) => string[];
+
+/**
+ * New nodes and wires for `data`, placed from `at`; `newId` gives the ids (nodes first, then wires). `macros`, the
+ * editor's definitions, receives the clipboard's that `check` accepts (changed in place), and the pasted macro nodes
+ * name them. A macro node whose definition `check` refused is skipped, and `warn` says why.
+ */
+export function pasteClipboard(
+  data: ClipboardData,
+  newId: () => string,
+  at: Point,
+  macros: MacroDefinitions = {},
+  check: CheckDefinitions = () => [],
+  warn: (message: string) => void = (message) => console.warn(message),
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const accepted: MacroDefinitions = {};
+  const refused = new Set<string>();
+  for (const [id, def] of Object.entries(data.macros ?? {})) {
+    const one: MacroDefinitions = {};
+    Object.defineProperty(one, id, { value: def, enumerable: true, writable: true, configurable: true });
+    const problems = check(one);
+    if (problems.length) {
+      refused.add(id);
+      warn(`[editor] paste: macro definition "${id}" skipped: ${problems.join('; ')}`);
+    } else Object.defineProperty(accepted, id, { value: def, enumerable: true, writable: true, configurable: true });
+  }
+  const renamed = mergeMacros(macros, accepted);
+  const kept = data.nodes.filter((n) => {
+    const definition = n.type === MACRO_TYPE ? n.params[DEFINITION_PARAM] : undefined;
+    if (typeof definition !== 'string' || !refused.has(definition)) return true;
+    warn(`[editor] paste: macro node ${n.id} skipped: its definition "${definition}" was refused`);
+    return false;
+  });
   const ids = new Map<string, string>();
-  const nodes = data.nodes.map((n) => {
+  const nodes = kept.map((n) => {
     const id = newId();
     ids.set(n.id, id);
-    return { ...clone(n), id, position: { x: at.x + (n.position?.x ?? 0), y: at.y + (n.position?.y ?? 0) } };
+    const node = { ...clone(n), id, position: { x: at.x + (n.position?.x ?? 0), y: at.y + (n.position?.y ?? 0) } };
+    const definition = node.type === MACRO_TYPE ? node.params[DEFINITION_PARAM] : undefined;
+    if (typeof definition === 'string' && renamed.has(definition)) node.params[DEFINITION_PARAM] = renamed.get(definition)!;
+    return node;
   });
   const edges = data.edges
     .filter((e) => ids.has(e.from.node) && ids.has(e.to.node))
@@ -75,6 +120,21 @@ const isNode = (v: unknown) =>
   Object.values(v.params).every(isParamValue) &&
   isPosition(v.position);
 const isEdge = (v: unknown) => isObject(v) && typeof v.id === 'string' && isPortRef(v.from) && isPortRef(v.to);
+const isRefs = (v: unknown, field: 'port' | 'param') =>
+  v === undefined || (isObject(v) && Object.values(v).every((r) => isObject(r) && typeof r.node === 'string' && typeof r[field] === 'string'));
+const isDefinition = (v: unknown) =>
+  isObject(v) &&
+  typeof v.name === 'string' &&
+  Array.isArray(v.nodes) &&
+  v.nodes.every(isNode) &&
+  Array.isArray(v.edges) &&
+  v.edges.every(isEdge) &&
+  isRefs(v.inputs, 'port') &&
+  isRefs(v.outputs, 'port') &&
+  isRefs(v.params, 'param');
+/** Every node of the clipboard: its own and those inside its definitions. */
+const nodeCount = (data: Record<string, unknown>) =>
+  (data.nodes as unknown[]).length + Object.values(isObject(data.macros) ? data.macros : {}).reduce((n: number, d) => n + ((d as { nodes: unknown[] }).nodes?.length ?? 0), 0);
 
 /** The clipboard data in `text`, or null if it is not a studio clipboard (any other copied text). */
 export function parseClipboard(text: string): ClipboardData | null {
@@ -87,5 +147,7 @@ export function parseClipboard(text: string): ClipboardData | null {
   if (!isObject(data) || data.format !== CLIPBOARD_FORMAT || data.version !== CLIPBOARD_VERSION) return null;
   if (!Array.isArray(data.nodes) || !Array.isArray(data.edges) || data.nodes.length > MAX_CLIPBOARD_NODES) return null;
   if (!data.nodes.every(isNode) || !data.edges.every(isEdge)) return null;
+  if (data.macros !== undefined && !(isObject(data.macros) && !Array.isArray(data.macros) && Object.values(data.macros).every(isDefinition))) return null;
+  if (nodeCount(data) > MAX_CLIPBOARD_NODES) return null;
   return data as unknown as ClipboardData;
 }

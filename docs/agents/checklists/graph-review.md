@@ -44,7 +44,8 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 2. Catalog / registry consistency
 
 - Every `type` in `src/nodes/catalog.ts` has a factory in `NODE_REGISTRY`
-  (`src/runtime/registry.ts`), and the other way round.
+  (`src/runtime/registry.ts`), and the other way round; `macro` (#140) is the exception, flattened
+  before anything runs, with no factory.
 - The catalog holds metadata only: no imports of renderers, workers or tracker
   builds into `src/nodes/` or `src/core/`.
 - The editor (`src/editor/`) and the runtime (`src/runtime/`) never import each other.
@@ -68,6 +69,7 @@ key by key; a renamed key looks like one removal plus one addition.
   nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
 - Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
+- `macro` is the one node type without a dot: it is the macro node itself (#140), flattened before anything runs, not a namespace of nodes. It is reserved for that node, whose ports come from its definition.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
 - A node that needs one engine declares `engine` (`'three'` or `'babylon'`): every `three.*` and `babylon.*` node, renderers
   included (#138). The engine rule of `validateGraph()` reads it, never the name.
