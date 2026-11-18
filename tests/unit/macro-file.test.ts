@@ -10,6 +10,7 @@ import {
   MacroFileError,
   macroAssetRefs,
   macroClash,
+  macroFileId,
   readMacroFile,
   writeMacroFile,
 } from '../../src/core/macro-file';
@@ -74,6 +75,17 @@ describe('.wmacro: write', () => {
 
   it('trims the description', () => {
     expect(writeMacroFile('abs-neg', absNeg(), '  two words \n').description).toBe('two words');
+  });
+});
+
+describe('.wmacro: the id a file is exported under', () => {
+  it('is the name’s slug, never the document’s own id ("macro", "macro-2"…, which every project uses)', () => {
+    expect(macroFileId('Pinball scene')).toBe('pinball-scene');
+    expect(macroFileId('  Ünïcode  & more!! ')).toBe('unicode-more');
+    expect(macroFileId('Macro 2')).toBe('macro-2');
+    expect(macroFileId('***')).toBe('macro');
+    expect(macroFileId('')).toBe('macro');
+    expect(macroFileId('__proto__')).toBe('proto');
   });
 });
 
@@ -166,6 +178,11 @@ describe('.wmacro: read', () => {
     const read = readMacroFile(file).file;
     expect(read.id).toBe('__proto__');
     expect(read.definition.nodes).toHaveLength(2);
+  });
+
+  it('a file without its own name reads the definition’s', () => {
+    const { name: _n, ...file } = roundTrip(writeMacroFile('abs-neg', absNeg(), ''));
+    expect(readMacroFile(file).file.name).toBe('Abs of negated');
   });
 
   it('a missing description reads as empty text', () => {

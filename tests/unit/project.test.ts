@@ -179,8 +179,11 @@ describe('project file: the macro library', () => {
     expect(withIt.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)])).toEqual(without.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)]));
   });
 
-  it('refuses a library.json that is not JSON, before anything is replaced', async () => {
-    const bytes = zipSync({ 'graph.json': strToU8('{}'), 'library.json': strToU8('{not json') });
-    await expect(unpackProject(bytes)).rejects.toThrow(/project file: library\.json is not JSON/);
+  it('a library.json that is not JSON is reported, and the graph still opens', async () => {
+    const bytes = zipSync({ 'graph.json': strToU8('{"name":"g"}'), 'library.json': strToU8('{not json') });
+    const back = await unpackProject(bytes);
+    expect(back.libraryProblem).toBe('project file: library.json is not JSON');
+    expect([back.graph, back.library]).toEqual([{ name: 'g' }, null]);
+    expect((await unpackProject(await packProject(graph, [], library))).libraryProblem).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { strToU8, zipSync } from 'fflate';
 import { expect, test, type Page } from '@playwright/test';
 import type { GraphDocument } from '../../src/core/graph';
 import type { MacroDefinition } from '../../src/core/macros';
@@ -75,7 +76,8 @@ test('a macro exported from one graph is imported into a new one, added from the
   test.setTimeout(180_000);
   // The whole still-photo demo in one macro: a macro node with no ports runs alone in an empty graph.
   const all = demo();
-  const doc = foldIntoMacro(all, all.nodes.map((n) => n.id), { definition: 'pinball-scene', name: 'Pinball scene' });
+  // Under the id Create macro gives ("macro"): the file is exported under its name's slug instead.
+  const doc = foldIntoMacro(all, all.nodes.map((n) => n.id), { definition: 'macro', name: 'Pinball scene' });
   await openStudio(page);
   await importGraph(page, doc);
   await expect(titled(page, 'Pinball scene')).toHaveCount(1);
@@ -93,7 +95,7 @@ test('a macro exported from one graph is imported into a new one, added from the
   const file = JSON.parse(readFileSync(await download.path(), 'utf8')) as ReturnType<typeof wmacro>;
   expect(file).toMatchObject({ format: 'webarkit-macro', version: 1, graphVersion: 6, id: 'pinball-scene', name: 'Pinball scene', description: 'The pinball demo, from the photo' });
   expect(file.plugins.map((p) => p.id)).toEqual(['jsartoolkitNFT']);
-  expect(file.definition).toEqual(doc.macros!['pinball-scene']);
+  expect(file.definition).toEqual(doc.macros!.macro);
 
   // A new graph; Import macro… puts it in the library, and the palette adds it like any node.
   await page.click('#btn-new');
@@ -105,7 +107,7 @@ test('a macro exported from one graph is imported into a new one, added from the
   await entry(page, 'pinball-scene').locator('.macro-add').click();
   await expect(titled(page, 'Pinball scene')).toHaveCount(1);
   // Its definition is copied into the document: the graph never depends on the library.
-  await expect.poll(async () => (await saved(page)).macros?.['pinball-scene']).toEqual(doc.macros!['pinball-scene']);
+  await expect.poll(async () => (await saved(page)).macros?.['pinball-scene']).toEqual(doc.macros!.macro);
   await run(page);
   await expect(page.locator('.ar-view canvas')).toHaveCount(1, NEXT);
   await expect.poll(() => magentaShare(page), NEXT).toBeGreaterThan(0.002);
@@ -196,7 +198,9 @@ test('an id the graph uses for another content asks: keep both adds it under a f
   // Another content: Keep both.
   await importMacro(page, wmacro('neg', negate(5, 'Negate five')));
   await expect(clash).toBeVisible();
-  await expect(clash.locator('.macro-clash-name')).toHaveText('"Negate five" (neg)');
+  await expect(clash.locator('.macro-clash-name')).toHaveText('"Negate five"');
+  await expect(clash.locator('.macro-clash-id')).toHaveText('neg');
+  await expect(clash.locator('.macro-clash-existing')).toHaveText('"Negate, in the graph"');
   await clash.locator('button[value=keep-both]').click();
   await expect(entry(page, 'neg-2')).toBeVisible();
   await expect(entry(page, 'neg')).toHaveCount(0);
@@ -271,4 +275,28 @@ test('the library is kept by the autosave, and travels in a project file', async
   await page.setInputFiles('#file-import', { name: 'project.webarkit.zip', mimeType: 'application/zip', buffer: zip });
   await expect(page.locator('#log')).toContainText('1 macro(s) in the library');
   await expect(entry(page, 'neg')).toBeVisible();
+});
+
+test('a project whose library.json cannot be read leaves the library as it was; one without library.json empties it, and the library replaced is set aside', async ({ page }) => {
+  await openStudio(page);
+  await importMacro(page, wmacro('neg', negate(3)));
+  await expect(entry(page, 'neg')).toBeVisible();
+  const emptyGraph = { format: 'webarkit-studio/graph', version: 6, name: 'Empty', nodes: [], edges: [] };
+  const project = (library?: string) =>
+    Buffer.from(zipSync({ 'graph.json': strToU8(JSON.stringify(emptyGraph)), ...(library !== undefined && { 'library.json': strToU8(library) }) }));
+  const importProject = (buffer: Buffer) => page.setInputFiles('#file-import', { name: 'project.webarkit.zip', mimeType: 'application/zip', buffer });
+
+  await importProject(project('{not json'));
+  await expect(page.locator('#log')).toContainText('⚠ project file: library.json is not JSON: the macro library is left as it was');
+  await expect(entry(page, 'neg')).toBeVisible();
+  await importProject(project(JSON.stringify({ format: 'webarkit-studio/macro-library', version: 2, macros: [] })));
+  await expect(page.locator('#log')).toContainText('library: version 2 was made by a newer studio');
+  await expect(entry(page, 'neg')).toBeVisible();
+
+  await importProject(project());
+  await expect(page.locator('#log')).toContainText('0 macro(s) in the library');
+  await expect(entry(page, 'neg')).toHaveCount(0);
+  await expect(page.locator('#log')).toContainText('the previous one is kept in localStorage as webarkit-studio:macro-library-replaced');
+  const setAside = await page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:macro-library-replaced') ?? 'null'));
+  expect(setAside.macros.map((m: { id: string }) => m.id)).toEqual(['neg']);
 });

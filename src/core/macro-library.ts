@@ -11,7 +11,7 @@
  * Pure: the functions return a new library and leave the one they were given as it was.
  */
 import { freeMacroId, sameDefinition } from './macros';
-import { MacroFileError, readMacroFile, type MacroFile } from './macro-file';
+import { MACRO_FILE_FORMAT, MacroFileError, readMacroFile, type MacroFile } from './macro-file';
 import { LOADED_PLUGINS } from './plugins';
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 
@@ -65,15 +65,25 @@ export function readLibrary(
   if (!Array.isArray(data.macros)) throw new Error('library: macros must be a list');
   const library = emptyLibrary();
   const problems: string[] = [];
+  const ids = new Set<string>();
   for (const entry of data.macros) {
+    const id = isObject(entry) && typeof entry.id === 'string' ? entry.id : undefined;
+    if (id !== undefined && ids.has(id)) {
+      problems.push(`${entryName(entry)}: its id is already in the library: dropped`);
+      continue;
+    }
     try {
       const { file } = readMacroFile(entry, catalog, loaded);
-      if (library.files.some((f) => f.id === file.id)) throw new MacroFileError([`its id ${file.id} is already in the library`]);
       library.files.push(file);
+      ids.add(file.id);
     } catch (err) {
       const why = err instanceof MacroFileError ? err.problems.join('; ') : (err as Error).message;
-      problems.push(`${entryName(entry)}: ${why}`);
-      library.kept.push(entry);
+      // Only a macro file with an id may become usable (a plugin loaded later, a newer studio): anything else never will.
+      if (id !== undefined && isObject(entry) && entry.format === MACRO_FILE_FORMAT) {
+        problems.push(`${entryName(entry)}: ${why}: kept, but this studio cannot use it`);
+        library.kept.push(entry);
+        ids.add(id);
+      } else problems.push(`${entryName(entry)}: ${why}: dropped`);
     }
   }
   return { library, problems };
@@ -91,14 +101,17 @@ export function addToLibrary(
   taken: (id: string) => boolean = () => false,
 ): { library: MacroLibrary; id: string; outcome: 'added' | 'same' | 'replaced' } {
   const at = library.files.findIndex((f) => f.id === file.id);
-  if (at < 0 && !taken(file.id)) return { library: { ...library, files: [...library.files, file] }, id: file.id, outcome: 'added' };
+  // A kept entry's id is taken too: once its plugin loads, it is usable under that id.
+  const keptIds = new Set(library.kept.map((k) => (isObject(k) && typeof k.id === 'string' ? k.id : '')));
+  const free = (id: string) => !taken(id) && !keptIds.has(id) && !library.files.some((f) => f.id === id);
+  if (at < 0 && free(file.id)) return { library: { ...library, files: [...library.files, file] }, id: file.id, outcome: 'added' };
   if (at >= 0 && sameDefinition(library.files[at].definition, file.definition)) return { library, id: file.id, outcome: 'same' };
   if (at >= 0 && choice === 'replace') {
     const files = [...library.files];
     files[at] = file;
     return { library: { ...library, files }, id: file.id, outcome: 'replaced' };
   }
-  const id = freeMacroId(file.id, (candidate) => taken(candidate) || library.files.some((f) => f.id === candidate));
+  const id = freeMacroId(file.id, (candidate) => !free(candidate));
   return { library: { ...library, files: [...library.files, { ...file, id }] }, id, outcome: 'added' };
 }
 

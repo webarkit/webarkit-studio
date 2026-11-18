@@ -81,10 +81,13 @@ Editing:
       as any script from someone else does.
     - A library macro is added from the palette like any node, and its definition is copied into the graph: a graph
       never depends on the library to open. When the graph already uses that macro's id for another content, the
-      studio asks: **Replace** it (every instance follows, one undo step), or **Keep both** (the new one under
-      another id). × removes a macro from the library; the graphs that use it keep their copy.
+      studio asks: **Keep both** (the new one under another id), or **Replace** it (every instance follows, one
+      undo step). A file's id is its macro's name, so two versions of one macro clash and two different macros do
+      not. × removes a macro from the library; the graphs that use it keep their copy.
     - The library is saved in the browser beside the autosave, and in project files (`library.json`). A project
-      without one opens with an empty library.
+      without one opens with an empty library; the library it replaced is kept in localStorage
+      (`webarkit-studio:macro-library-replaced`). A `library.json` this studio cannot read leaves the library as it
+      was, and the rest of the project opens.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 

@@ -14,7 +14,7 @@
  */
 import type { StudioEditor } from '../editor/editor';
 import type { MacroDefinition } from '../core/macros';
-import { MACRO_FILE_EXTENSION, MacroFileError, macroAssetRefs, macroClash, readMacroFile, writeMacroFile, type MacroAssetRef, type MacroFile } from '../core/macro-file';
+import { MACRO_FILE_EXTENSION, MacroFileError, macroAssetRefs, macroClash, macroFileId, readMacroFile, writeMacroFile, type MacroAssetRef, type MacroFile } from '../core/macro-file';
 import { addToLibrary, emptyLibrary, readLibrary, removeFromLibrary, writeLibrary, type MacroLibrary, type MacroLibraryData } from '../core/macro-library';
 import { MACRO_PRESETS, presetFragment } from '../core/macro-presets';
 import { slugify } from '../export/names';
@@ -24,11 +24,13 @@ import { saveFile, type SaveFailed } from './save-file';
 export const LIBRARY_KEY = 'webarkit-studio:macro-library';
 /** A saved library this studio could not read, kept for its owner before a new one is saved over it. */
 export const LIBRARY_SET_ASIDE_KEY = 'webarkit-studio:macro-library-set-aside';
+/** The library a project replaced, kept for its owner (its own key: a library set aside at startup stays too). */
+export const LIBRARY_REPLACED_KEY = 'webarkit-studio:macro-library-replaced';
 
 export type ClashChoice = 'replace' | 'keep-both';
 
 export interface MacroLibraryHost {
-  studio: Pick<StudioEditor, 'macroClash' | 'addMacro' | 'replaceMacro' | 'insertFragment'>;
+  studio: Pick<StudioEditor, 'macroClash' | 'addMacro' | 'replaceMacro' | 'insertFragment' | 'toDocument'>;
   log: (message: string) => void;
   /** Whether the project has the uploaded asset `id`. */
   hasAsset: (id: string) => boolean;
@@ -51,11 +53,15 @@ export interface MacroLibraryUi {
 const assetLine = (ref: MacroAssetRef) => `${ref.node}.${ref.param}: ${ref.name || ref.id} (asset ${ref.id})`;
 
 /**
- * Asks Replace / Keep both / Cancel in the `<dialog id="macro-clash">` of the studio page. Null: cancelled.
+ * Asks Keep both / Replace / Cancel in the `<dialog id="macro-clash">` of the studio page, naming the incoming macro and
+ * those it would replace. Null: cancelled, or a question already open (a second click).
  */
-function askClash(dialog: HTMLDialogElement, name: string, id: string): Promise<ClashChoice | null> {
+function askClash(dialog: HTMLDialogElement, name: string, id: string, existing: string[]): Promise<ClashChoice | null> {
+  if (dialog.open) return Promise.resolve(null);
   return new Promise((resolve) => {
-    dialog.querySelector('.macro-clash-name')!.textContent = `"${name}" (${id})`;
+    dialog.querySelector('.macro-clash-name')!.textContent = `"${name}"`;
+    dialog.querySelector('.macro-clash-id')!.textContent = id;
+    dialog.querySelector('.macro-clash-existing')!.textContent = existing.map((n) => `"${n}"`).join(' and ');
     dialog.returnValue = '';
     dialog.addEventListener('close', () => resolve(dialog.returnValue === 'replace' || dialog.returnValue === 'keep-both' ? dialog.returnValue : null), { once: true });
     dialog.showModal();
@@ -67,11 +73,12 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   let library = initial;
   let query = '';
 
+  /** Saves the library in this browser; a failure (storage full or blocked) is said, as nothing else would show it. */
   const save = () => {
     try {
       localStorage.setItem(LIBRARY_KEY, JSON.stringify(writeLibrary(library)));
-    } catch {
-      /* best effort, as the autosave */
+    } catch (err) {
+      log(`⚠ the macro library could not be saved in this browser (${(err as Error).message}): it lasts until reload`);
     }
   };
 
@@ -157,10 +164,16 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
     group.hidden = Boolean(words) && !group.querySelector('.macro-preset:not([hidden]), .macro-entry:not([hidden])');
   }
 
+  /** The graph's own name for definition `id`, if the graph uses one under it. */
+  const graphName = (id: string) => {
+    const macros = studio.toDocument().macros;
+    return macros && Object.hasOwn(macros, id) ? `${macros[id].name}, in the graph` : undefined;
+  };
+
   async function addFromLibrary(file: MacroFile) {
     let choice: ClashChoice | undefined;
     if (studio.macroClash(file.id, file.definition) === 'different') {
-      const answer = await askClash(host.dialogs.clash, file.name, file.id);
+      const answer = await askClash(host.dialogs.clash, file.name, file.id, [graphName(file.id) ?? file.id]);
       if (!answer) return;
       choice = answer;
     }
@@ -179,11 +192,17 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
       return;
     }
     const inDocument = studio.macroClash(file.id, file.definition);
-    const libraryTable = Object.fromEntries(library.files.map((f) => [f.id, f.definition]));
-    const inLibrary = macroClash(Object.hasOwn(libraryTable, file.id) ? { [file.id]: libraryTable[file.id] } : undefined, file.id, file.definition);
+    // An own key, as every key that comes from a file (AGENTS.md, "Names that come from a graph").
+    const libraryTable: Record<string, MacroDefinition> = {};
+    for (const f of library.files) Object.defineProperty(libraryTable, f.id, { value: f.definition, enumerable: true, writable: true, configurable: true });
+    const inLibrary = macroClash(libraryTable, file.id, file.definition);
     let choice: ClashChoice = 'keep-both';
     if (inDocument === 'different' || inLibrary === 'different') {
-      const answer = await askClash(host.dialogs.clash, file.name, file.id);
+      const existing = [
+        ...(inDocument === 'different' ? [graphName(file.id) ?? file.id] : []),
+        ...(inLibrary === 'different' ? [`${libraryTable[file.id].name}, in the library`] : []),
+      ];
+      const answer = await askClash(host.dialogs.clash, file.name, file.id, existing);
       if (!answer) {
         log(`⇧ import macro ${source}: cancelled`);
         return;
@@ -193,12 +212,13 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
     // Keep both: a free id in the library and in the document, so adding it later clashes with neither.
     const taken = (id: string) => choice === 'keep-both' && studio.macroClash(id, file.definition) === 'different';
     const added = addToLibrary(library, file, choice, taken);
-    if (choice === 'replace' && inDocument === 'different' && !(await studio.replaceMacro(file.id, file.definition))) {
-      log(`⚠ macro "${file.name}": the graph's definition was not replaced`);
-    }
+    // Before the await below: a removal made meanwhile must apply to this library, not be lost under it.
     library = added.library;
     save();
     render();
+    if (choice === 'replace' && inDocument === 'different' && !(await studio.replaceMacro(file.id, file.definition))) {
+      log(`⚠ macro "${file.name}": the graph's definition was not replaced`);
+    }
     const where = added.id === file.id ? '' : ` as ${added.id}`;
     log(added.outcome === 'same' ? `✓ macro "${file.name}" is already in the library` : `✓ macro "${file.name}" ${added.outcome === 'replaced' ? 'replaced in' : 'imported into'} the library${where}`);
     const missing = macroAssetRefs(file.definition).filter((ref) => !host.hasAsset(ref.id));
@@ -219,7 +239,8 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   exportSave.onclick = () => {
     const macro = exporting;
     if (!macro) return;
-    const file = writeMacroFile(macro.id, macro.definition, exportDescription.value);
+    // Under its name's slug, not the document's id (macroFileId()).
+    const file = writeMacroFile(macroFileId(macro.definition.name), macro.definition, exportDescription.value);
     exportDialog.close();
     const filename = `${slugify(file.name)}${MACRO_FILE_EXTENSION}`;
     const accept = { suggestedName: filename, description: 'WebARKit macro', mime: 'application/json', extensions: [MACRO_FILE_EXTENSION] };
@@ -254,6 +275,16 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   return {
     data: () => writeLibrary(library),
     replace(next) {
+      // The library lives in this browser: the one a project replaces is kept for its owner, never lost.
+      const outgoing = writeLibrary(library);
+      if (outgoing.macros.length && JSON.stringify(outgoing) !== JSON.stringify(writeLibrary(next))) {
+        try {
+          localStorage.setItem(LIBRARY_REPLACED_KEY, JSON.stringify(outgoing));
+          log(`⚠ the project replaces the macro library: the previous one is kept in localStorage as ${LIBRARY_REPLACED_KEY}`);
+        } catch {
+          log('⚠ the project replaces the macro library, and the previous one could not be kept');
+        }
+      }
       library = next;
       save();
       render();
@@ -271,7 +302,7 @@ export function loadSavedLibrary(log: (message: string) => void): MacroLibrary {
     raw = localStorage.getItem(LIBRARY_KEY);
     if (!raw) return emptyLibrary();
     const { library, problems } = readLibrary(JSON.parse(raw));
-    for (const problem of problems) log(`⚠ library: ${problem}: kept, but this studio cannot use it`);
+    for (const problem of problems) log(`⚠ library: ${problem}`);
     return library;
   } catch (err) {
     try {

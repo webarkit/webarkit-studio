@@ -57,16 +57,34 @@ describe('macro library: saved and read back', () => {
     const data = { format: LIBRARY_FORMAT, version: LIBRARY_VERSION, macros: [json(writeMacroFile('abs-neg', absNeg(), '')), thing] };
     const back = readLibrary(data, acmeCatalog, {});
     expect(back.library.files.map((f) => f.id)).toEqual(['abs-neg']);
-    expect(back.problems).toEqual([expect.stringMatching(/^macro "Abs of negated" \(thing\): .*requires plugin acme ≥ 1.0.0, which is not loaded/)]);
+    expect(back.problems).toEqual([expect.stringMatching(/^macro "Abs of negated" \(thing\): .*requires plugin acme ≥ 1.0.0, which is not loaded: kept, but this studio cannot use it$/)]);
     expect(writeLibrary(back.library).macros).toEqual([data.macros[0], thing]);
   });
 
-  it('keeps a second entry with an id already read apart, as one it cannot use', () => {
-    const data = { format: LIBRARY_FORMAT, version: LIBRARY_VERSION, macros: [writeMacroFile('abs-neg', absNeg(), ''), writeMacroFile('abs-neg', absNeg(3), '')] };
+  it('drops a second entry with an id already read, and anything that is not a macro file: they can never be used', () => {
+    const data = {
+      format: LIBRARY_FORMAT,
+      version: LIBRARY_VERSION,
+      macros: [writeMacroFile('abs-neg', absNeg(), ''), writeMacroFile('abs-neg', absNeg(3), ''), 7, { format: 'other', id: 'x' }],
+    };
     const back = readLibrary(json(data));
     expect(back.library.files).toHaveLength(1);
-    expect(back.problems).toEqual([expect.stringMatching(/abs-neg.*is already in the library/)]);
-    expect(back.library.kept).toHaveLength(1);
+    expect(back.library.kept).toEqual([]);
+    expect(back.problems).toEqual([
+      expect.stringMatching(/\(abs-neg\): its id is already in the library: dropped$/),
+      expect.stringMatching(/not a macro file: dropped$/),
+      expect.stringMatching(/format must be "webarkit-macro": dropped$/),
+    ]);
+  });
+
+  it('an id a kept entry holds is taken: a new file with it is added under a free id', () => {
+    const def = absNeg();
+    def.nodes.push({ id: 't', type: 'acme.thing', params: {} });
+    const data = { format: LIBRARY_FORMAT, version: LIBRARY_VERSION, macros: [writeMacroFile('thing', def, '', { acme: '1.0.0' })] };
+    const { library } = readLibrary(json(data), acmeCatalog, {});
+    expect(library.kept).toHaveLength(1);
+    const added = addToLibrary(library, writeMacroFile('thing', absNeg(), ''));
+    expect([added.outcome, added.id]).toEqual(['added', 'thing-2']);
   });
 });
 

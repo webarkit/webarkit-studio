@@ -49,6 +49,21 @@ export class MacroFileError extends Error {
   }
 }
 
+/**
+ * The id a definition is exported under: its name's slug. A document's own ids ("macro", "macro-2"…, given at Create
+ * macro) are the same in every project, so two unrelated macros would clash on import; two versions of one named
+ * macro clash, and the user chooses to replace it or keep both.
+ */
+export function macroFileId(name: string): string {
+  const slug = name
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'macro';
+}
+
 /** The file for definition `id`, a copy: a later edit of the document does not change it. */
 export function writeMacroFile(id: string, def: MacroDefinition, description: string, loaded: Record<string, string> = LOADED_PLUGINS): MacroFile {
   const definition = structuredClone(def);
@@ -92,14 +107,14 @@ export function readMacroFile(
   const graphVersion = versionProblem('graph version', data.graphVersion, FIRST_MACRO_GRAPH_VERSION, GRAPH_VERSION, 'has no macros');
   if (graphVersion) problems.push(graphVersion);
   if (typeof data.id !== 'string' || !data.id) problems.push('the file needs an id');
-  if (typeof data.name !== 'string') problems.push('name must be text');
+  if (data.name !== undefined && typeof data.name !== 'string') problems.push('name must be text');
   if (data.description !== undefined && typeof data.description !== 'string') problems.push('description must be text');
   if (!isObject(data.definition)) problems.push('the file has no definition');
   if (problems.length) throw new MacroFileError(problems);
 
   const id = data.id as string;
   const definition = structuredClone(data.definition) as unknown as MacroDefinition;
-  const name = typeof definition.name === 'string' && definition.name.trim() ? definition.name : (data.name as string).trim();
+  const name = typeof definition.name === 'string' && definition.name.trim() ? definition.name : String(data.name ?? '').trim();
   if (!name) throw new MacroFileError(['the macro needs a name']);
   definition.name = name;
 

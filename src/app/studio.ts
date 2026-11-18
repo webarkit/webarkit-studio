@@ -392,14 +392,28 @@ fileInput.onchange = async () => {
       const project = await unpackProject(bytes);
       // An unusable project must not replace the current assets. Unfinished work opens, as an autosave does (#86).
       const loaded = loadUnfinishedGraphDocument(project.graph);
-      // Its macro library (#141), read before anything is replaced: one this studio refuses leaves all as it was.
-      const library = readLibrary(project.library);
+      // Its macro library (#141), read before anything is replaced.
+      // One this studio cannot read (not JSON, a newer version) leaves the current library as it was; the rest opens.
+      let library: ReturnType<typeof readLibrary> | null = null;
+      let libraryProblem = project.libraryProblem;
+      if (!libraryProblem) {
+        try {
+          library = readLibrary(project.library);
+        } catch (err) {
+          libraryProblem = (err as Error).message;
+        }
+      }
       // One step in the queue: overtaken before it starts, it touches nothing; once started, it arrives whole.
       const applied = await loads.run(ticket, async () => {
         await assetStore.replaceAll(project.assets);
-        macroLibrary.replace(library.library);
-        log(`⇧ project ${file.name}: ${project.assets.length} asset(s), ${library.library.files.length} macro(s) in the library`);
-        for (const problem of library.problems) log(`⚠ library: ${problem}: kept, but this studio cannot use it`);
+        if (library) {
+          macroLibrary.replace(library.library);
+          log(`⇧ project ${file.name}: ${project.assets.length} asset(s), ${library.library.files.length} macro(s) in the library`);
+          for (const problem of library.problems) log(`⚠ library: ${problem}`);
+        } else {
+          log(`⇧ project ${file.name}: ${project.assets.length} asset(s)`);
+          log(`⚠ ${libraryProblem}: the macro library is left as it was`);
+        }
         await show(loaded);
       });
       if (applied && ticket.current()) void scriptsAllowed(loaded.doc, 'opened');

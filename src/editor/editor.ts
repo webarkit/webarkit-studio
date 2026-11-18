@@ -626,7 +626,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const data = parseClipboard(e.clipboardData?.getData('text/plain') ?? '');
     if (!data) return;
     e.preventDefault();
-    void serial(() => paste(data, pastePoint()));
+    void serial(async () => void (await paste(data, pastePoint())));
   };
   // Cut (#139): the copy, then the selection removed, as one undo step; through the clipboard event, as copy is.
   const onCut = (e: ClipboardEvent) => {
@@ -678,8 +678,8 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     return { x: (at.x - x) / k, y: (at.y - y) / k };
   }
 
-  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
-  async function paste(data: ClipboardData, at: { x: number; y: number }) {
+  /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes; how many were added. */
+  async function paste(data: ClipboardData, at: { x: number; y: number }): Promise<number> {
     // Inside a macro, no macro node: a macro inside a macro is not supported (#140). Their wires go with them.
     if (inside && data.nodes.some((n) => n.type === MACRO_TYPE)) {
       const skipped = data.nodes.filter((n) => n.type === MACRO_TYPE).length;
@@ -693,8 +693,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     // The copies replace the selection (before adding: a selected node would drag them along).
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
-    for (const n of nodes) if (editor.getNode(n.id)) await selectable.select(n.id, true);
+    const added = nodes.filter((n) => editor.getNode(n.id));
+    for (const n of added) await selectable.select(n.id, true);
     followSelection();
+    return added.length;
   }
 
   async function addFragment(nodes: GraphDocument['nodes'], edges: GraphDocument['edges']) {
@@ -1126,8 +1128,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       return true;
     }
     // Otherwise as a paste: the same content is shared, another content under a taken id gets a free one.
-    await paste(data, at);
-    return true;
+    return (await paste(data, at)) > 0;
   }
 
   /** Rename macro, from the outer graph: one step that changes the definition, so every instance's title. */
@@ -1401,7 +1402,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       return replaced;
     },
     insertFragment: (nodes, edges) =>
-      serial(() => paste({ format: CLIPBOARD_FORMAT, version: CLIPBOARD_VERSION, nodes: structuredClone(nodes), edges: structuredClone(edges) }, pastePoint())),
+      serial(async () => void await paste({ format: CLIPBOARD_FORMAT, version: CLIPBOARD_VERSION, nodes: structuredClone(nodes), edges: structuredClone(edges) }, pastePoint())),
 
     destroy() {
       document.removeEventListener('keydown', onKeyDown);

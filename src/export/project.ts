@@ -8,8 +8,8 @@
  *   library.json               the macro library (#141), with its own format and version (src/core/macro-library.ts)
  *
  * library.json is read as it was written; the studio checks it (readLibrary()) before anything is replaced. A project
- * without one opens with an empty library, and a studio from before #141, which reads only graph.json and assets.json,
- * ignores it.
+ * without one opens with an empty library; one the studio cannot read leaves its library as it was, and the rest
+ * opens. A studio from before #141, which reads only graph.json and assets.json, ignores it.
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { extensionOf, type StoredAsset } from '../assets/asset';
@@ -79,16 +79,20 @@ export function isProjectFile(bytes: Uint8Array): boolean {
   }
 }
 
-/** `library`: library.json as it was written, or null when the project has none. */
-export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown; assets: StoredAsset[]; library: unknown }> {
+/**
+ * `library`: library.json as it was written, or null when the project has none. `libraryProblem`: why library.json
+ * could not be read; the graph and the assets still open, and the studio leaves its library as it was.
+ */
+export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown; assets: StoredAsset[]; library: unknown; libraryProblem?: string }> {
   const files = unzipSync(bytes);
   if (!files['graph.json']) throw new Error('not a WebARKit Studio project: graph.json is missing');
   let library: unknown = null;
+  let libraryProblem: string | undefined;
   if (files['library.json']) {
     try {
       library = JSON.parse(strFromU8(files['library.json'])) as unknown;
     } catch {
-      throw new Error('project file: library.json is not JSON');
+      libraryProblem = 'project file: library.json is not JSON';
     }
   }
   const manifest = files['assets.json'] ? (JSON.parse(strFromU8(files['assets.json'])) as unknown) : [];
@@ -103,7 +107,7 @@ export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown
     }
     return { id: entry.id, name: entry.name, kind: entry.kind, files: blobs };
   });
-  return { graph: JSON.parse(strFromU8(files['graph.json'])), assets, library };
+  return { graph: JSON.parse(strFromU8(files['graph.json'])), assets, library, ...(libraryProblem && { libraryProblem }) };
 }
 
 /** Throws on a manifest entry the studio could not use, before anything is imported. */
