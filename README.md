@@ -65,7 +65,8 @@ Editing:
     Inside, **Promote** next to a param in Properties sets it on the macro node, per instance; **Unpromote** takes it
     back. A script's code is never promoted.
   - **Rename macro** in its menu, or the name field in the bar inside it, renames the definition: every instance's
-    title follows. A blank name is refused.
+    title follows. A blank name is refused. A new macro is called "Macro", or "Macro 2", "Macro 3"… when that name
+    is taken.
   - Create, Dissolve and Rename are one undo step each. Inside a macro, undo and redo reach only the edits made
     inside; back in the graph, all of them are one step, which one undo reverts.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.

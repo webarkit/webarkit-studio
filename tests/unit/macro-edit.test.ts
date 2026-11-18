@@ -376,6 +376,17 @@ describe('A definition edited inside (pruneDefinition, staleMacroWires, staleIns
     expect(staleMacroWires(doc, 'd', groups(false), fake)).toEqual(['w1', 'w2']);
   });
 
+  it('names an instance value whose promoted key now maps to another inner node (code review)', () => {
+    const doc = create(chain(), ['n', 'a']);
+    const def = doc.macros!.macro;
+    def.params = { x: { node: 'n', param: 'x' } };
+    doc.nodes = doc.nodes.map((n) => (n.id === 'm' ? { ...n, params: { ...n.params, x: 3 } } : n));
+    // Unpromoted, then Absolute's x promoted under the same key, with the same kind.
+    const remapped = { ...structuredClone(def), params: { x: { node: 'a', param: 'x' } } };
+    expect(staleInstanceParams(doc, 'macro', remapped, resolve)).toEqual([{ node: 'm', key: 'x' }]);
+    expect(staleInstanceParams(doc, 'macro', structuredClone(def), resolve)).toEqual([]);
+  });
+
   it('leaves another definition’s instances alone', () => {
     const doc = create(chain(), ['n', 'a']);
     doc.nodes.push({ id: 'o', type: 'macro', params: { definition: 'other' } });

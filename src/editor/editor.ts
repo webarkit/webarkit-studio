@@ -161,7 +161,9 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   /** While a view is being swapped (Enter, Leave): its node and wire events are not edits. */
   let switching = false;
   /** The plugin's own undo and redo stacks: Enter sets them aside, Leave puts them back (no public accessor). */
-  const stacks = () => (history as unknown as { history: { produced: unknown[]; reserved: unknown[] } }).history;
+  const stacks = () => (history as unknown as { history?: { produced?: unknown[]; reserved?: unknown[] } }).history;
+  /** Whether the plugin still keeps its stacks where this editor sets them aside (rete-history-plugin 2.x). */
+  const stacksReachable = () => Array.isArray(stacks()?.produced) && Array.isArray(stacks()?.reserved);
   const resolve = (n: { type: string; params?: Record<string, ParamValue> }) => effectiveDefinition(n);
   /** Runtime feedback by node, kept across views: an outer node's, and each inner node's per macro node. */
   const outerStatus = new Map<string, NonNullable<StudioNode['status']>>();
@@ -905,7 +907,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     const doc = toDocument();
     const definitionId = freeMacroId('macro', (k) => Object.hasOwn(macros, k));
     const nodeId = getUID();
-    const plan = planCreate(doc, ids.filter((id) => editor.getNode(id)), { definitionId, nodeId }, resolve);
+    // A free name: two macros called "Macro" could not be told apart (in the library, #141, either).
+    const names = new Set(Object.values(macros).map((d) => d?.name));
+    let name = 'Macro';
+    for (let n = 2; names.has(name); n++) name = `Macro ${n}`;
+    const plan = planCreate(doc, ids.filter((id) => editor.getNode(id)), { definitionId, nodeId, name }, resolve);
     if ('error' in plan) {
       events.onNotice?.(plan.error);
       return;
@@ -950,14 +956,24 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       events.onNotice?.(`Enter: ${nodeId} is not a macro node with a definition.`);
       return;
     }
+    // The view shows only nodes the catalog has: an edit inside would drop the others from the definition on Leave.
+    const unknown = found.def.nodes.filter((n) => !Object.hasOwn(NODE_CATALOG, n.type)).map((n) => `${n.id} (${n.type})`);
+    if (unknown.length) {
+      events.onNotice?.(`Enter: macro "${found.def.name}" holds nodes this studio does not have: ${unknown.join(', ')}.`);
+      return;
+    }
+    if (!stacksReachable()) {
+      events.onNotice?.('Enter: this version of the history plugin keeps its undo stacks elsewhere: Enter is unavailable.');
+      return;
+    }
     const { x, y, k } = area.area.transform;
     history.separate();
-    const h = stacks();
+    const h = stacks()!;
     const stash = { produced: h.produced, reserved: h.reserved };
     h.produced = [];
     h.reserved = [];
     const { name, inputs, outputs, params } = structuredClone(found.def);
-    inside = { definition: found.id, outer, transform: { x, y, k }, stash, meta: { name, inputs, outputs, params } };
+    inside = { definition: found.id, outer, transform: { x, y, k }, stash: stash as Inside['stash'], meta: { name, inputs, outputs, params } };
     await swapView(found.def.nodes, found.def.edges);
     // What swapping the view recorded is not an edit.
     h.produced = [];
@@ -976,12 +992,12 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   async function leaveMacro() {
     const view = inside;
     if (!view) return;
-    const before = macros[view.definition];
+    const before = Object.hasOwn(macros, view.definition) ? macros[view.definition] : view.baseline!;
     const edited = liveDefinition(view);
     const changed = !view.baseline || !sameDefinition(view.baseline, edited);
     const after = pruneDefinition(edited, resolve, isScriptType);
     history.separate();
-    const h = stacks();
+    const h = stacks()!;
     await swapView(view.outer.nodes, view.outer.edges);
     inside = null;
     h.produced = view.stash.produced;
@@ -1021,7 +1037,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
       return;
     }
     if (name === found.def.name) return;
-    const before = macros[found.id];
+    const before = found.def;
     const after = { ...structuredClone(before), name };
     await oneStep(async () => {
       history.add(new ValueAction(before, after, (def) => setDefinition(found.id, def)));
@@ -1087,7 +1103,11 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
   function promotion(nodeId: string, key: string) {
     const node = inside && editor.getNode(nodeId);
     if (!inside || !node || !Object.hasOwn(node.def.params, key)) return undefined;
-    return { promoted: promotedKey(inside.meta, nodeId, key) !== undefined, allowed: !(key === 'script' && isScriptType(node.type)) };
+    const promoted = promotedKey(inside.meta, nodeId, key) !== undefined;
+    // Never a script's code; and not a param driven by a wire inside, which no instance's value would reach (code
+    // review). One already promoted can still be taken back.
+    const allowed = !(key === 'script' && isScriptType(node.type)) && (promoted || !node.driven.has(key));
+    return { promoted, allowed };
   }
 
   /** Puts the kept runtime feedback on the nodes shown: the outer nodes', or the open definition's inner nodes'. */

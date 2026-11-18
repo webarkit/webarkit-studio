@@ -177,6 +177,12 @@ test('the history across an enter and a leave: edits inside are undone inside on
   await expect(page.locator('#btn-undo')).toBeDisabled();
   await expect(page.locator('#btn-redo')).toBeDisabled();
 
+  // Promote is offered on Negate's X, not on Absolute's, which a wire inside drives: no instance's value would reach it.
+  await titled(page, 'Absolute').locator('.title').click();
+  await expect(page.locator('#inspector button.promote')).toHaveCount(0);
+  await titled(page, 'Negate').locator('.title').click();
+  await expect(page.locator('#inspector button.promote[data-param=x]')).toHaveCount(1);
+
   // An edit inside, its undo and redo, inside.
   const x = await propertyField(page, 'Negate', 'X');
   await x.fill('5');
@@ -219,6 +225,13 @@ test('the history across an enter and a leave: edits inside are undone inside on
   // Entered again, the inside shows the definition as it is.
   await onNode(page, 'Macro', 'Enter macro');
   await expect(await propertyField(page, 'Negate', 'X')).toHaveValue('7');
+  await page.click('#btn-leave-macro');
+
+  // A second macro gets a name of its own.
+  await titled(page, 'Time').locator('.title').click({ button: 'right' });
+  await menu(page, 'Create macro').click();
+  await expect(titled(page, 'Macro 2')).toHaveCount(1);
+  await expect(titled(page, 'Macro')).toHaveCount(1);
 });
 
 test('a macro is renamed from the bar inside it and from its menu: every instance’s title follows, one Ctrl+Z restores the old name, a blank name is refused', async ({ page }) => {

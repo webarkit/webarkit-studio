@@ -314,10 +314,14 @@ export function staleMacroWires(doc: Pick<GraphDocument, 'nodes' | 'edges' | 'ma
 /** The values the instances of definition `id` set for a promoted param that `def` no longer has, or with another kind. */
 export function staleInstanceParams(doc: Pick<GraphDocument, 'nodes' | 'macros'>, id: string, def: MacroDefinition, resolve?: Resolve): Array<{ node: string; key: string }> {
   const before = own(doc.macros, id);
+  // What a stored value means: the inner node and param the key maps to, and its kind. A key that now maps to another
+  // inner node is stale too, or the value would quietly drive that node (code review).
   const kind = (d: MacroDefinition | undefined, key: string) => {
     const ref = own(d?.params, key);
-    const inner = ref && d!.nodes.find((n) => n.id === ref.node);
-    return inner && resolve ? own(resolve(inner)?.params, ref.param)?.kind : ref ? 'present' : undefined;
+    if (!ref) return undefined;
+    const inner = d!.nodes.find((n) => n.id === ref.node);
+    const k = inner && resolve ? own(resolve(inner)?.params, ref.param)?.kind : 'present';
+    return k === undefined ? undefined : JSON.stringify([ref.node, ref.param, k]);
   };
   const out: Array<{ node: string; key: string }> = [];
   for (const n of instancesOf(doc, id)) {
