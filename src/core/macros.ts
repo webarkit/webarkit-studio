@@ -157,6 +157,11 @@ export function checkMacros(macros: unknown, resolve: Resolve, known: (type: str
         problems.push(`${label}: a node needs an id and a type`);
         continue;
       }
+      // Flattening copies and sets an inner node's params: anything but an object (a primitive, an array, null) would
+      // throw there, or be read as no params (Qodo on #174).
+      if (n.params !== undefined && (!n.params || typeof n.params !== 'object' || Array.isArray(n.params))) {
+        problems.push(`${label}: node ${n.id}: params must be an object`);
+      }
       if (nodes.has(n.id)) problems.push(`${label}: duplicate node id ${n.id}`);
       nodes.set(n.id, n);
       if (n.type === MACRO_TYPE) problems.push(`${label}: node ${n.id} is a macro, and a macro inside a macro is not supported`);

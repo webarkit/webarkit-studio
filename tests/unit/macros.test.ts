@@ -331,3 +331,29 @@ describe('macro: review of PR 1', () => {
     expect(problemsOf(d, {})).toEqual(['requires plugin acme ≥ 1.0.0, which is not loaded']);
   });
 });
+
+describe('macro: an inner node whose params is not an object (Qodo on #174)', () => {
+  it.each([
+    ['a number', 3],
+    ['an array', [1, 2]],
+    ['null', null],
+    ['a string', 'x'],
+  ])('%s is a validation problem, with and without a promoted param on that node, never a TypeError', (_name, params) => {
+    for (const promoted of [false, true]) {
+      const d = doc() as unknown as { macros: Record<string, { nodes: Array<{ params: unknown }>; params?: unknown }>; nodes: Array<{ params: Record<string, unknown> }> };
+      d.macros['abs-neg'].nodes[0].params = params;
+      if (!promoted) {
+        delete d.macros['abs-neg'].params;
+        delete d.nodes[2].params.x;
+      }
+      let error: unknown;
+      try {
+        loadGraphDocument(d);
+      } catch (err) {
+        error = err;
+      }
+      expect(error, `promoted: ${promoted}`).toBeInstanceOf(GraphValidationError);
+      expect((error as GraphValidationError).problems).toContain('macro "Abs of negated": node n: params must be an object');
+    }
+  });
+});
