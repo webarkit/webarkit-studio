@@ -722,6 +722,8 @@ async function open(engine: Engine, size: number, options: OpenOptions = {}): Pr
           dl.position = new Vector3(at[0] - d.x * 200, at[1] - d.y * 200, at[2] - d.z * 200);
           light = dl;
           if (l.shadow?.extent) {
+            // The library as it is: shadowOrthoScale keeps its 0.1, so this camera is ±1.2 × extent, not ±extent as on
+            // Three.js. The adapter sets it to 0 (#169).
             dl.autoUpdateExtends = false;
             Object.assign(dl, { orthoLeft: -l.shadow.extent, orthoRight: l.shadow.extent, orthoTop: l.shadow.extent, orthoBottom: -l.shadow.extent });
           }

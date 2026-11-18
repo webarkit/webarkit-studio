@@ -161,7 +161,8 @@ describe.each(ENGINES)('%s: lights (#134)', (engine) => {
         expect([s.camera.near, s.camera.far, s.mapSize.x, s.bias]).toEqual([10, 3000, 1024, -0.0005]);
       } else {
         const d = sun.native as DirectionalLight;
-        expect([d.autoUpdateExtends, d.orthoLeft, d.orthoRight, d.orthoTop, d.orthoBottom, d.shadowMinZ, d.shadowMaxZ]).toEqual([false, -250, 250, 250, -250, 1, reach]);
+        // shadowOrthoScale 0: Babylon.js would otherwise widen even explicit extents by 0.1 a side, to ±300 mm (#169).
+        expect([d.autoUpdateExtends, d.shadowOrthoScale, d.orthoLeft, d.orthoRight, d.orthoTop, d.orthoBottom, d.shadowMinZ, d.shadowMaxZ]).toEqual([false, 0, -250, 250, 250, -250, 1, reach]);
         const dg = generatorOf(sun)!;
         expect([dg.getShadowMap()!.getSize().width, dg.bias, dg.normalBias, dg.forceBackFacesOnly]).toEqual([512, 0.001, 0, true]);
         const s = spot.native as SpotLight;

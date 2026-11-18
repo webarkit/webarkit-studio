@@ -410,6 +410,9 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       light.position = position;
       light.direction = toward.normalize();
       light.autoUpdateExtends = false;
+      // Babylon.js widens even explicit extents by shadowOrthoScale, 0.1 a side by default (directionalLight.pure.js,
+      // 9.30.0): without this its camera is ±300 mm, not Three.js's ±250 mm (#169).
+      light.shadowOrthoScale = 0;
       Object.assign(light, { orthoLeft: -SHADOW_EXTENT, orthoRight: SHADOW_EXTENT, orthoTop: SHADOW_EXTENT, orthoBottom: -SHADOW_EXTENT });
       light.shadowMinZ = DIRECTIONAL_SHADOW_NEAR;
       light.shadowMaxZ = directionalShadowFar(spec);
