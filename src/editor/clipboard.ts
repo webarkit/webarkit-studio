@@ -6,6 +6,8 @@
  *
  * Macros (#140): a copied macro node carries its definition, so a paste into another tab works. A paste shares a
  * definition the editor already has with the same content, and gives one whose id is taken by another content a new id.
+ * Clipboard text can come from anywhere: its definitions are checked first (checkMacros(), as validation does), and one
+ * with problems is not merged; the macro nodes that use it are skipped, as an unknown type is (Qodo on #174).
  */
 import { ARRAY_PARAM_LENGTH, type GraphEdge, type GraphNode, type GraphDocument } from '../core/graph';
 import { DEFINITION_PARAM, MACRO_TYPE, macrosFor, mergeMacros, type MacroDefinitions } from '../core/macros';
@@ -49,14 +51,42 @@ export function copySelection(doc: GraphDocument, ids: string[]): ClipboardData 
   };
 }
 
+/** The problems of some definitions, as checkMacros() reports them with the editor's catalog. */
+export type CheckDefinitions = (macros: MacroDefinitions) => string[];
+
 /**
  * New nodes and wires for `data`, placed from `at`; `newId` gives the ids (nodes first, then wires). `macros`, the
- * editor's definitions, receives the clipboard's (changed in place), and the pasted macro nodes name them.
+ * editor's definitions, receives the clipboard's that `check` accepts (changed in place), and the pasted macro nodes
+ * name them. A macro node whose definition `check` refused is skipped, and `warn` says why.
  */
-export function pasteClipboard(data: ClipboardData, newId: () => string, at: Point, macros: MacroDefinitions = {}): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const renamed = mergeMacros(macros, data.macros);
+export function pasteClipboard(
+  data: ClipboardData,
+  newId: () => string,
+  at: Point,
+  macros: MacroDefinitions = {},
+  check: CheckDefinitions = () => [],
+  warn: (message: string) => void = (message) => console.warn(message),
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const accepted: MacroDefinitions = {};
+  const refused = new Set<string>();
+  for (const [id, def] of Object.entries(data.macros ?? {})) {
+    const one: MacroDefinitions = {};
+    Object.defineProperty(one, id, { value: def, enumerable: true, writable: true, configurable: true });
+    const problems = check(one);
+    if (problems.length) {
+      refused.add(id);
+      warn(`[editor] paste: macro definition "${id}" skipped: ${problems.join('; ')}`);
+    } else Object.defineProperty(accepted, id, { value: def, enumerable: true, writable: true, configurable: true });
+  }
+  const renamed = mergeMacros(macros, accepted);
+  const kept = data.nodes.filter((n) => {
+    const definition = n.type === MACRO_TYPE ? n.params[DEFINITION_PARAM] : undefined;
+    if (typeof definition !== 'string' || !refused.has(definition)) return true;
+    warn(`[editor] paste: macro node ${n.id} skipped: its definition "${definition}" was refused`);
+    return false;
+  });
   const ids = new Map<string, string>();
-  const nodes = data.nodes.map((n) => {
+  const nodes = kept.map((n) => {
     const id = newId();
     ids.set(n.id, id);
     const node = { ...clone(n), id, position: { x: at.x + (n.position?.x ?? 0), y: at.y + (n.position?.y ?? 0) } };

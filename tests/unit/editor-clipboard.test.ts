@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CLIPBOARD_FORMAT, copySelection, MAX_CLIPBOARD_NODES, parseClipboard, pasteClipboard } from '../../src/editor/clipboard';
+import { CLIPBOARD_FORMAT, copySelection, MAX_CLIPBOARD_NODES, parseClipboard, pasteClipboard, type ClipboardData } from '../../src/editor/clipboard';
 import { emptyGraph, type GraphDocument } from '../../src/core/graph';
-import type { MacroDefinitions } from '../../src/core/macros';
+import { checkMacros, type MacroDefinitions } from '../../src/core/macros';
+import { effectiveDefinition, isScriptType } from '../../src/core/script';
+import { NODE_CATALOG } from '../../src/nodes/catalog';
 
 function graph(): GraphDocument {
   const doc = emptyGraph('test');
@@ -142,5 +144,34 @@ describe('clipboard: macros (#140)', () => {
     expect(parseClipboard(text({ neg: { name: 'x', nodes: [], edges: [], inputs: { a: { node: 'n' } } } }))).toBeNull();
     const big = { neg: { name: 'Big', nodes: Array.from({ length: MAX_CLIPBOARD_NODES }, (_, i) => ({ id: `n${i}`, type: 'math.negate', params: {} })), edges: [] } };
     expect(parseClipboard(text(big))).toBeNull();
+  });
+});
+
+describe('clipboard: a pasted definition is checked first (Qodo on #174)', () => {
+  const check = (macros: MacroDefinitions) =>
+    checkMacros(macros, (n) => effectiveDefinition(n), (type) => Object.hasOwn(NODE_CATALOG, type), (type) => isScriptType(type));
+  const clipboard = (def: MacroDefinitions[string]): ClipboardData => ({
+    format: CLIPBOARD_FORMAT,
+    version: 1 as const,
+    nodes: [
+      { id: 'm', type: 'macro', params: { definition: 'bad' }, position: { x: 0, y: 0 } },
+      { id: 't', type: 'math.time', params: {}, position: { x: 0, y: 0 } },
+    ],
+    edges: [],
+    macros: { bad: def },
+  });
+
+  it.each([
+    ['an unknown type', { name: 'Unknown', nodes: [{ id: 'u', type: 'nope.thing', params: {} }], edges: [] }],
+    ['a promoted script', { name: 'Sneaky', nodes: [{ id: 's', type: 'script.lite', params: {} }], edges: [], params: { code: { node: 's', param: 'script' } } }],
+  ])('a definition with %s is not merged, and the macro nodes that use it are skipped, with a warning', (_name, def) => {
+    const macros: MacroDefinitions = {};
+    const warnings: string[] = [];
+    const { nodes } = pasteClipboard(clipboard(def), counter(), { x: 0, y: 0 }, macros, check, (m) => warnings.push(m));
+    expect(macros).toEqual({});
+    expect(nodes.map((n) => n.type)).toEqual(['math.time']);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toMatch(/^\[editor\] paste: macro definition "bad" skipped: /);
+    expect(warnings[1]).toBe('[editor] paste: macro node m skipped: its definition "bad" was refused');
   });
 });

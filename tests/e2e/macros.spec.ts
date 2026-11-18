@@ -107,6 +107,40 @@ test('a graph with a macro reopens from the autosave, runs, and exports as an ap
   }
 });
 
+test('a pasted definition that its checks refuse is left out, and the autosave still opens (Qodo on #174)', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const doc = pinballMacro();
+  await openStudio(page);
+  await importGraph(page, doc);
+  await expect(macroNode(page)).toHaveCount(1);
+  const clipboard = {
+    format: 'webarkit-studio/clipboard',
+    version: 1,
+    nodes: [
+      { id: 'u', type: 'macro', params: { definition: 'unknown' }, position: { x: 0, y: 0 } },
+      { id: 's', type: 'macro', params: { definition: 'sneaky' }, position: { x: 300, y: 0 } },
+    ],
+    edges: [],
+    macros: {
+      unknown: { name: 'Unknown', nodes: [{ id: 'x', type: 'nope.thing', params: {} }], edges: [] },
+      sneaky: { name: 'Sneaky', nodes: [{ id: 'c', type: 'script.lite', params: {} }], edges: [], params: { code: { node: 'c', param: 'script' } } },
+    },
+  };
+  await page.evaluate((text) => navigator.clipboard.writeText(text), JSON.stringify(clipboard));
+  const warnings: string[] = [];
+  page.on('console', (m) => m.type() === 'warning' && warnings.push(m.text()));
+  await page.locator('#editor').click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press('Control+v');
+  await expect.poll(() => warnings.filter((w) => w.includes('[editor] paste:')).length).toBe(4);
+  await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
+  expect(Object.keys((await saved(page))?.macros ?? {})).toEqual(['pinball']);
+  // The autosave opens, with its macro.
+  await page.reload();
+  await startupDone(page);
+  await expect(macroNode(page)).toHaveCount(1);
+  await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);
+});
+
 test('a project file keeps the macro', async ({ page }) => {
   const doc = pinballMacro();
   await openStudio(page);

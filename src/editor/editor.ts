@@ -12,7 +12,7 @@ import { MinimapPlugin } from 'rete-minimap-plugin';
 import { emptyGraph, GRAPH_FORMAT, GRAPH_VERSION, graphPlugins, type GraphDocument, type ParamValue } from '../core/graph';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition, isScriptType, nodeScriptText, scriptHeaderOf } from '../core/script';
-import { everyNode, macrosFor, type MacroDefinitions } from '../core/macros';
+import { checkMacros, everyNode, macrosFor, type MacroDefinitions } from '../core/macros';
 import { layeredLayout } from './arrange';
 import { staleConnections, staleParams } from './script-ports';
 import { copySelection, parseClipboard, pasteClipboard, type ClipboardData } from './clipboard';
@@ -562,7 +562,10 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
 
   /** Adds the fragment at `at` (area coordinates) as one undo step, and selects the new nodes. */
   async function paste(data: ClipboardData, at: { x: number; y: number }) {
-    const { nodes, edges } = pasteClipboard(data, getUID, at, macros);
+    // Its definitions are checked as validation checks them: a refused one is not merged, nor its macro nodes pasted.
+    const check = (defs: MacroDefinitions) =>
+      checkMacros(defs, (n) => effectiveDefinition(n), (type) => Object.hasOwn(NODE_CATALOG, type), (type) => isScriptType(type));
+    const { nodes, edges } = pasteClipboard(data, getUID, at, macros, check);
     // The copies replace the selection (before adding: a selected node would drag them along).
     await selector.unselectAll();
     await oneStep(() => addFragment(nodes, edges));
