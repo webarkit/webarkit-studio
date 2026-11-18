@@ -128,7 +128,10 @@ const autosave = () => {
  * would reopen as if it were the user's unfinished work. So a load saves once, when it is whole.
  */
 let loadingGraph = false;
+/** Graphs loaded into the editor so far: a question asked before one landed is dropped (the macro library, #141). */
+let graphLoads = 0;
 async function loadIntoEditor(doc: GraphDocument): Promise<void> {
+  graphLoads++;
   loadingGraph = true;
   try {
     await studio.load(doc);
@@ -282,6 +285,7 @@ const macroLibrary = mountMacroLibrary(
     log,
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
+    loadGeneration: () => graphLoads,
   },
   loadSavedLibrary(log),
 );

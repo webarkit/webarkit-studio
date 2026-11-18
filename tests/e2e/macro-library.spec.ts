@@ -361,3 +361,21 @@ test('removing an asset a library macro uses asks first, and says where it is us
   await expect.poll(() => question).toBe('The graph and the macro library use "cube.glb". Remove it from the project anyway?');
   await expect(asset).toHaveCount(0);
 });
+
+test('a load that lands while the clash question is open cancels the import: nothing is imported or replaced (Qodo on #176)', async ({ page }) => {
+  await openStudio(page);
+  await importGraph(page, graphWith({ neg: negate(2) }));
+  await expect(titled(page, 'Negate')).toHaveCount(1);
+  const clash = page.locator('#macro-clash');
+  await importMacro(page, wmacro('neg', negate(9, 'Negate nine')));
+  await expect(clash).toBeVisible();
+  // Another project, opened while the question is open (its graph uses "neg" too, for another content).
+  const other = graphWith({ neg: negate(4, 'Negate four') });
+  await page.setInputFiles('#file-import', { name: 'other.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(other)) });
+  await expect(titled(page, 'Negate four')).toHaveCount(1);
+  await clash.locator('button[value=replace]').click();
+  await expect(page.locator('#log')).toContainText('import macro macro.wmacro: cancelled: the graph or the library changed while asking');
+  await expect(titled(page, 'Negate four')).toHaveCount(1);
+  expect((await saved(page)).macros!.neg.nodes[0].params.x).toBe(4);
+  await expect(page.locator('.macro-entry')).toHaveCount(0);
+});

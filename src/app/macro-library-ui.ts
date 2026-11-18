@@ -35,6 +35,8 @@ export interface MacroLibraryHost {
   /** Whether the project has the uploaded asset `id`. */
   hasAsset: (id: string) => boolean;
   dialogs: { clash: HTMLDialogElement; exportMacro: HTMLDialogElement };
+  /** Counts the graphs loaded into the editor (a load, Import, a project, New): one that changes meanwhile cancels. */
+  loadGeneration: () => number;
 }
 
 export interface MacroLibraryUi {
@@ -172,11 +174,23 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
     return macros && Object.hasOwn(macros, id) ? `${macros[id].name}, in the graph` : undefined;
   };
 
+  /**
+   * The graph and the library as a question was asked about them: a load or a project that lands while it is open
+   * changes what the answer would act on, so the answer is then dropped (Qodo on #176).
+   */
+  let libraryGeneration = 0;
+  const generation = () => `${host.loadGeneration()}/${libraryGeneration}`;
+
   async function addFromLibrary(file: MacroFile) {
     let choice: ClashChoice | undefined;
     if (studio.macroClash(file.id, file.definition) === 'different') {
+      const asked = generation();
       const answer = await askClash(host.dialogs.clash, file.name, file.id, [graphName(file.id) ?? file.id]);
       if (!answer) return;
+      if (generation() !== asked) {
+        log(`⇧ add macro "${file.name}": cancelled: the graph or the library changed while asking`);
+        return;
+      }
       choice = answer;
     }
     await studio.addMacro(file.id, file.definition, choice);
@@ -204,9 +218,15 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
         ...(inDocument === 'different' ? [graphName(file.id) ?? file.id] : []),
         ...(inLibrary === 'different' ? [`${libraryTable[file.id].name}, in the library`] : []),
       ];
+      const asked = generation();
       const answer = await askClash(host.dialogs.clash, file.name, file.id, existing);
       if (!answer) {
         log(`⇧ import macro ${source}: cancelled`);
+        return;
+      }
+      // What was compared before the question no longer holds: nothing is imported or replaced.
+      if (generation() !== asked) {
+        log(`⇧ import macro ${source}: cancelled: the graph or the library changed while asking`);
         return;
       }
       choice = answer;
@@ -301,6 +321,7 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
         }
       }
       library = next;
+      libraryGeneration++;
       save();
       render();
     },
