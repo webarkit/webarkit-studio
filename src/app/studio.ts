@@ -1,7 +1,7 @@
 /**
  * Studio shell: palette + Rete editor + live preview (GraphRuntime).
  */
-import { createStudioEditor } from '../editor/editor';
+import { createStudioEditor, type EditorView } from '../editor/editor';
 import { commitPendingEdit, renderInspector } from '../editor/inspector';
 import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
@@ -9,7 +9,7 @@ import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
-import { paramTargets } from '../core/macros';
+import { definitionParamTargets, paramTargets } from '../core/macros';
 import { macroReports } from './macro-reports';
 import { HANDOFF_KEY } from './handoff';
 import { defaultFilename, EXPORTERS, usesAsset } from '../export/exporters';
@@ -90,7 +90,28 @@ const inspectorEl = $('inspector');
 let inspected: StudioNode | null = null;
 const showInspector = () => {
   const node = inspected; // bound here: the setter must not follow a later selection
-  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value), scriptHandlers);
+  renderInspector(inspectorEl, node, (key, value) => node && studio.setParam(node.id, key, value), scriptHandlers, node ? promoteHandlers(node.id) : undefined);
+};
+/** Inside a macro (#140): Promote / Unpromote on each param of an inner node. */
+const promoteHandlers = (nodeId: string) => ({
+  state: (key: string) => studio.promotion(nodeId, key),
+  toggle: (key: string) => void studio.togglePromote(nodeId, key),
+});
+
+/** The bar above the editor while a macro's inside is shown: its name, and the way back (#140). */
+const macroPath = $('macro-path');
+const macroName = $<HTMLInputElement>('macro-name');
+const showMacroPath = (view: EditorView | null) => {
+  macroPath.hidden = !view;
+  // Not over what the user is typing, as for the graph's name (#118).
+  if (macroName.value.trim() !== (view?.name ?? '')) macroName.value = view?.name ?? '';
+};
+$('btn-leave-macro').onclick = () => void studio.leaveMacro();
+// The keystrokes of one edit are one undo step; Enter or leaving the field ends it, and a blank name is put back.
+macroName.oninput = () => studio.setMacroName(macroName.value);
+macroName.onchange = () => {
+  if (!macroName.value.trim()) log('✗ a macro needs a name: it keeps the one it had');
+  studio.endMacroNameEdit();
 };
 
 const autosave = () => {
@@ -120,12 +141,27 @@ const studio = await createStudioEditor($('editor'), {
     showInspector(); // params may have changed (in the node, by undo)
     if (!loadingGraph) {
       autosave();
-      scriptPanel.sync(studio.toDocument());
+      // The panel's node is one the editor shows: inside a macro, an inner node (#140).
+      scriptPanel.sync(studio.viewDocument());
     }
   },
   // While the preview runs, live params reach the running node immediately.
-  onParamChange(nodeId, key, value) {
+  onParamChange(nodeId, key, value, scope) {
     if (!runtime) return;
+    // An inner node of an open macro (#140): its edit changes the definition, so that node in every instance, except
+    // where an instance sets the same param as a promoted param of its own.
+    if (scope) {
+      const type = studio.viewDocument().nodes.find((n) => n.id === nodeId)?.type ?? 'script.lite';
+      // A script's code inside a macro: Reload asks about it, as for any script not yet allowed.
+      if (key === 'script' && isScriptType(type)) {
+        log(`⟳ ${scope.definition}/${nodeId}.${key} changed: press Reload to apply it`);
+        return;
+      }
+      const targets = definitionParamTargets(studio.toDocument(), scope.definition, nodeId, key);
+      const results = targets.map((target) => runtime!.setParam(target, key, value));
+      if (results.includes('restart')) log(`⟳ ${scope.definition}/${nodeId}.${key} changed: press Reload to apply it`);
+      return;
+    }
     const edited = studio.toDocument();
     // The edited node's type, by its id; a node not in the document is taken as a script, the safe side.
     const editedType = edited.nodes.find((n) => n.id === nodeId)?.type ?? 'script.lite';
@@ -182,6 +218,20 @@ const studio = await createStudioEditor($('editor'), {
     // Not over what the user is typing: "my " is stored as "my", and the space stays in the field.
     if (graphNameInput.value.trim() !== name) graphNameInput.value = name;
   },
+  onViewChange(view) {
+    showMacroPath(view);
+    // The graph's name is an edit of the outer graph: inside a macro, its undo would be lost on Leave (graph-reviewer).
+    graphNameInput.disabled = Boolean(view);
+    // The code panel names a node by its id, which another view may give another node.
+    scriptPanel.close();
+  },
+  // A new name for the definition shown: the bar only, never the code panel, whose unapplied text would be lost.
+  onMacroNameChange: (view) => showMacroPath(view),
+  onDefinitionChange(definition) {
+    if (runtime) log(`⟳ macro ${definition} changed: press Reload to apply it`);
+  },
+  onNotice: (text) => log(`✗ ${text}`),
+  askMacroName: (current) => window.prompt('Macro name (every instance’s title):', current),
 });
 showInspector();
 graphNameInput.value = studio.toDocument().name ?? '';
@@ -389,7 +439,11 @@ async function run(reason = 'run') {
   }
   if (id !== runId) return; // superseded while asking
   // The runtime runs the flat graph (#140): a report or an error of an inner node shows on its macro node.
-  const reports = macroReports(doc, (nodeId, status) => studio.setNodeStatus(nodeId, status));
+  const reports = macroReports(
+    doc,
+    (nodeId, status) => studio.setNodeStatus(nodeId, status),
+    (macro, inner, status) => studio.setInnerStatus(macro, inner, status),
+  );
   try {
     runtime = new GraphRuntime(doc, {
       stage,
@@ -398,8 +452,9 @@ async function run(reason = 'run') {
         // An empty report clears the status (no empty box left on the node).
         if (reports.route(nodeId, text)) return;
         studio.setNodeStatus(nodeId, text ? { text } : null);
-        // The code panel covers its node: it shows that node's runtime errors too.
-        scriptPanel.report(nodeId, text);
+        // The code panel covers its node: it shows that node's runtime errors too. Not while a macro's inside is
+        // shown, where the panel's node is an inner node, which may have an outer node's id (#140).
+        if (!studio.view()) scriptPanel.report(nodeId, text);
       },
       studio: true,
       assets: (assetId) => assetStore.get(assetId),

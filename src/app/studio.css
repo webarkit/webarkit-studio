@@ -49,6 +49,16 @@ button:disabled { opacity: 0.4; cursor: default; }
 .palette button[hidden], .palette-group[hidden] { display: none; }
 .palette button { display: block; width: 100%; text-align: left; margin-bottom: 4px; border-left: 3px solid var(--c, var(--border)); }
 
+/* The editor, under the bar shown while a macro's inside is (#140). */
+.editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.editor-pane > .editor { flex: 1; min-height: 0; }
+.macro-path { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.macro-path[hidden] { display: none; }
+.macro-path small { color: var(--muted); }
+.macro-path input { font-weight: 600; min-width: 10ch; }
+.inspector .param-line { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; }
+.inspector .promote { font-size: 11px; padding: 2px 6px; }
+.inspector .promote.promoted { border-color: var(--accent); }
 .editor { position: relative; overflow: hidden; background: radial-gradient(circle, #2a2e37 1px, transparent 1px) 0 0 / 22px 22px; }
 
 .preview { border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--panel); }

@@ -22,10 +22,25 @@ export function commitPendingEdit(element: HTMLElement) {
 }
 
 /**
+ * Inside a macro (#140): each param of an inner node can be promoted to the macro node, and back. `state` is
+ * undefined outside a macro.
+ */
+export interface PromoteHandlers {
+  state(key: string): { promoted: boolean; allowed: boolean } | undefined;
+  toggle(key: string): void;
+}
+
+/**
  * `set` must be bound to `node`: a late `change` from its fields then still reaches that node. A script node
  * (#35) shows its Edit and Import, through `script`, instead of its code.
  */
-export function renderInspector(element: HTMLElement, node: StudioNode | null, set: (key: string, value: ParamValue) => void, script?: ScriptHandlers) {
+export function renderInspector(
+  element: HTMLElement,
+  node: StudioNode | null,
+  set: (key: string, value: ParamValue) => void,
+  script?: ScriptHandlers,
+  promote?: PromoteHandlers,
+) {
   if (!node) {
     render(html`<p class="hint">Select a node to edit its properties here.</p>`, element);
     return;
@@ -33,6 +48,24 @@ export function renderInspector(element: HTMLElement, node: StudioNode | null, s
   const { def } = node;
   const isScript = isScriptType(node.type) && script;
   const params = Object.entries(def.params).filter(([key]) => !(isScript && SCRIPT_OWN_PARAMS.includes(key)) && !hiddenParam(node.type, key));
+  /** The param's row, with its Promote / Unpromote toggle inside a macro. */
+  const row = (key: string, spec: (typeof def.params)[string]) => {
+    const line = paramRow(spec, node.params[key] ?? spec.default, (v) => set(key, v), 'inspector', node.driven.has(key));
+    const state = promote?.state(key);
+    if (!state?.allowed) return line;
+    return html`<div class="param-line">
+      ${line}
+      <button
+        class="promote ${state.promoted ? 'promoted' : ''}"
+        data-param=${key}
+        aria-pressed=${state.promoted ? 'true' : 'false'}
+        title=${state.promoted ? 'Take this param back from the macro node' : 'Set this param on the macro node, per instance'}
+        @click=${() => promote!.toggle(key)}
+      >
+        ${state.promoted ? 'Unpromote' : 'Promote'}
+      </button>
+    </div>`;
+  };
   // Keyed by node: fields of one node are never reused (with their typed text) for another.
   render(
     keyed(
@@ -44,7 +77,7 @@ export function renderInspector(element: HTMLElement, node: StudioNode | null, s
       <p class="description">${def.description}</p>
       ${isScript ? html`<div class="params">${scriptControls(node, script)}</div>` : nothing}
       ${params.length
-        ? html`<div class="params">${params.map(([key, spec]) => paramRow(spec, node.params[key] ?? spec.default, (v) => set(key, v), 'inspector', node.driven.has(key)))}</div>`
+        ? html`<div class="params">${params.map(([key, spec]) => row(key, spec))}</div>`
         : html`<p class="hint">No params.</p>`}`,
     ),
     element,

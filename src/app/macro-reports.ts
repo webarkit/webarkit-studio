@@ -14,8 +14,15 @@ export interface MacroReports {
   route(nodeId: string, text: string, error?: boolean): boolean;
 }
 
-/** `doc`: the document the runtime was given, with its macros. */
-export function macroReports(doc: GraphDocument, setStatus: (nodeId: string, status: NodeStatus) => void): MacroReports {
+/**
+ * `doc`: the document the runtime was given, with its macros. `setInner` receives each inner node's own report, as
+ * it is, for the editor to show inside the macro (#140); null clears it.
+ */
+export function macroReports(
+  doc: GraphDocument,
+  setStatus: (nodeId: string, status: NodeStatus) => void,
+  setInner: (macro: string, inner: string, status: NodeStatus) => void = () => {},
+): MacroReports {
   const { doc: flat, origin } = flattenGraph(doc);
   const label = (node: { type: string; params?: GraphDocument['nodes'][number]['params'] }) => effectiveDefinition(node)?.label ?? node.type;
   /** Per macro node, its inner nodes' lines, in the order they first reported. */
@@ -29,6 +36,7 @@ export function macroReports(doc: GraphDocument, setStatus: (nodeId: string, sta
       lines.set(target.node, own);
       if (target.text) own.set(from.inner, { text: target.text, error });
       else own.delete(from.inner);
+      setInner(from.macro, from.inner, text ? { text, ...(error && { error: true }) } : null);
       const all = [...own.values()];
       setStatus(target.node, all.length ? { text: all.map((l) => l.text).join('\n'), ...(all.some((l) => l.error) && { error: true }) } : null);
       return true;
