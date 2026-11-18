@@ -981,6 +981,7 @@ export async function createStudioEditor(container: HTMLElement, events: StudioE
     inside.baseline = liveDefinition(inside);
     showStatuses();
     events.onViewChange?.({ definition: found.id, name: found.def.name });
+    // An emptied definition is fine too: zoomAt on no node centres the origin at zoom 1 (rete-area-plugin 2.x).
     await AreaExtensions.zoomAt(area, editor.getNodes());
     notifyHistory();
   }

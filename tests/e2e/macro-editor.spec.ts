@@ -290,6 +290,31 @@ test('a macro is renamed from the bar inside it and from its menu: every instanc
   expect(await titles.allInnerTexts()).not.toContain('');
 });
 
+test('a macro emptied inside opens again with a usable view: a node added there is on screen', async ({ page }) => {
+  await openChain(page);
+  await onSelection(page, ['Negate'], 'Create macro');
+  await onNode(page, 'Macro', 'Enter macro');
+  await titled(page, 'Negate').locator('.title').click();
+  await page.keyboard.press('Delete');
+  await expect(page.locator('.studio-node')).toHaveCount(0);
+  await page.click('#btn-leave-macro');
+  await onNode(page, 'Macro', 'Enter macro');
+  await expect(page.locator('#macro-path')).toBeVisible();
+  // Added from the canvas menu, where it was opened: in view.
+  await page.locator('#editor').click({ button: 'right', position: { x: 200, y: 200 } });
+  const canvasMenu = page.locator('.context-menu');
+  await expect(canvasMenu.locator('input[type=search]')).toBeFocused();
+  await page.keyboard.type('Time');
+  // An item is its label then a <small> detail: the one whose own text is "Time" (as acceptance.spec.ts picks one).
+  const labels = await canvasMenu.locator('.item').evaluateAll((items) =>
+    items.map((el) => [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join('').trim()),
+  );
+  expect(labels).toContain('Time');
+  await canvasMenu.locator('.item').nth(labels.indexOf('Time')).click();
+  await expect(titled(page, 'Time')).toHaveCount(1);
+  await expect(titled(page, 'Time')).toBeInViewport();
+});
+
 test('a param promoted inside shows on every instance, applies live, and goes back', async ({ page }) => {
   test.setTimeout(180_000);
   await loadDemo(page, 'pinball-image');
