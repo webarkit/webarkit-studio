@@ -5,6 +5,11 @@
  *   graph.json                 the graph, as "Graph (.json)" exports it
  *   assets.json                [{ id, name, kind, files: { key: path }, types?: { key: MIME type } }]
  *   assets/<id>/<file name>    the files
+ *   library.json               the macro library (#141), with its own format and version (src/core/macro-library.ts)
+ *
+ * library.json is read as it was written; the studio checks it (readLibrary()) before anything is replaced. A project
+ * without one opens with an empty library; one the studio cannot read leaves its library as it was, and the rest
+ * opens. A studio from before #141, which reads only graph.json and assets.json, ignores it.
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { extensionOf, type StoredAsset } from '../assets/asset';
@@ -44,8 +49,10 @@ function typeOf(entry: ManifestEntry, key: string): string {
   return typeof saved === 'string' && saved ? saved : (TYPE_BY_EXTENSION.get(extensionOf(fileName(entry, key))) ?? '');
 }
 
-export async function packProject(graph: unknown, assets: StoredAsset[]): Promise<Uint8Array> {
+/** `library`: the macro library as writeLibrary() gives it; absent, no library.json is written. */
+export async function packProject(graph: unknown, assets: StoredAsset[], library?: unknown): Promise<Uint8Array> {
   const files: Record<string, Uint8Array> = { 'graph.json': strToU8(JSON.stringify(graph, null, 2)) };
+  if (library !== undefined) files['library.json'] = strToU8(JSON.stringify(library, null, 2));
   const manifest: ManifestEntry[] = [];
   for (const asset of assets) {
     const entry: ManifestEntry = { id: asset.id, name: asset.name, kind: asset.kind, files: {} };
@@ -72,9 +79,22 @@ export function isProjectFile(bytes: Uint8Array): boolean {
   }
 }
 
-export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown; assets: StoredAsset[] }> {
+/**
+ * `library`: library.json as it was written, or null when the project has none. `libraryProblem`: why library.json
+ * could not be read; the graph and the assets still open, and the studio leaves its library as it was.
+ */
+export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown; assets: StoredAsset[]; library: unknown; libraryProblem?: string }> {
   const files = unzipSync(bytes);
   if (!files['graph.json']) throw new Error('not a WebARKit Studio project: graph.json is missing');
+  let library: unknown = null;
+  let libraryProblem: string | undefined;
+  if (files['library.json']) {
+    try {
+      library = JSON.parse(strFromU8(files['library.json'])) as unknown;
+    } catch {
+      libraryProblem = 'project file: library.json is not JSON';
+    }
+  }
   const manifest = files['assets.json'] ? (JSON.parse(strFromU8(files['assets.json'])) as unknown) : [];
   if (!Array.isArray(manifest)) throw new Error('project file: assets.json is not a list');
   manifest.forEach(checkEntry);
@@ -87,7 +107,7 @@ export async function unpackProject(bytes: Uint8Array): Promise<{ graph: unknown
     }
     return { id: entry.id, name: entry.name, kind: entry.kind, files: blobs };
   });
-  return { graph: JSON.parse(strFromU8(files['graph.json'])), assets };
+  return { graph: JSON.parse(strFromU8(files['graph.json'])), assets, library, ...(libraryProblem && { libraryProblem }) };
 }
 
 /** Throws on a manifest entry the studio could not use, before anything is imported. */

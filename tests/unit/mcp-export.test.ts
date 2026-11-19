@@ -4,11 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { strFromU8, unzipSync } from 'fflate';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
 import { slugify } from '../../src/export/exporters';
 import { WORKER_DIR, workerFiles } from '../../plugins/jsartoolkit-nft/worker-files';
-import { withStaticServer } from '../../src/mcp/static-server';
 import { call, connectStudio } from '../helpers/mcp-client';
 
 const manifest = {
@@ -49,6 +48,7 @@ beforeAll(async () => {
   client = await connectStudio();
 });
 afterAll(() => client.close());
+afterEach(() => vi.unstubAllGlobals());
 
 const GRAPH = 'public/graphs/pinball-image.json';
 
@@ -72,10 +72,10 @@ describe('export_bundle', () => {
     const { plugins: _plugins, ...graph } = JSON.parse(readFileSync(GRAPH, 'utf8'));
     const result = (await call(client, 'export_bundle', { graph: { ...graph, version: 4 }, out, baseDir: fakePublic() })) as { ok: true; value: any };
     expect(result.ok).toBe(true);
-    expect(result.value.log).toContain('↑ upgraded from v4 to v5');
+    expect(result.value.log).toContain('↑ upgraded from v4 to v6');
     const zip = unzipSync(new Uint8Array(readFileSync(out)));
     const exported = JSON.parse(strFromU8(zip[`${slugify(graph.name)}/graph.json`]));
-    expect(exported.version).toBe(5);
+    expect(exported.version).toBe(6);
     expect(exported.plugins).toEqual([{ id: 'jsartoolkitNFT', version: '0.1.0' }]);
   });
 
@@ -94,14 +94,15 @@ describe('export_bundle', () => {
     expect(result).toEqual({ ok: false, error: expect.stringMatching(/missing\.dat.*404/) });
   });
 
-  it('serves nothing outside baseDir', async () => {
-    const dir = fakePublic();
-    const status = await withStaticServer(join(dir, 'data'), async (base) => [
-      (await fetch(`${base}camera_para.dat`)).status,
-      (await fetch(`${base}..%2f__player%2fmanifest.json`)).status,
-      (await fetch(`${base}nope.bin`)).status,
-    ]);
-    expect(status).toEqual([200, 403, 404]);
+  it('reads baseDir from the disk: no connection, so no network time bound (#157)', async () => {
+    // A loopback server failed under load at undici's 10 s connect timeout ("fetch failed"). With fetch broken, the
+    // export still works: it never asks the network for baseDir. The reader's own rules: mcp-base-dir-fetch.test.ts.
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('fetch failed');
+    });
+    const out = join(mkdtempSync(join(tmpdir(), 'webarkit-mcp-out-')), 'app.zip');
+    const result = await call(client, 'export_bundle', { graphPath: GRAPH, out, baseDir: fakePublic() });
+    expect(result.ok, result.ok ? '' : result.error).toBe(true);
   });
 
   it('needs a .zip output path', async () => {

@@ -16,7 +16,7 @@ const ops = z
       z.object({
         op: z.literal('addNode'),
         type: z.string().describe('A type from catalog_list.'),
-        id: z.string().optional().describe('Default: the last segment of the type and a number, e.g. scene.primitive → primitive1. Give ids to connect the node in the same call.'),
+        id: z.string().optional().describe('Default: the last segment of the type and a number, e.g. scene.mesh → mesh1. Give ids to connect the node in the same call.'),
         params: z.record(z.string(), paramValue).optional().describe('Params to set; the others keep their catalog default.'),
         position: z.object({ x: z.number(), y: z.number() }).optional().describe('Where the editor shows it.'),
       }),

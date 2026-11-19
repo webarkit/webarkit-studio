@@ -6,6 +6,119 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-19
+
+### Added
+
+- Macro nodes in the graph format (#140, first part): a graph may hold macro definitions, and a `macro` node's ports
+  and params are those its definition exposes and promotes. The studio, the player, the exports and the MCP server
+  run the graph flat, and an inner node's status or error shows on its macro node; a promoted param applies live.
+  The `.json`, the autosave, the project, the app's graph and copy and paste keep the definitions, and a script
+  inside a macro asks before it runs as one outside does.
+- Macros in the editor (#140): Create macro folds a selection into a macro node, whose ports are the wires that
+  crossed its border; Dissolve puts the nodes back, and dissolving a macro just made gives the same graph back. Enter
+  macro shows its inside, editable, with a bar to go back: an edit there changes every instance, and a live param
+  applies in each while the preview runs. Inside, Promote sets an inner param on the macro node, and Unpromote takes
+  it back. Rename macro, in its menu or in the bar inside it, renames every instance. Each is one undo step; the edits
+  made inside are one step once back in the graph.
+- The macro library (#141): Export macro… saves a macro's definition as a `.wmacro` file (format `webarkit-macro`,
+  version 1), with a description, and lists the project assets it uses, kept as references. Import macro… adds one to
+  the project's library, the palette's new Macros section, checked as a graph is: an unknown node type or a missing
+  plugin refuses it by name. A library macro is added like any node, its definition copied into the graph; an id the
+  graph already uses for another content asks whether to replace it or keep both. The library is kept beside the
+  autosave and in project files (`library.json`). Presets ship with it: Box, Sphere, Cylinder, Plane, Torus, Torus knot
+  and Capsule, each a geometry node wired into a Mesh, added expanded, so a cube is one palette entry away again.
+- Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
+  adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected
+  one too; Escape clears. Delete or Backspace removes the selection and its wires, Delete in a selected node's menu
+  too, and Ctrl+X cuts it, each as one undo step. Keys typed in a field, a select or the log stay theirs.
+- Geometry nodes and the Mesh node (#132): Box, Sphere, Cylinder (a cone with a top radius of 0), Plane, Torus,
+  Torus Knot and Capsule, each with its own sizes in mm, every one live, in a new Geometry category; and Mesh, which
+  shows a geometry on the marker with its position, rotation, scale per axis, colour, spin and Rest on the marker
+  (inputs override the params, so a graph can drive an object's size). The same shape has the same size and
+  orientation on Three.js and Babylon.js. The source code export writes them.
+- Material and Texture nodes (#133). Material gives meshes (through the Mesh node's new Material input) a physically
+  based surface: colour, metalness, roughness, emissive glow, opacity, front, back or both sides, and Unlit; one
+  material can dress several meshes, and every param changes live. Texture puts an image, or a playing video, on a
+  material's map, with wrap (clamp, repeat, mirror) and repeat live. A material and a texture look the same on
+  Three.js and Babylon.js, on every shape (#162). The source code export writes them (an image texture; a video one is
+  refused by name).
+  A new demo, "pinball · a textured poster and a chrome knot", shows both.
+- A Group node (#136): moves, turns, scales and hides its children together, inside a Marker Anchor, another Group
+  or AR View. Its position, rotation and scale (per axis) change live, and math nodes can drive them. Hiding a group
+  hides its children and turns off the lights in it. The source code export writes it, and a new demo, "pinball · a
+  group of shapes turning on the marker", shows it.
+- An object has one parent: a graph that wires the same object into two parents (two anchors, a group and AR View, or
+  twice into one) is refused at Run, naming the object; a work in progress still opens (#136).
+- An Environment node (#135): image-based lighting that gives metallic and glossy surfaces something to reflect,
+  never drawn over the camera video. Neutral is a soft room made offline on each renderer (alike, not the same); HDR
+  uses an uploaded equirectangular `.hdr`, which the upload button now offers and which project files and exported apps
+  carry. Intensity and rotation change live. Left unconnected it stays with the camera; wired into a Marker Anchor it
+  follows the marker. The source code export writes it, and the "materials and a texture" demo uses one.
+- Point and spot lights, shadows and a Shadow Catcher (#134). The Light node gains Point and Spot, with a position,
+  a target, a distance, and a spot's angle and penumbra; point and spot intensities are in candela at 1 m. Directional
+  and spot lights can cast shadows (map size and bias), on meshes and glTF models that receive them and on the new
+  Shadow Catcher, a plane on the marker that shows only shadows, sized from the marker. Every new param changes live.
+  Both renderers draw the same light and the same shadows; a spot's penumbra fades differently on each (the cone's edge
+  is the same). The source code export writes them. A new demo, "pinball · a model standing on the poster, with its
+  shadow", shows it. Saved graphs keep their lights as they were.
+- A Babylon.js Node Material node (#138): a material from a `.json` file saved by Babylon.js's Node Material Editor,
+  for meshes, as a Material's. A graph that puts a node of one engine in a scene of the other (a Babylon.js node in
+  a Three.js scene, a Three.js Script in a Babylon.js scene, directly or through what it feeds) is now refused before
+  it runs, naming the node, in the studio, the exports and the MCP server; a work in progress still opens.
+- Plugin API: a node definition can say which engine it needs (`engine: 'three' | 'babylon'`), which that check reads
+  (plugin API types package 1.9.0).
+- The renderer nodes expose their engine's options (#137), each with its engine's names and defaults, so a saved graph
+  renders as before: antialias, power preference, preserve drawing buffer and stencil; a max pixel ratio that caps the
+  device pixel ratio the AR view is drawn at (on a phone, a cap of 1 draws fewer pixels), live; tone mapping and
+  exposure, live; and Three.js's output colour space, live. A new Info output shows in an Inspector what the browser
+  granted (WebGL version, GPU where the browser tells it, antialias, the maximum texture size, the extensions) and the
+  last frame's draw calls and triangles, once a second. The source code export writes the Three.js renderer's options.
+- Plugin API: the Renderer info socket is a studio internal (plugin API types package 1.8.0).
+- Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
+  editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
+- Plugin API: the Geometry socket is a studio internal (plugin API types package 1.6.0).
+
+### Changed
+
+- Babylon.js builds every geometry node's shape from Three.js's own generators (#162), so both renderers draw the same
+  mesh: the same size and outline as before, and now the same texture coordinates, so a texture lies the same way on
+  a box, sphere, cylinder, torus, torus knot or capsule. The Babylon.js renderer downloads about 16 KB more (gzipped).
+- **Graph format v6** (#132): the Primitive node is replaced by a geometry node wired into a Mesh. Older graphs
+  upgrade when they are opened: each Primitive becomes a Mesh with the same id, wires and params, and a Box, Sphere
+  or Torus Knot of the same size. A new Mesh does not spin unless Spin is on; an upgraded one keeps its spin. A
+  torus knot now rests on the marker: it floated 18.78 mm above it (at size 80), and comes down by that much. A box
+  or sphere does not move. On every geometry node, height is out of the marker: the Plane's sizes are width (X) and
+  depth (Y).
+- Babylon.js scenes look different (#131): the Babylon.js renderer now draws primitives with a physically based
+  material, as Three.js does, and maps lights and colours as Three.js reads them, so the same graph looks
+  alike on both. Lights no longer need lower intensities on Babylon.js, and a hemisphere light no longer
+  adds a highlight. glTF models change too: under a directional light they are about 2.5 times brighter
+  than before on Babylon.js, as on Three.js, so intensities tuned for a model on Babylon.js may need
+  retuning. The Babylon.js renderer's default lights (Default lights on the Scene node) are now Three.js's: a hemisphere
+  at 2.5 and a directional light at 1.5.
+
+### Fixed
+
+- The MCP server's `export_bundle` reads `baseDir` from the disk, with no local server (#157): on a busy machine its
+  export could fail after 10 s with "fetch failed".
+- When the standalone app export cannot fetch a file, its error names the file and why the fetch failed, not only
+  "fetch failed" (#157): a failed fetch of the player's manifest is no longer reported as a player that is not built,
+  and a dataset that cannot be found says why its fetches failed.
+- A shadow-casting directional light reaches ±250 mm from its axis on Babylon.js, as on Three.js (#169): it reached
+  ±300 mm, so an object between 250 and 300 mm from the light's axis cast a shadow on Babylon.js only.
+- Two half-transparent objects that overlap let as much of the camera through on Babylon.js as on Three.js (#155):
+  where they overlapped, Babylon.js hid the camera completely (two objects at 0.5 showed none of it, against a
+  quarter on Three.js). This holds for meshes and for glTF models.
+- A hemisphere light in a group, or under the marker's anchor, follows its parent on the same frame on
+  Three.js (#145): it lagged one frame behind, so on a moving marker its sky pointed where the marker had
+  been. Babylon.js was not affected.
+- A half-transparent object on Babylon.js looks as it does on Three.js over the camera (#144): its colour
+  was multiplied by its opacity twice, so it looked darker (80, 96, 112 instead of 128, 128, 128 for an
+  orange at 0.5 over a blue).
+- A half-transparent glTF model on Babylon.js no longer grows more opaque where a light's highlight falls
+  on it (#153): its alpha there was 168 instead of 128, as on Three.js.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added

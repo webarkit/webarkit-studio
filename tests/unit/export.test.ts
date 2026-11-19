@@ -6,7 +6,7 @@ import { slugify, type ExportContext } from '../../src/export/exporters';
 import { exportSourceCode } from '../../src/export/codegen/export';
 import { unzipSync } from 'fflate';
 import { assetRef } from '../../src/core/assets';
-import type { StoredAsset } from '../../src/assets/asset';
+import { assetKindOf, type StoredAsset } from '../../src/assets/asset';
 import type { GraphDocument } from '../../src/core/graph';
 import { WORKER_DIR } from '../../plugins/jsartoolkit-nft/worker-files';
 
@@ -38,7 +38,7 @@ const html = '<script type="module" src="./assets/player.js"></script><link rel=
 
 const doc = (types: Array<[string, Record<string, string>?]>): GraphDocument => ({
   format: 'webarkit-studio/graph',
-  version: 5,
+  version: 6,
   nodes: types.map(([type, params], i) => ({ id: `n${i}`, type, params: params ?? {} })),
   edges: [],
 });
@@ -326,6 +326,17 @@ describe('collectAssets', () => {
     expect(g.nodes[1].params.url).toBe('data/assets/d1/pinball');
   });
 
+  it("bundles an uploaded .hdr (#135) byte for byte under data/assets/<id>/, and points the Environment's URL at it", async () => {
+    const bytes = new Uint8Array(readFileSync('tests/unit/data/environment.hdr'));
+    const hdr: StoredAsset = { id: 'e1', name: 'studio room.hdr', kind: assetKindOf('studio room.hdr'), files: { '': new Blob([bytes]) } };
+    const withHdr: ExportContext = { ...ctx, assets: { get: (id) => (id === 'e1' ? hdr : undefined), list: () => [hdr] } };
+    const g = doc([['scene.environment', { source: 'hdr', url: assetRef('e1', 'studio room.hdr') }]]);
+    const files = await collectAssets(g, base, withHdr);
+    expect(Object.keys(files)).toEqual(['data/assets/e1/studio_room.hdr']);
+    expect(files['data/assets/e1/studio_room.hdr']).toEqual(bytes);
+    expect(g.nodes[0].params.url).toBe('data/assets/e1/studio_room.hdr');
+  });
+
   it('never writes "." or ".." as a bundle file name', async () => {
     const dots: ExportContext = { ...ctx, assets: { get: () => ({ id: 'x', name: '..', kind: 'file', files: { '': new Blob(['?']) } }), list: () => [] } };
     const files = await collectAssets(doc([['jsartoolkitNFT.cameraParams', { url: assetRef('x', '..') }]]), base, dots);
@@ -344,6 +355,15 @@ describe('collectAssets', () => {
     const accents: ExportContext = { ...ctx, assets: { get: () => ({ id: 'a', name: 'Café déjà.dat', kind: 'file', files: { '': new Blob(['?']) } }), list: () => [] } };
     const files = await collectAssets(doc([['jsartoolkitNFT.cameraParams', { url: assetRef('a', 'Café déjà.dat') }]]), base, accents);
     expect(Object.keys(files)).toEqual(['data/assets/a/Cafe_deja.dat']);
+  });
+
+  it('skips an empty asset param: a Texture fed by a video needs no image (#133), and nothing else is fetched', async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => (fetched.push(String(url)), new Response('the studio page')));
+    const g = doc([['scene.texture', { url: '' }], ['scene.texture', { url: '   ' }]]);
+    expect(await collectAssets(g, base, ctx)).toEqual({});
+    expect(fetched).toEqual([]);
+    vi.unstubAllGlobals();
   });
 
   it('bundles two remote files of the same name apart, and each param points to its own (#88)', async () => {

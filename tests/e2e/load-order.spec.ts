@@ -142,7 +142,7 @@ test('a project overtaken while its assets are being written still arrives whole
   await page.setInputFiles('#file-import', project());
   await expectShown(page, 'pinball-math');
   expect(await assetNames(page)).toEqual(['photo.png']);
-  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v5');
+  await expect(page.locator('#log')).toContainText('↑ upgraded from v4 to v6');
 });
 
 test('a project overtaken before it applies touches nothing', async ({ page }) => {

@@ -17,6 +17,7 @@ import type { GraphDocument, GraphNode } from '../core/graph';
 import { loadGraphDocument, upgradeNote } from '../core/migrations';
 import { NODE_CATALOG } from '../nodes/catalog';
 import { effectiveDefinition } from '../core/script';
+import { definitionValueRead, everyNode, flattenGraph, MACRO_TYPE, macrosFor, usedMacros } from '../core/macros';
 import { assetKindLabel, parseAssetRef, pluginAssetKind } from '../core/assets';
 import { GRAPH_META } from '../app/handoff';
 import { graphTitle, slugify, type ExportContext, type ExportResult } from './exporters';
@@ -71,9 +72,33 @@ export function needsIsolation(doc: GraphDocument, plugins: Iterable<StudioPlugi
 }
 
 class ExportError extends Error {}
+/** No response at all: the network failed, not the file. Neither a missing build nor a missing file (#157). */
+class FetchError extends ExportError {
+  /** The URL and why its fetch failed, without the name of what was fetched. */
+  constructor(what: string, readonly detail: string) {
+    super(`${what}: ${detail}`);
+  }
+}
 
-async function fetchBytes(url: string, what: string): Promise<Uint8Array> {
-  const res = await fetch(url);
+type Fetch = NonNullable<ExportContext['fetch']>;
+/** The global fetch, read at each call. */
+const globalFetch: Fetch = (url) => fetch(url);
+
+/** Why a fetch failed: Node's fetch says only "fetch failed", and keeps the reason (a code, a message) in `cause`. */
+function fetchFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error ? (err.cause as { code?: unknown; message?: unknown } | undefined) : undefined;
+  const why = cause && typeof cause === 'object' ? [cause.code, cause.message].filter((s) => typeof s === 'string' && s).join(' ') : '';
+  return why ? `${message}: ${why}` : message;
+}
+
+async function fetchBytes(url: string, what: string, get: Fetch = globalFetch): Promise<Uint8Array> {
+  let res: Response;
+  try {
+    res = await get(url);
+  } catch (err) {
+    throw new FetchError(what, `${url} → ${fetchFailure(err)}`);
+  }
   if (!res.ok) throw new ExportError(`${what}: ${url} → HTTP ${res.status}`);
   // A dev server / host with an SPA fallback answers 200 + index.html for missing files.
   if ((res.headers.get('content-type') ?? '').includes('text/html') && !url.endsWith('.html')) {
@@ -82,10 +107,16 @@ async function fetchBytes(url: string, what: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-async function tryFetch(url: string): Promise<Uint8Array | null> {
+/**
+ * The file, or null when the host does not give it. A failed fetch is null too, since a browser sees a missing file on
+ * a host that sends no CORS headers with its 404 as a network error, but its detail goes into `failures`, for the
+ * error to say why if no file comes back at all (#157).
+ */
+async function tryFetch(url: string, what: string, get: Fetch, failures: string[]): Promise<Uint8Array | null> {
   try {
-    return await fetchBytes(url, 'probe');
-  } catch {
+    return await fetchBytes(url, what, get);
+  } catch (err) {
+    if (err instanceof FetchError) failures.push(err.detail);
     return null;
   }
 }
@@ -243,17 +274,34 @@ function checkSelfContained(data: Uint8Array, where: string): void {
  * Collects the files the graph's asset params need, as bundle path → bytes,
  * and rewrites the params that point elsewhere (uploads, other origins).
  * Uploaded assets go under data/assets/<id>/. `doc` is modified.
+ * Macros (#140): the nodes inside the definitions the graph uses are rewritten in their definition, and a macro node's
+ * promoted asset param where the node sets it; one it leaves unset keeps the definition's value, collected there. A
+ * definition's value that every instance overrides is not collected, and stays as it is (Qodo on #174).
  */
+/** Writes a param as an own key: a macro node's promoted param is named by its graph (#140), maybe "__proto__". */
+const setParam = (node: GraphNode, key: string, value: string) =>
+  Object.defineProperty(node.params, key, { value, enumerable: true, writable: true, configurable: true });
+
 /** Exported for tests. */
 export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportContext): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const names = bundleNames(); // the paths and files this export has given out (#88)
   const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
-  for (const node of doc.nodes) {
-    const def = effectiveDefinition(node)!; // a script's header never declares an asset param, but read it the one way
+  const used = usedMacros(doc.nodes, doc.macros);
+  for (const { node: n, macro } of everyNode(doc)) {
+    if (macro !== undefined && !used.has(macro)) continue; // a definition no node uses is not in the app
+    // A node inside a definition is named by it in the log and the errors: its flat ids are one per instance.
+    const node = macro === undefined ? n : { ...n, id: `${macro}:${n.id}`, params: n.params };
+    // A script's header never declares an asset param, but read it the one way; a macro node's come from its definition.
+    const def = effectiveDefinition(node, NODE_CATALOG, doc.macros)!;
     for (const [key, spec] of Object.entries(def.params)) {
       if (spec.kind !== 'string' || !spec.asset) continue;
+      if (node.type === MACRO_TYPE && !Object.hasOwn(node.params, key)) continue;
+      // A definition's value that every instance overrides with a promoted param is read by none: not collected.
+      if (macro !== undefined && !definitionValueRead(doc, macro, n.id, key)) continue;
       const value = String(node.params[key] ?? spec.default);
+      // No file to bundle (a Texture fed by a video, #133): `new URL('', base)` would be the studio page itself.
+      if (!value.trim()) continue;
       const multi = pluginAssetKind(spec.asset);
       const ref = parseAssetRef(value);
       if (ref) {
@@ -267,7 +315,7 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
           files[path] = await bytes(asset.files['']);
           if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
         }
-        node.params[key] = path;
+        setParam(node, key, path);
         ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''} (uploaded)`);
         continue;
       }
@@ -279,23 +327,27 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
 
       if (multi) {
         // A prefix: each of the kind's files, or the one file that can stand in for them.
-        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext))));
+        const what = `${node.id}.${key}`;
+        const get = ctx.fetch ?? globalFetch;
+        const failures: string[] = [];
+        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext), what, get, failures)));
         if (parts.every(Boolean)) {
           multi.extensions.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
         } else {
           const { alternative } = multi;
-          const packed = alternative ? await tryFetch(withExtension(url, alternative)) : null;
+          const packed = alternative ? await tryFetch(withExtension(url, alternative), what, get, failures) : null;
           if (!packed) {
             const where = `${url.href}.{${multi.extensions.join(',')}${alternative ? `|${alternative}` : ''}}`;
-            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}`);
+            const why = failures.length ? ` (${failures.length === 1 ? 'a fetch' : `${failures.length} fetches`} failed: ${failures[0]})` : '';
+            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}${why}`);
           }
           files[`${path}.${alternative}`] = packed;
         }
       } else {
-        files[path] = await fetchBytes(url.href, `${node.id}.${key}`);
+        files[path] = await fetchBytes(url.href, `${node.id}.${key}`, ctx.fetch);
         if (spec.asset === 'model') checkSelfContained(files[path], `${node.id}.${key}`);
       }
-      if (rewritten) node.params[key] = path;
+      if (rewritten) setParam(node, key, path);
       ctx.log(`asset: ${node.id}.${key} → ${path}${multi ? '.*' : ''}${rewritten ? ' (rewritten)' : ''}`);
     }
   }
@@ -307,10 +359,11 @@ export async function collectPluginFiles(
   doc: GraphDocument,
   base: URL,
   plugins: Iterable<StudioPlugin> = INSTALLED_PLUGINS.values(),
+  get: Fetch = globalFetch,
 ): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   for (const { file, needed } of pluginExportFiles(doc, plugins)) {
-    if (file.kind === 'file' && needed) files[file.to] = await fetchBytes(new URL(file.from, base).href, `plugin file ${file.to}`);
+    if (file.kind === 'file' && needed) files[file.to] = await fetchBytes(new URL(file.from, base).href, `plugin file ${file.to}`, get);
   }
   return files;
 }
@@ -318,35 +371,43 @@ export async function collectPluginFiles(
 /** The app's files as bundle path → bytes, for the exports that package it. */
 export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): Promise<{ files: Record<string, Uint8Array>; doc: GraphDocument }> {
   const loaded = loadGraphDocument(input); // a copy: collectAssets rewrites its params
+  // The app's graph.json keeps the macros, and the player flattens it at load as the studio does (#140). What the
+  // graph needs (engines, plugin files, isolation) is read from the flat graph, which has every inner node.
   const doc = loaded.doc;
+  const macros = macrosFor(doc.nodes, doc.macros); // what the editor writes: a definition no node uses is left out
+  if (macros) doc.macros = macros;
+  else delete doc.macros;
+  const flat = () => flattenGraph(doc).doc;
   const upgraded = upgradeNote(loaded);
   if (upgraded) ctx.log(upgraded);
   const base = new URL(ctx.baseUrl);
+  const get = ctx.fetch ?? globalFetch;
   const files: Record<string, Uint8Array> = {};
 
   // ---------------------------------------------------------------- player
   const playerBase = new URL('__player/', base);
   let manifest: PlayerManifest;
   try {
-    manifest = JSON.parse(new TextDecoder().decode(await fetchBytes(new URL('manifest.json', playerBase).href, 'player manifest')));
+    manifest = JSON.parse(new TextDecoder().decode(await fetchBytes(new URL('manifest.json', playerBase).href, 'player manifest', get)));
   } catch (err) {
+    if (err instanceof FetchError) throw err; // the network failed: the player may well be built
     throw new ExportError(`The standalone player is not built (${(err as Error).message}). Run "npm run build:player".`);
   }
-  const entryHtml = new TextDecoder().decode(await fetchBytes(new URL(manifest.entry, playerBase).href, 'player page'));
-  const playerFiles = selectPlayerFiles(manifest, entryHtml, doc);
+  const entryHtml = new TextDecoder().decode(await fetchBytes(new URL(manifest.entry, playerBase).href, 'player page', get));
+  const playerFiles = selectPlayerFiles(manifest, entryHtml, flat());
   ctx.log(`player: ${playerFiles.size} of ${manifest.files.length} files (unused engines / builds left out)`);
   for (const file of playerFiles) {
     if (file === manifest.entry) continue;
-    files[file] = await fetchBytes(new URL(file, playerBase).href, 'player file');
+    files[file] = await fetchBytes(new URL(file, playerBase).href, 'player file', get);
   }
 
   // ---------------------------------------------------------------- assets
   Object.assign(files, await collectAssets(doc, base, ctx));
-  Object.assign(files, await collectPluginFiles(doc, base));
+  Object.assign(files, await collectPluginFiles(flat(), base, undefined, get));
 
   // ------------------------------------------------------- page and graph
   const title = graphTitle(doc.name);
-  const isolated = needsIsolation(doc);
+  const isolated = needsIsolation(flat());
   const page = entryHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
     .replace('</head>', `  <meta name="${GRAPH_META}" content="graph.json" />\n  </head>`);
@@ -357,7 +418,7 @@ export async function buildAppFiles(input: GraphDocument, ctx: ExportContext): P
     ctx.log(`cross-origin isolation: ${SERVICE_WORKER_FILE} and _headers (see README.txt)`);
   }
   files['graph.json'] = strToU8(JSON.stringify(doc, null, 2));
-  files['README.txt'] = strToU8(readme(doc, title) + (isolated ? README_SECTION : ''));
+  files['README.txt'] = strToU8(readme(flat(), title) + (isolated ? README_SECTION : ''));
   // A Pages site built from a branch runs Jekyll, which drops paths starting with "_", such as data/_ext/.
   files['.nojekyll'] = new Uint8Array(0);
   return { files, doc };

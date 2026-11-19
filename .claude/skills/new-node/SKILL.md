@@ -11,7 +11,7 @@ Follow the "Adding a node" steps in `AGENTS.md`. This skill adds the details.
 
 Before writing code, settle:
 
-- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker.
+- **Type**, following the naming rules in `AGENTS.md`: `<library>.*` when it wraps a library, a functional namespace (`scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`) otherwise. Never `webarkit.*` unless it wraps a webarkit/webarkit tracker. `macro` is reserved for the macro node (#140) and never used for another.
 - **Ports:** socket types from `src/core/sockets.ts`. Mark inputs `optional` or `multiple` where it applies.
 - **Params:** kind, default, range. Mark `live: true` only if the factory can apply the change in `onParamChange` without a restart. A param the graph can drive gets an optional input of the same name (`AGENTS.md`, "Inputs override params").
 
@@ -21,7 +21,7 @@ If the type already exists, or the request renames or removes an existing node, 
 
 A plugin's node goes into the plugin instead of steps 1 to 3 (`AGENTS.md`, "Adding a node").
 
-1. **Catalog:** add a `NodeDefinition` to `defs` in `src/nodes/catalog.ts`, in the section of its category. Metadata only, no runtime imports.
+1. **Catalog:** add a `NodeDefinition` to `defs` in `src/nodes/catalog.ts`, in the section of its category. Metadata only, no runtime imports. A `three.*` or `babylon.*` node sets `engine` to the engine it needs (#138: the engine rule reads it; `tests/unit/engine-rule.test.ts` checks it).
 2. **Factory:** implement it in the matching file of `src/runtime/nodes/` (or a new file for a new area). Use the lifecycle in `src/runtime/types.ts`: `init`, `update`, `onParamChange`, `dispose`. Copy the style of a nearby node of the same category.
 3. **Registry:** import the factory in `src/runtime/registry.ts` and add it to `NODE_REGISTRY` under the same type, next to its neighbours in the catalog order.
 4. **Test:** add a test in `tests/unit/` for the logic that does not need a browser (see `tests/unit/nodes.test.ts`).

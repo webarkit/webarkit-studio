@@ -4,6 +4,7 @@
  */
 import type { GraphDocument } from '../core/graph';
 import { parseAssetRef } from '../core/assets';
+import { everyNode } from '../core/macros';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
 import { checkSourceCode } from './codegen/check';
 import { slugify } from './names';
@@ -22,11 +23,26 @@ export interface ExportContext {
   log: (message: string) => void;
   /** Uploaded assets (asset:// params). */
   assets?: ProjectAssets;
+  /** The project's macro library (#141), as writeLibrary() gives it: the project file saves it as library.json. */
+  library?: () => unknown;
+  /**
+   * How the export gets a file by URL: the global fetch when absent (the studio). The MCP server's export_bundle
+   * reads its baseDir from the disk instead, with no network (#157).
+   */
+  fetch?: (url: string) => Promise<Response>;
 }
 
 /** True if any param of the graph references an uploaded asset. */
+/**
+ * Whether a node uses the uploaded asset `id`: a macro node's promoted param, or a node inside a definition too (#140).
+ * The Assets panel asks before deleting one in use.
+ */
+export const usesAsset = (doc: GraphDocument, id: string) =>
+  everyNode(doc).some(({ node }) => Object.values(node.params ?? {}).some((v) => typeof v === 'string' && parseAssetRef(v)?.id === id));
+
+/** Whether a node uses an uploaded asset: a macro node's promoted param, or a node inside a definition too (#140). */
 export const usesUploadedAssets = (doc: GraphDocument) =>
-  doc.nodes.some((n) => Object.values(n.params).some((v) => typeof v === 'string' && parseAssetRef(v)));
+  everyNode(doc).some(({ node }) => Object.values(node.params ?? {}).some((v) => typeof v === 'string' && parseAssetRef(v)));
 
 export interface ExportResult {
   filename: string;
@@ -91,10 +107,10 @@ const project: Exporter = {
   mime: 'application/zip',
   extension: '.zip',
   label: 'Project (.zip)',
-  description: 'The graph and its uploaded assets, to open in another browser with Import…',
+  description: 'The graph, its uploaded assets and its macro library, to open in another browser with Import…',
   async run(doc, ctx) {
     const { packProject } = await import('./project');
-    const zip = await packProject(doc, ctx.assets?.list() ?? []);
+    const zip = await packProject(doc, ctx.assets?.list() ?? [], ctx.library?.());
     return { filename: `${slugify(doc.name)}.webarkit.zip`, blob: new Blob([zip as BlobPart], { type: 'application/zip' }) };
   },
 };

@@ -11,12 +11,14 @@
   --cat-filter: #4db6ac;
   --cat-renderer: #e57373;
   --cat-scene: #81c784;
+  --cat-geometry: #a5d6a7;
   --cat-output: #ba68c8;
   --cat-math: #ffcc80;
   --cat-color: #fff176;
   --cat-logic: #9fa8da;
   --cat-action: #ffab91;
   --cat-debug: #bdbdbd;
+  --cat-macro: #80cbc4;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -47,6 +49,16 @@ button:disabled { opacity: 0.4; cursor: default; }
 .palette button[hidden], .palette-group[hidden] { display: none; }
 .palette button { display: block; width: 100%; text-align: left; margin-bottom: 4px; border-left: 3px solid var(--c, var(--border)); }
 
+/* The editor, under the bar shown while a macro's inside is (#140). */
+.editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.editor-pane > .editor { flex: 1; min-height: 0; }
+.macro-path { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.macro-path[hidden] { display: none; }
+.macro-path small { color: var(--muted); }
+.macro-path input { font-weight: 600; min-width: 10ch; }
+.inspector .param-line { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; }
+.inspector .promote { font-size: 11px; padding: 2px 6px; }
+.inspector .promote.promoted { border-color: var(--accent); }
 .editor { position: relative; overflow: hidden; background: radial-gradient(circle, #2a2e37 1px, transparent 1px) 0 0 / 22px 22px; }
 
 .preview { border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--panel); }
@@ -59,16 +71,20 @@ button:disabled { opacity: 0.4; cursor: default; }
 .cat-filter { --c: var(--cat-filter); }
 .cat-renderer { --c: var(--cat-renderer); }
 .cat-scene { --c: var(--cat-scene); }
+.cat-geometry { --c: var(--cat-geometry); }
 .cat-output { --c: var(--cat-output); }
 .cat-math { --c: var(--cat-math); }
 .cat-color { --c: var(--cat-color); }
 .cat-logic { --c: var(--cat-logic); }
 .cat-action { --c: var(--cat-action); }
 .cat-debug { --c: var(--cat-debug); }
+.cat-macro { --c: var(--cat-macro); }
 
 /* ---------- nodes (rendered by LitRenderPlugin) ---------- */
 .studio-node { width: 230px; background: var(--node); border: 1px solid var(--border); border-top: 3px solid var(--c, var(--border)); border-radius: 8px; padding-bottom: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.35); user-select: none; }
 .studio-node.selected { border-color: var(--accent); border-top-color: var(--accent); }
+/* The box of a Shift+drag on the canvas (#139): over the nodes, never catching the pointer. */
+.selection-box { position: absolute; z-index: 5; border: 1px dashed var(--accent); background: rgb(255 0 85 / 0.08); pointer-events: none; }
 .studio-node .title { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; font-weight: 600; }
 .studio-node .title small { display: block; font-weight: 400; font-size: 10px; color: var(--muted); }
 .studio-node .port .optional { font-style: italic; opacity: 0.7; }
@@ -173,3 +189,12 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .script-trust ul { font-family: ui-monospace, monospace; }
 .script-trust form { display: flex; justify-content: flex-end; gap: 8px; }
 .script-trust .primary { border-color: var(--accent); }
+/* The macro library (#141): its dialogs, and its entries in the palette, each with a remove button. */
+.macro-dialog label { display: block; margin: 8px 0; }
+.macro-dialog textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; }
+.macro-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.palette .macro-entry { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+.palette .macro-entry[hidden] { display: none; }
+.palette .macro-entry .macro-remove { width: auto; margin: 0 0 4px 4px; padding: 0 6px; border: none; background: transparent; color: var(--muted); font-size: 16px; }
+.palette .macro-entry .macro-remove:hover { color: var(--accent); }
+.palette .macro-preset, .palette .macro-add { --c: var(--accent); }

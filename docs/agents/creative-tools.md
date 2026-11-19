@@ -188,7 +188,7 @@ ComfyUI or Krita, and step 4's model with a Blender export.
    742 detection points, coverage 1, repetition 0.187, 398 tracking points.
 4. **Project.** `npm run example:project -- generated/scribbles` writes `generated/scribbles.zip`.
    It holds the Pinball · Three.js demo graph, with the dataset and a `scene.gltf` node in place of
-   pinball and its primitive, and both files as uploaded assets. The model is `public/models/cube.glb`
+   pinball and its mesh and geometry, and both files as uploaded assets. The model is `public/models/cube.glb`
    at 60 mm per unit. Use `--model my.glb` (a `.glb`, or a self-contained `.gltf`) for your own and
    `--scale` to size it.
 5. **Studio.** `npm run dev`, then *Import…* the `.zip`, print the marker at 100 %, and point the

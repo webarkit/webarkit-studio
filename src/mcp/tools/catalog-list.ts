@@ -13,7 +13,7 @@ export const catalogList = defineTool({
     'with their socket types (multiple = several connections, optional = may stay unconnected), params with kind, default ' +
     'and live (applied without a restart). Also the graph format version and the loaded plugins, to put in a graph.',
   inputSchema: z.object({
-    category: z.string().optional().describe('Only this category (source, tracking, filter, renderer, scene, output, math, color, logic, action, debug).'),
+    category: z.string().optional().describe('Only this category (source, tracking, filter, renderer, scene, geometry, output, math, color, logic, action, debug).'),
     types: z.array(z.string()).optional().describe('Only these node types.'),
   }),
   run({ category, types }) {
@@ -22,6 +22,10 @@ export const catalogList = defineTool({
       graphVersion: GRAPH_VERSION,
       plugins: Object.entries(LOADED_PLUGINS).map(([id, version]) => ({ id, version })),
       connections: 'An output connects to an input of the same socket type, or to any input of type "any". A required input must be connected.',
+      macros:
+        'A node of type "macro" has no ports of its own: they come from its definition in the graph\'s "macros" (by the id in its "definition" param), ' +
+        'which exposes inner ports and promotes inner params. Validation and the runtime replace each macro node by its inner nodes, ' +
+        'named "<macro node>/<inner node>", and check that flat graph. No macro inside a macro.',
       nodes,
     };
   },

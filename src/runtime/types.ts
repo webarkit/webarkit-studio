@@ -1,6 +1,9 @@
 import type { Rgba } from '../core/color';
 import type { ParamValue } from '../core/graph';
-import type { RendererAdapter, SceneHandle, SceneObject } from './renderers/adapter';
+import type { Bounds, GeometrySpec } from '../core/geometry';
+import type { MaterialSpec, TextureSpec } from '../core/material';
+import type { GeometryObject, MaterialObject, RendererAdapter, SceneHandle, SceneObject, TextureObject } from './renderers/adapter';
+import type { RendererContextInfo, RendererFrameStats } from './renderers/renderer-info';
 import type { PoseFilterConfig } from './filters/pose-filter';
 import type { TraceHeader, TraceRecord } from './trackers/trace';
 
@@ -78,8 +81,51 @@ export interface CameraValue {
   projection: ProjectionValue;
 }
 export type RendererValue = RendererAdapter;
+/**
+ * rendererInfo (#137): what the renderer's WebGL context was granted, read once, and its last frame's draw calls and
+ * triangles, refreshed once a second. Plain data: a studio internal, for the Inspector.
+ */
+export type RendererInfoValue = RendererContextInfo & RendererFrameStats & { engine: string };
 export type SceneValue = SceneHandle;
 export type SceneObjectValue = SceneObject;
+/**
+ * geometry (#132): a geometry made in a scene, with the normalized spec it was last built from and its bounds (the
+ * core's, src/core/geometry.ts). A new value on every live change, so a mesh reading it sees the new bounds.
+ */
+export interface GeometryValue {
+  handle: GeometryObject;
+  spec: GeometrySpec;
+  bounds: Bounds;
+}
+
+/**
+ * material (#133): a material made in a scene, shared by every mesh given it, with the normalized spec it was last
+ * written with. A new value on every change, so an Inspector shows it; the handle stays the same.
+ */
+export type MaterialValue = SpecMaterialValue | NodeMaterialValue;
+/** scene.material's: the spec it was written with. */
+export interface SpecMaterialValue {
+  handle: MaterialObject;
+  spec: MaterialSpec;
+  nodeMaterial?: undefined;
+}
+/**
+ * babylon.nodeMaterial's (#138): a Node Material has no MaterialSpec (its colour, if any, is a block of a graph), so
+ * `spec` is null rather than one made up; what it is, is the file and its count of blocks. A mesh reads the handle only.
+ */
+export interface NodeMaterialValue {
+  handle: MaterialObject;
+  spec: null;
+  nodeMaterial: { file: string; blocks: number };
+}
+/** texture (#133): a texture made in a scene, its picture's size and kind, and its wrap and repeat. */
+export interface TextureValue {
+  handle: TextureObject;
+  spec: TextureSpec;
+  width: number;
+  height: number;
+  video: boolean;
+}
 
 export type PortValues = Record<string, unknown>;
 

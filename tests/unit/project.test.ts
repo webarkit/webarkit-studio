@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { isProjectFile, packProject, unpackProject } from '../../src/export/project';
 import { assetRef } from '../../src/core/assets';
-import type { StoredAsset } from '../../src/assets/asset';
+import { assetKindOf, type StoredAsset } from '../../src/assets/asset';
+import { readFileSync } from 'node:fs';
 import type { GraphDocument } from '../../src/core/graph';
 
 const graph: GraphDocument = {
   format: 'webarkit-studio/graph',
-  version: 5,
+  version: 6,
   name: 'My project',
   nodes: [{ id: 'g', type: 'scene.gltf', params: { url: assetRef('m1', 'duck model.glb') } }],
   edges: [],
@@ -38,6 +39,18 @@ describe('project file', () => {
       ['d1', 'pinball', 'nftDataset', ['fset', 'fset3', 'iset']],
     ]);
     expect(await back.assets[1].files.fset3.text()).toBe('F3');
+  });
+
+  it('carries an uploaded .hdr (a file asset, #135) byte for byte, with the Environment that uses it', async () => {
+    const bytes = readFileSync('tests/unit/data/environment.hdr');
+    const name = 'environment.hdr';
+    const hdr: StoredAsset = { id: 'e1', name, kind: assetKindOf(name), files: { '': new Blob([bytes]) } };
+    expect(hdr.kind).toBe('file');
+    const doc: GraphDocument = { ...graph, nodes: [{ id: 'env', type: 'scene.environment', params: { source: 'hdr', url: assetRef('e1', name) } }] };
+    const back = await unpackProject(await packProject(doc, [hdr]));
+    expect(back.graph).toEqual(doc);
+    expect(back.assets.map((a) => [a.id, a.name, a.kind])).toEqual([['e1', name, 'file']]);
+    expect(new Uint8Array(await back.assets[0].files[''].arrayBuffer())).toEqual(new Uint8Array(bytes));
   });
 
   describe('MIME types', () => {
@@ -132,5 +145,45 @@ describe('project file', () => {
     expect(isProjectFile(new TextEncoder().encode('{"format":"x"}'))).toBe(false);
     const { zipSync } = await import('fflate');
     await expect(unpackProject(zipSync({ 'readme.txt': new Uint8Array(1) }))).rejects.toThrow(/graph\.json/);
+  });
+});
+
+// The macro library (#141) travels in a project as library.json, with its own format and version. A project without
+// one opens with an empty library; an older studio reads graph.json and assets.json only, so it ignores the file.
+describe('project file: the macro library', () => {
+  const library = {
+    format: 'webarkit-studio/macro-library',
+    version: 1,
+    macros: [{ format: 'webarkit-macro', version: 1, id: 'm', name: 'M', description: '', plugins: [], graphVersion: 6, definition: { name: 'M', nodes: [], edges: [] } }],
+  };
+
+  it('writes library.json beside the graph, and reads it back as it was written', async () => {
+    const bytes = await packProject(graph, [], library);
+    const files = unzipSync(bytes);
+    expect(Object.keys(files).sort()).toEqual(['assets.json', 'graph.json', 'library.json']);
+    expect(JSON.parse(strFromU8(files['library.json']))).toEqual(library);
+    expect((await unpackProject(bytes)).library).toEqual(library);
+  });
+
+  it('a project without library.json reads no library (an empty one)', async () => {
+    const back = await unpackProject(await packProject(graph, []));
+    expect(back.library).toBeNull();
+    const { readLibrary, emptyLibrary } = await import('../../src/core/macro-library');
+    expect(readLibrary(back.library).library).toEqual(emptyLibrary());
+  });
+
+  it('library.json changes nothing else that is read: the graph and the assets come back the same', async () => {
+    const without = await unpackProject(await packProject(graph, assets));
+    const withIt = await unpackProject(await packProject(graph, assets, library));
+    expect(withIt.graph).toEqual(without.graph);
+    expect(withIt.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)])).toEqual(without.assets.map((a) => [a.id, a.name, a.kind, Object.keys(a.files)]));
+  });
+
+  it('a library.json that is not JSON is reported, and the graph still opens', async () => {
+    const bytes = zipSync({ 'graph.json': strToU8('{"name":"g"}'), 'library.json': strToU8('{not json') });
+    const back = await unpackProject(bytes);
+    expect(back.libraryProblem).toBe('project file: library.json is not JSON');
+    expect([back.graph, back.library]).toEqual([{ name: 'g' }, null]);
+    expect((await unpackProject(await packProject(graph, [], library))).libraryProblem).toBeUndefined();
   });
 });

@@ -10,8 +10,8 @@
  * The shared socket types (CoreSocketType) and the values they carry are the
  * contract between plugins: changing one is a breaking change of this API and
  * bumps the API version (PLUGIN_API_VERSION in src/core/plugins.ts). Adding one
- * is not. The `renderer`, `scene` and `sceneObject` values are studio internals,
- * not part of the contract: plugins may only pass them through.
+ * is not. The `renderer`, `rendererInfo`, `scene`, `sceneObject`, `geometry`, `material` and `texture` values are
+ * studio internals, not part of the contract: plugins may only pass them through.
  */
 import type { AssetKindDefinition } from '../core/assets';
 import type { GraphNode, ParamValue } from '../core/graph';
@@ -23,7 +23,7 @@ import type { VIRTUAL_ASSET_ORIGIN } from '../runtime/assets';
 export type { AssetKindDefinition } from '../core/assets';
 export type { GraphNode, ParamValue, PluginRef } from '../core/graph';
 export type { CoreSocketType, PluginSocketType, SocketType } from '../core/sockets';
-export type { AssetKind, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
+export type { AssetKind, Engine, NodeCategory, NodeDefinition, ParamSpec, PortSpec } from '../nodes/catalog';
 export type {
   CameraValue,
   ColorValue,

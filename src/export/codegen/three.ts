@@ -4,6 +4,14 @@
  * (src/runtime/renderers/three-adapter.ts) and the scene nodes (src/runtime/nodes/scene.ts). Units: millimetres,
  * the marker on the XY plane, +Z up; rotations in degrees, applied X, then Y, then Z (Euler 'XYZ').
  */
+import { GEOMETRY_TYPES, geometryBounds, geometrySpec, normalizeGeometry, restLift, TORUS_KNOT_TUBE_SEGMENTS, type GeometryShape, type GeometrySpec } from '../../core/geometry';
+import { nonZeroScale } from '../../core/math';
+import { MAX_SIZE, MIN_SIZE } from '../../core/geometry';
+import { materialSpec, textureSpec, type MaterialSide, type MaterialSpec, type TextureWrap } from '../../core/material';
+import { rgbaToHex } from '../../core/color';
+import { DIRECTIONAL_SHADOW_NEAR, directionalShadowFar, engineIntensity, lightSpec, normalizeLight, shadowCatcherSpec, SHADOW_EXTENT, SPOT_SHADOW_FAR, SPOT_SHADOW_NEAR, type NormalLight } from '../../core/light';
+import { environmentSpec } from '../../core/environment';
+import { exposureOf, pixelRatioCap } from '../../core/renderer';
 import type { CodeEmitContext, CodeEmitter } from './types';
 import { commentText, templateText } from './text';
 
@@ -46,27 +54,106 @@ await ${video}.play();`,
   };
 };
 
-const renderer: CodeEmitter = ({ name, params }) => {
+/** three.renderer's tone mappings (#137): the node's option names are three.js's constants. */
+const TONE_MAPPINGS = new Set(['NoToneMapping', 'LinearToneMapping', 'ReinhardToneMapping', 'CineonToneMapping', 'ACESFilmicToneMapping', 'AgXToneMapping', 'NeutralToneMapping']);
+const COLOR_SPACES: Record<string, string> = { 'srgb-linear': 'THREE.LinearSRGBColorSpace' };
+const POWER_PREFERENCES = new Set(['high-performance', 'low-power']);
+
+/**
+ * three.renderer (#137): the options the Three.js adapter gives it. Only those set away from three.js's defaults are
+ * written, so a renderer with the defaults is written as before. The pixel ratio cap goes to AR View's sizing, through
+ * the `pixelRatio` the scene passes on.
+ */
+const renderer: CodeEmitter = ({ name, params, literal }) => {
   const r = name();
+  const options: string[] = ['alpha: true', `antialias: ${Boolean(params.antialias)}`];
+  if (typeof params.powerPreference === 'string' && POWER_PREFERENCES.has(params.powerPreference)) options.push(`powerPreference: ${literal(params.powerPreference)}`);
+  if (params.preserveDrawingBuffer === true) options.push('preserveDrawingBuffer: true');
+  if (params.stencil === true) options.push('stencil: true');
+  const lines: string[] = [];
+  const toneMapping = typeof params.toneMapping === 'string' && TONE_MAPPINGS.has(params.toneMapping) ? params.toneMapping : 'NoToneMapping';
+  if (toneMapping !== 'NoToneMapping') lines.push(`${r}.toneMapping = THREE.${toneMapping};`);
+  const exposure = exposureOf(params.toneMappingExposure);
+  if (exposure !== 1) lines.push(`${r}.toneMappingExposure = ${exposure};`);
+  if (typeof params.outputColorSpace === 'string' && Object.hasOwn(COLOR_SPACES, params.outputColorSpace)) lines.push(`${r}.outputColorSpace = ${COLOR_SPACES[params.outputColorSpace]};`);
+  const cap = pixelRatioCap(params.maxPixelRatio);
+  const capped = cap > 0;
+  const pixelRatio = capped ? name('pixel_ratio') : 'devicePixelRatio';
+  if (capped) lines.push('// AR View sizes the canvas at the device pixel ratio, capped.', `const ${pixelRatio} = Math.min(devicePixelRatio, ${cap});`);
   return {
     imports: [THREE_IMPORT],
     setup: `// Transparent: the camera video shows through.
-const ${r} = new THREE.WebGLRenderer({ alpha: true, antialias: ${Boolean(params.antialias)} });`,
-    outputs: { renderer: r },
+const ${r} = new THREE.WebGLRenderer({ ${options.join(', ')} });${lines.map((line) => `\n${line}`).join('')}
+// Shadow maps, as the studio's renderer: used only when a light casts.
+${r}.shadowMap.enabled = true;
+${r}.shadowMap.type = THREE.PCFShadowMap;`,
+    outputs: { renderer: r, pixelRatio },
   };
 };
 
 /** The Three.js adapter's lights (createLight). */
-function lightCode(v: string, kind: string, color: string, intensity: string): string {
-  if (kind === 'ambient') return `const ${v} = new THREE.AmbientLight(${color}, ${intensity});`;
-  if (kind === 'hemisphere')
-    return `const ${v} = new THREE.HemisphereLight(${color}, 0x444444, ${intensity});
-${v}.position.set(0, 0, 1); // the sky: +Z, out of the marker plane`;
-  return `// Directional: its target is its child, so the direction follows the light (and any anchor it is on).
-const ${v} = new THREE.DirectionalLight(${color}, ${intensity});
-${v}.position.set(200, -300, 1000);
-${v}.add(${v}.target);
-${v}.target.position.set(-200, 300, -1000);`;
+/**
+ * scene.light as three.js statements (#134), as the Three.js adapter builds it: point and spot intensities in candela at
+ * 1 m, times 10⁶ for millimetres; a directional or spot light's target is its child, so its direction follows the
+ * light (and any anchor it is on); shadows with the camera set for millimetres. A directional light with the default
+ * position and target is written as before #134.
+ */
+export function threeLightCode(v: string, spec: NormalLight, color: string): { code: string; locals: string[] } {
+  const intensity = decimal(engineIntensity(spec.kind, spec.intensity));
+  const v3 = (p: readonly number[]) => p.map(decimal).join(', ');
+  const toward = (p: readonly number[], t: readonly number[]) => v3([t[0] - p[0], t[1] - p[1], t[2] - p[2]]);
+  if (spec.kind === 'ambient') return { code: `const ${v} = new THREE.AmbientLight(${color}, ${intensity});`, locals: [] };
+  if (spec.kind === 'hemisphere')
+    return {
+      code: `const ${v} = new THREE.HemisphereLight(${color}, 0x444444, ${intensity});
+${v}.position.set(0, 0, 1); // the sky: +Z, out of the marker plane`,
+      locals: [],
+    };
+  const lines: string[] = [];
+  const locals: string[] = [];
+  if (spec.kind === 'point') {
+    lines.push(`// Point: candela at 1 m, times 10⁶ for mm; inverse square${spec.distance ? `, none past ${decimal(spec.distance)} mm` : ''}.`);
+    lines.push(`const ${v} = new THREE.PointLight(${color}, ${intensity}, ${decimal(spec.distance)}, 2);`);
+    lines.push(`${v}.position.set(${v3(spec.position)});`);
+    return { code: lines.join('\n'), locals };
+  }
+  if (spec.kind === 'spot') {
+    lines.push(`// Spot: candela at 1 m, times 10⁶ for mm; its target is its child, so it follows any anchor it is on.`);
+    lines.push(`const ${v} = new THREE.SpotLight(${color}, ${intensity}, ${decimal(spec.distance)}, THREE.MathUtils.degToRad(${decimal(spec.angle)}), ${decimal(spec.penumbra)}, 2);`);
+  } else {
+    lines.push(`// Directional: its target is its child, so the direction follows the light (and any anchor it is on).`);
+    lines.push(`const ${v} = new THREE.DirectionalLight(${color}, ${intensity});`);
+  }
+  lines.push(`${v}.position.set(${v3(spec.position)});`);
+  lines.push(`${v}.add(${v}.target);`);
+  lines.push(`${v}.target.position.set(${toward(spec.position, spec.target)});`);
+  if (spec.castShadow) {
+    lines.push(`// Shadows, the camera set for millimetres as in the studio.`);
+    lines.push(`${v}.castShadow = true;`);
+    lines.push(`${v}.shadow.mapSize.set(${spec.shadowMapSize}, ${spec.shadowMapSize});`);
+    lines.push(`${v}.shadow.bias = ${decimal(spec.shadowBias)};`);
+    if (spec.kind === 'directional') {
+      lines.push(`Object.assign(${v}.shadow.camera, { left: -${SHADOW_EXTENT}, right: ${SHADOW_EXTENT}, top: ${SHADOW_EXTENT}, bottom: -${SHADOW_EXTENT}, near: ${DIRECTIONAL_SHADOW_NEAR}, far: ${decimal(directionalShadowFar(spec))} });`);
+    } else {
+      lines.push(`Object.assign(${v}.shadow.camera, { near: ${SPOT_SHADOW_NEAR}, far: ${SPOT_SHADOW_FAR} });`);
+      if (spec.distance) {
+        // As the Three.js adapter: SpotLightShadow ends its camera at the light's distance; the studio keeps 3 m.
+        lines.push(`{
+  // The shadow camera keeps its ${SPOT_SHADOW_FAR} mm far plane, as in the studio (three ends it at the light's distance).
+  const updateShadow = ${v}.shadow.updateMatrices.bind(${v}.shadow);
+  ${v}.shadow.updateMatrices = (shadowLight) => {
+    const reach = ${v}.distance;
+    ${v}.distance = 0;
+    updateShadow(shadowLight);
+    ${v}.distance = reach;
+  };
+}`);
+        locals.push('updateShadow', 'shadowLight', 'reach');
+      }
+    }
+    lines.push(`${v}.shadow.camera.updateProjectionMatrix();`);
+  }
+  return { code: lines.join('\n'), locals };
 }
 
 const scene: CodeEmitter = (ctx) => {
@@ -74,12 +161,12 @@ const scene: CodeEmitter = (ctx) => {
   const r = required(ctx, 'renderer');
   const s = name();
   const lights = params.defaultLights
-    ? `\n// Default lights.\n${lightCode(name('sky'), 'hemisphere', "'#ffffff'", '2.5')}\n${lightCode(name('sun'), 'directional', "'#ffffff'", '1.5')}\n${s}.add(${name('sky')}, ${name('sun')});`
+    ? `\n// Default lights.\n${threeLightCode(name('sky'), normalizeLight({ kind: 'hemisphere', color: '#ffffff', intensity: 2.5 }), "'#ffffff'").code}\n${threeLightCode(name('sun'), normalizeLight({ kind: 'directional', color: '#ffffff', intensity: 1.5 }), "'#ffffff'").code}\n${s}.add(${name('sky')}, ${name('sun')});`
     : '';
   return {
     imports: [THREE_IMPORT],
     setup: `const ${s} = new THREE.Scene();${lights}`,
-    outputs: { scene: s, renderer: r },
+    outputs: { scene: s, renderer: r, pixelRatio: ctx.from('renderer')?.pixelRatio ?? 'devicePixelRatio' },
   };
 };
 
@@ -102,35 +189,279 @@ const light: CodeEmitter = (ctx) => {
   const s = required(ctx, 'scene');
   paramsOnly(ctx, 'color');
   const v = name();
+  const spec = lightSpec(params);
+  // The colour the runtime uses (lightSpec: #rrggbb, a short or 8-digit one read, a malformed one white).
+  const { code, locals } = threeLightCode(v, spec, literal(spec.color));
   return {
     imports: [THREE_IMPORT],
-    setup: `${lightCode(v, String(params.kind), literal(String(params.color)), String(num(params.intensity)))}
+    setup: `${code}
 ${s}.add(${v}); // camera space, until an anchor takes it`,
+    locals,
     // `lightKind`: an anchor reads it (a hemisphere light cannot follow one, see the anchor).
-    outputs: { object: v, lightKind: String(params.kind) },
+    outputs: { object: v, lightKind: spec.kind },
   };
 };
 
-const primitive: CodeEmitter = (ctx) => {
+/** A number as source text: at most 6 decimals, never `-0`. */
+const decimal = (v: number) => String(Math.round(v * 1e6) / 1e6 + 0);
+
+/**
+ * A core shape as three.js source text: the same geometry the Three.js adapter builds (threeGeometry() in
+ * src/runtime/renderers/three-adapter.ts), in marker space. tests/unit/codegen-geometry.test.ts evaluates each one
+ * against three and compares its bounds with the core's.
+ */
+export function threeGeometryCode(spec: GeometrySpec): { code: string; note?: string } {
+  const s = normalizeGeometry(spec);
+  const d = decimal;
+  switch (s.shape) {
+    case 'box':
+      return { code: `new THREE.BoxGeometry(${d(s.width)}, ${d(s.depth)}, ${d(s.height)})`, note: 'width X, depth Y, height Z' };
+    case 'sphere':
+      return { code: `new THREE.SphereGeometry(${d(s.radius)}, ${s.detail}, ${s.detail / 2}).rotateX(Math.PI / 2)`, note: 'poles on Z' };
+    case 'cylinder':
+      return { code: `new THREE.CylinderGeometry(${d(s.radiusTop)}, ${d(s.radiusBottom)}, ${d(s.height)}, ${s.detail}).rotateX(Math.PI / 2)`, note: 'along Z, the top at +Z' };
+    case 'plane':
+      return { code: `new THREE.PlaneGeometry(${d(s.width)}, ${d(s.depth)})`, note: 'width X, depth Y, on the marker, facing +Z' };
+    case 'torus':
+      return { code: `new THREE.TorusGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${s.detail})`, note: 'the ring in XY' };
+    case 'torusKnot':
+      return { code: `new THREE.TorusKnotGeometry(${d(s.radius)}, ${d(s.tube)}, ${s.detail}, ${TORUS_KNOT_TUBE_SEGMENTS}, ${s.p}, ${s.q})` };
+    case 'capsule':
+      return {
+        code: `new THREE.CapsuleGeometry(${d(s.radius)}, ${d(s.height - 2 * s.radius)}, ${s.detail / 4}, ${s.detail}).rotateX(Math.PI / 2)`,
+        note: 'along Z: the middle section is the height less the caps',
+      };
+  }
+}
+
+/** geometry.*: the shape, and its bounds' bottom and top for the mesh after it (`from('geometry')`), to rest on. */
+const geometry =
+  (shape: GeometryShape): CodeEmitter =>
+  (ctx) => {
+    required(ctx, 'scene');
+    const g = ctx.name();
+    const spec = geometrySpec(shape, ctx.params);
+    const bounds = geometryBounds(spec);
+    const { code, note } = threeGeometryCode(spec);
+    return {
+      imports: [THREE_IMPORT],
+      setup: `const ${g} = ${code};${note ? ` // ${note}` : ''}`,
+      outputs: { geometry: g, bottom: String(bounds.min[2]), top: String(bounds.max[2]) },
+    };
+  };
+
+const SIDES: Record<MaterialSide, string> = { front: 'THREE.FrontSide', back: 'THREE.BackSide', double: 'THREE.DoubleSide' };
+const WRAPS: Record<TextureWrap, string> = { clamp: 'THREE.ClampToEdgeWrapping', repeat: 'THREE.RepeatWrapping', mirror: 'THREE.MirroredRepeatWrapping' };
+
+/**
+ * scene.material as a three.js expression, as the Three.js adapter builds it (#133): MeshStandardMaterial, or
+ * MeshBasicMaterial when unlit (no metalness, roughness or emissive); colours as sRGB hex, which three converts as the
+ * adapter's setRGB(…, SRGBColorSpace) does; transparent below opacity 1, without depth writes. `map` is the texture's
+ * variable, or null.
+ */
+export function threeMaterialCode(spec: MaterialSpec, map: string | null): string {
+  const props = [`color: '${rgbaToHex(spec.color)}'`];
+  if (!spec.unlit) {
+    props.push(`metalness: ${decimal(spec.metalness)}`, `roughness: ${decimal(spec.roughness)}`);
+    if (spec.emissive.some((c) => c > 0)) props.push(`emissive: '${rgbaToHex(spec.emissive)}'`, `emissiveIntensity: ${decimal(spec.emissiveIntensity)}`);
+  }
+  if (map) props.push(`map: ${map}`);
+  if (spec.side !== 'front') props.push(`side: ${SIDES[spec.side]}`);
+  if (spec.opacity < 1) props.push('transparent: true', `opacity: ${decimal(spec.opacity)}`, 'depthWrite: false');
+  return `new THREE.${spec.unlit ? 'MeshBasicMaterial' : 'MeshStandardMaterial'}({ ${props.join(', ')} })`;
+}
+
+const material: CodeEmitter = (ctx) => {
+  required(ctx, 'scene');
+  paramsOnly(ctx, 'color', 'emissive');
+  const m = ctx.name();
+  const map = typeof ctx.inputs.map === 'string' ? ctx.inputs.map : null;
+  return { imports: [THREE_IMPORT], setup: `const ${m} = ${threeMaterialCode(materialSpec(ctx.params), map)};`, outputs: { material: m } };
+};
+
+const texture: CodeEmitter = (ctx) => {
   const { name, params, literal } = ctx;
   required(ctx, 'scene');
-  paramsOnly(ctx, 'position', 'color');
-  const m = name();
-  const size = num(params.size);
-  const geometry =
-    params.shape === 'sphere'
-      ? `new THREE.SphereGeometry(${size} / 2, 32, 16)`
-      : params.shape === 'torusKnot'
-        ? `new THREE.TorusKnotGeometry(${size} / 3, ${size} / 10, 100, 16)`
-        : `new THREE.BoxGeometry(${size}, ${size}, ${size})`;
-  const [x, y, z] = vec3(params.position);
+  if ('video' in ctx.inputs) throw new Error('its video input is wired, and the source code export writes an image texture only for now');
+  const url = String(params.url ?? '').trim();
+  if (!url) throw new Error('it has no image URL');
+  const t = name();
+  const spec = textureSpec(params);
   return {
     imports: [THREE_IMPORT],
-    setup: `const ${m} = new THREE.Mesh(${geometry}, new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))} }));
-${m}.position.set(${x}, ${y}, ${z} + ${size} / 2); // resting on the marker: lifted by half its size
-${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');`,
+    // sRGB, mipmaps and trilinear filtering (three's defaults for a loaded image), as the Three.js adapter sets them.
+    setup: `const ${t} = await new THREE.TextureLoader().loadAsync(${literal(url)});
+${t}.colorSpace = THREE.SRGBColorSpace;
+${t}.wrapS = ${t}.wrapT = ${WRAPS[spec.wrap]};
+${t}.repeat.set(${decimal(spec.repeatU)}, ${decimal(spec.repeatV)});`,
+    outputs: { texture: t },
+  };
+};
+
+const mesh: CodeEmitter = (ctx) => {
+  const { name, params, literal } = ctx;
+  required(ctx, 'scene');
+  const g = required(ctx, 'geometry');
+  // With a material, the mesh's colour is set aside (#133): its input is not written, so it is not refused either.
+  const withMaterial = typeof ctx.inputs.material === 'string' ? ctx.inputs.material : null;
+  paramsOnly(ctx, 'position', 'rotation', 'scale', ...(withMaterial ? [] : ['color']));
+  const m = name();
+  const from = ctx.from('geometry') ?? {};
+  // As scene.mesh: each component at least MIN_SCALE in magnitude, with its sign.
+  const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
+  // As scene.mesh rests (restLift): the geometry's bottom, scaled along Z, before the rotation.
+  const lift = params.rest ? restLift({ min: [0, 0, Number(from.bottom)], max: [0, 0, Number(from.top)] }, scale[2]) : 0;
+  const [x, y, z] = vec3(params.position);
+  const scaled = scale.some((v) => v !== 1) ? `\n${m}.scale.set(${scale.map(decimal).join(', ')});` : '';
+  return {
+    imports: [THREE_IMPORT],
+    setup: `const ${m} = new THREE.Mesh(${g}, ${withMaterial ?? `new THREE.MeshStandardMaterial({ color: ${literal(String(params.color))}, metalness: 0, roughness: 1 })`});
+${m}.position.set(${x}, ${y}, ${decimal(z + lift)});${lift ? ` // resting on the marker: lifted by ${decimal(lift)} mm, its geometry's bottom` : ''}
+${m}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');${scaled}${shadowCode(m, params)}`,
     frame: params.spin ? `${m}.rotation.z += delta * 0.0005; // spins about its own Z axis` : undefined,
     outputs: { object: m },
+  };
+};
+
+/** scene.group (#136): a THREE.Group with the mesh's transform (no rest, no spin), its children added once. */
+const group: CodeEmitter = (ctx) => {
+  const { name, params, inputs } = ctx;
+  required(ctx, 'scene');
+  paramsOnly(ctx, 'position', 'rotation', 'scale');
+  // three.js takes a hemisphere light's sky from its world position: in a group it would point at the group. The
+  // studio keeps such a light in the root and turns it each frame; the export refuses it, as the anchor does. A group
+  // therefore never holds one, so a group nested in a group or an anchor cannot carry one past their checks either.
+  const hemispheres = ctx.fromEach('children').filter((c) => c.outputs.lightKind === 'hemisphere').map((c) => c.node);
+  if (hemispheres.length) throw new Error(`a hemisphere light in a group is not written yet (${hemispheres.join(', ')}): leave it in the scene root`);
+  const g = name();
+  // As the runtime's scene.group and scene.mesh: each scale component at least MIN_SCALE in magnitude, with its sign.
+  const scale = (Array.isArray(params.scale) && params.scale.length === 3 && params.scale.every(Number.isFinite) ? (params.scale as number[]) : [1, 1, 1]).map(nonZeroScale);
+  const [x, y, z] = vec3(params.position);
+  const children = list(inputs.children);
+  return {
+    imports: [THREE_IMPORT],
+    setup: `// Moves, turns, scales and hides its children together.
+const ${g} = new THREE.Group();
+${g}.position.set(${decimal(x)}, ${decimal(y)}, ${decimal(z)});
+${g}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');
+${g}.scale.set(${scale.map(decimal).join(', ')});${children.length ? `\n${g}.add(${children.join(', ')});` : ''}`,
+    outputs: { object: g },
+  };
+};
+
+/** castShadow and receiveShadow, as the adapter's setShadowCasting: on the mesh, or on every mesh of a model. */
+function shadowCode(v: string, params: Record<string, unknown>, model = false): string {
+  const [cast, receive] = [params.castShadow === true, params.receiveShadow === true];
+  if (!cast && !receive) return '';
+  if (!model) return `${cast ? `\n${v}.castShadow = true;` : ''}${receive ? `\n${v}.receiveShadow = true;` : ''}`;
+  return `\n${v}.traverse((part) => {
+  if (!part.isMesh) return;
+  part.castShadow = ${cast};
+  part.receiveShadow = ${receive};
+});`;
+}
+
+/** scene.shadowCatcher: a plane of ShadowMaterial, sized from the marker when its markerInfo is wired (#134). */
+const shadowCatcher: CodeEmitter = (ctx) => {
+  const { name, params, inputs } = ctx;
+  required(ctx, 'scene');
+  const c = name();
+  const spec = shadowCatcherSpec(params);
+  const info = inputs.markerInfo as string | undefined;
+  // The marker's size, as the studio takes it (shadowCatcherSpec): finite and above 0, within the geometry bounds.
+  const sized = info
+    ? `
+if (${info}) {
+  const fit = (mm) => Math.min(Math.max(mm, ${MIN_SIZE}), ${MAX_SIZE});
+  const { widthMM, heightMM } = ${info};
+  if (Number.isFinite(widthMM) && Number.isFinite(heightMM) && widthMM > 0 && heightMM > 0) {
+    ${c}.geometry.dispose();
+    ${c}.geometry = new THREE.PlaneGeometry(fit(widthMM), fit(heightMM)); // the marker's size
+  }
+}`
+    : '';
+  return {
+    imports: [THREE_IMPORT],
+    setup: `// Shows only the shadows cast on it.
+const ${c} = new THREE.Mesh(new THREE.PlaneGeometry(${decimal(spec.width)}, ${decimal(spec.depth)}), new THREE.ShadowMaterial({ opacity: ${decimal(spec.opacity)} }));
+${c}.receiveShadow = true;${sized}`,
+    outputs: { object: c },
+    locals: ['fit', 'widthMM', 'heightMM'],
+  };
+};
+
+/**
+ * scene.environment (#135): RoomEnvironment or the .hdr through PMREMGenerator, as the Three.js adapter makes it. Its
+ * rotation is set in the scene's onBeforeRender, which three calls after updating the world matrices and before
+ * drawing: an anchor moved this frame turns it this frame (per-frame code runs in graph order, the anchor's after it).
+ */
+const environment: CodeEmitter = (ctx) => {
+  const { name, params, literal, from } = ctx;
+  const s = required(ctx, 'scene');
+  const r = from('scene')?.renderer;
+  if (!r) throw new Error('its scene has no renderer');
+  const spec = environmentSpec(params);
+  const url = String(params.url ?? '').trim();
+  if (spec.source === 'hdr' && !url) throw new Error('its source is HDR, but it has no .hdr URL');
+  const v = name();
+  // One per scene, refused by name here, as the studio refuses it at init: the Scene's outputs record the first one (the
+  // emitters see the graph only through what is wired to them).
+  const sceneOutputs = from('scene')!;
+  if (sceneOutputs.environment) throw new Error(`its scene already has an Environment (${sceneOutputs.environment}): one per scene`);
+  sceneOutputs.environment = v;
+  const [turn, up, rotation, before] = [name('turn'), name('up'), name('rotation'), name('before')];
+  const [ax, ay, az] = [name('x'), name('y'), name('z')];
+  const load =
+    spec.source === 'hdr'
+      ? `  const equirect = await new HDRLoader().loadAsync(${literal(url)});
+  ${s}.environment = pmrem.fromEquirectangular(equirect).texture;
+  equirect.dispose();`
+      : `  // The room's geometries and materials are freed once it is prefiltered, as the Three.js adapter frees them.
+  const room = new RoomEnvironment();
+  try {
+    ${s}.environment = pmrem.fromScene(room, 0.04).texture;
+  } finally {
+    room.dispose();
+  }`;
+  return {
+    imports: [
+      THREE_IMPORT,
+      spec.source === 'hdr' ? "import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';" : "import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';",
+    ],
+    setup: `// Lights and reflects every PBR surface; never drawn (the camera video is the background). One per scene.
+const ${v} = new THREE.Object3D(); // where it is: camera space, or the anchor it is wired into
+{
+  const pmrem = new THREE.PMREMGenerator(${r});
+${load}
+  pmrem.dispose();
+}
+${s}.environmentIntensity = ${decimal(spec.intensity)};
+// Its up: the view's vertical in camera space, the marker's +Z under an anchor; turned ${decimal(spec.rotation)}° about it.
+const ${turn} = new THREE.Matrix4().makeRotationY(${decimal((spec.rotation * Math.PI) / 180)});
+const ${up} = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+const ${rotation} = new THREE.Matrix4();
+const [${ax}, ${ay}, ${az}] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const ${before} = ${s}.onBeforeRender;
+${s}.onBeforeRender = (...args) => {
+  ${before}.apply(${s}, args);
+  const parent = ${v}.parent;
+  if (parent && parent !== ${s}) {
+    // The parent's rotation as the studio takes it (rotationOf, src/core/environment.ts): its X axis, its Y axis made
+    // square to it, Z their cross product, so scale, shear and a mirror are left out; the identity if it has none.
+    const e = parent.matrixWorld.elements;
+    ${ax}.set(e[0], e[1], e[2]).normalize();
+    ${ay}.set(e[4], e[5], e[6]);
+    ${ay}.addScaledVector(${ax}, -${ay}.dot(${ax})).normalize();
+    const valid = [${ax}.x, ${ax}.y, ${ax}.z, ${ay}.x, ${ay}.y, ${ay}.z].every(Number.isFinite) && ${ax}.lengthSq() > 0 && ${ay}.lengthSq() > 0;
+    if (valid) ${rotation}.makeBasis(${ax}, ${ay}, ${az}.crossVectors(${ax}, ${ay}));
+    else ${rotation}.identity();
+    ${rotation}.multiply(${up}).multiply(${turn});
+  } else ${rotation}.copy(${turn});
+  ${s}.environmentRotation.setFromRotationMatrix(${rotation});
+};
+${s}.add(${v}); // camera space, until an anchor takes it`,
+    locals: ['pmrem', 'equirect', 'room', 'parent', 'args', 'e', 'valid'],
+    outputs: { object: v },
   };
 };
 
@@ -159,8 +490,10 @@ const ${model} = new THREE.Group();
 ${model}.add(${upright});
 ${model}.position.set(${x}, ${y}, ${z});
 ${model}.rotation.set(${degrees(vec3(params.rotation))}, 'XYZ');
-${model}.scale.setScalar(${scale});${autoplay}`,
+${model}.scale.setScalar(${scale});${autoplay}${shadowCode(model, params, true)}`,
     frame: params.autoplay ? `${mixer}.update(delta / 1000);` : undefined,
+    // The callback's parameter of the shadow code (shadowCode): no node is given it as its name.
+    locals: params.castShadow || params.receiveShadow ? ['part'] : undefined,
     outputs: { object: model },
   };
 };
@@ -201,6 +534,7 @@ const arView: CodeEmitter = (ctx) => {
   const video = required(ctx, 'video');
   const r = from('scene')?.renderer;
   if (!r) throw new Error('its scene has no renderer');
+  const pixelRatio = from('scene')?.pixelRatio ?? 'devicePixelRatio';
   const view = name();
   const fps = name('fps');
   const fpsFrames = name('fps_frames');
@@ -220,7 +554,7 @@ ${view}.className = 'ar-view';
 ${view}.style.cssText = \`position:relative;width:100%;aspect-ratio:\${${video}.videoWidth}/\${${video}.videoHeight};overflow:hidden;background:#000\`;
 ${video}.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:fill';
 ${r}.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-${r}.setSize(${video}.videoWidth * devicePixelRatio, ${video}.videoHeight * devicePixelRatio, false);
+${r}.setSize(${video}.videoWidth * ${pixelRatio}, ${video}.videoHeight * ${pixelRatio}, false);
 ${view}.append(${video}, ${r}.domElement);${stats}
 stage.append(${view});${objects.length ? `\n${s}.add(${objects.join(', ')});` : ''}`,
     frame: `${r}.render(${s}, ${camera});${
@@ -310,8 +644,15 @@ export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'scene.scene': scene,
   'scene.arCamera': arCamera,
   'scene.light': light,
-  'scene.primitive': primitive,
+  'scene.mesh': mesh,
+  'scene.material': material,
+  'scene.texture': texture,
+  // One per shape of the core's GEOMETRY_TYPES (#132).
+  ...Object.fromEntries(Object.entries(GEOMETRY_TYPES).map(([type, shape]) => [type, geometry(shape)])),
   'scene.gltf': gltf,
+  'scene.shadowCatcher': shadowCatcher,
+  'scene.environment': environment,
+  'scene.group': group,
   'scene.anchor': anchor,
   'output.arView': arView,
   'tracking.selectMarker': selectMarker,

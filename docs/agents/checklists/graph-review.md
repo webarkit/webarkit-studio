@@ -1,13 +1,15 @@
 # Graph review checklist
 
 Use this checklist for a diff that touches the graph format, the node catalog, the
-registry, node implementations or the demo graphs:
+registry, node implementations, the renderer adapters, the source export or the demo graphs:
 
 - `src/core/`
 - `src/nodes/catalog.ts`
 - `src/runtime/registry.ts`
 - `src/runtime/nodes/`
+- `src/runtime/renderers/`
 - `src/plugin-api/`, `src/plugins/` and the plugins' catalogs and manifests (`plugins/jsartoolkit-nft/catalog.ts`, `plugins/jsartoolkit-nft/index.ts`)
+- `src/export/codegen/`
 - `public/graphs/`
 
 It is tool-agnostic. The Claude Code agent `.claude/agents/graph-reviewer.md` runs
@@ -29,6 +31,9 @@ A format change requires all of:
 - `GRAPH_VERSION` bumped in `src/core/graph.ts`, with the change described in its comment;
 - its migration in `src/core/migrations.ts`, with literal types and params (it reads neither the
   catalog nor the loaded plugins), and a test that an older document opens;
+- when the new version changes a default, the migration writes the old default into the document, and a test
+  checks that a document of the previous version, migrated, behaves as before (#132: a migrated primitive keeps
+  spinning);
 - every graph in `public/graphs/` updated to the new version and still valid;
 - a line under `## [Unreleased]` in `CHANGELOG.md`.
 
@@ -39,7 +44,8 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 2. Catalog / registry consistency
 
 - Every `type` in `src/nodes/catalog.ts` has a factory in `NODE_REGISTRY`
-  (`src/runtime/registry.ts`), and the other way round.
+  (`src/runtime/registry.ts`), and the other way round; `macro` (#140) is the exception, flattened
+  before anything runs, with no factory.
 - The catalog holds metadata only: no imports of renderers, workers or tracker
   builds into `src/nodes/` or `src/core/`.
 - The editor (`src/editor/`) and the runtime (`src/runtime/`) never import each other.
@@ -55,26 +61,33 @@ key by key; a renamed key looks like one removal plus one addition.
   plugin's version; a demo graph lists the version of the plugin in this repository.
 - A changed core socket (`CORE_SOCKET_TYPES`) or value type it carries is a breaking change of
   the plugin API: `PLUGIN_API_VERSION` is bumped, and the major version of `packages/studio-plugin-api/`.
-  The values of `renderer`, `scene` and `sceneObject` are the exception: they are studio internals.
+  The values of `renderer`, `rendererInfo`, `scene`, `sceneObject`, `geometry`, `material` and `texture` are the exception: they are studio internals.
 
 ## 3. Naming
 
 - Library-specific nodes are `<library>.*` (`jsartoolkitNFT.*`, `three.*`, `babylon.*`); a plugin's
   nodes and sockets are `<plugin id>.*`, and no plugin uses a reserved namespace (`RESERVED_NAMESPACES`).
-- Generic nodes use a functional namespace: `scene.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
+- Generic nodes use a functional namespace: `scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`, `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`.
 - `webarkit.*` is reserved for webarkit/webarkit trackers.
+- `macro` is the one node type without a dot: it is the macro node itself (#140), flattened before anything runs, not a namespace of nodes. It is reserved for that node, whose ports come from its definition.
 - No node is named after a package it does not wrap (for example "NFT Tracker" is `@webarkit/nft-tracker`).
+- A node that needs one engine declares `engine` (`'three'` or `'babylon'`): every `three.*` and `babylon.*` node, renderers
+  included (#138). The engine rule of `validateGraph()` reads it, never the name.
 
 ## 4. Live params
 
 - A param marked `live: true` is applied in the factory's `onParamChange` without a
   restart, and `onParamChange` returns the outputs that changed.
 - A param that is not live must not be read from `onParamChange`: it applies on the next Run.
+- A size or count param is clamped by one core normaliser that the runtime, both adapters and the source export
+  all read, so a huge finite value stays finite (validation reads kinds, not ranges; #132: `normalizeGeometry()`).
 
 ## 5. Sockets
 
 - Socket types (`src/core/sockets.ts`) stay compatible with existing graphs: a changed
   compatibility rule can break saved connections, so treat it as a format change.
+- An input that sets other params aside while wired lists them in `overrides` (#133), and they are the node's own params
+  (`validatePlugin()` checks a plugin's).
 - An input that overrides a param (same name) is `optional`, has the socket type of the
   param's kind (`number`, `vector3`, `color`), and the node falls back to the param when it carries
   no valid value (AGENTS.md, "Inputs override params"). An optional input without a
@@ -91,9 +104,43 @@ key by key; a renamed key looks like one removal plus one addition.
 ## 7. Tests and docs
 
 - New or changed node logic that does not need a browser has a unit test (`tests/unit/`).
+- A new common scene node (`scene.*`, `geometry.*`) or a new `SceneHandle` method has at least one
+  case in the conformance suite on both engines (`tests/e2e/conformance.spec.ts`, `tests/unit/conformance/`; #130). A
+  difference between the engines is translated by the adapters, or makes the node `three.*` / `babylon.*`, or, until
+  the issue that translates it is fixed, is a `known` case marked `test.fail` with that issue.
 - A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
   and validates it against the real catalog and `GRAPH_VERSION` (#110).
+- The Inspector (`formatValue`, `src/runtime/nodes/debug.ts`) shows a value a new socket carries as plain text, never
+  as `JSON.stringify` of an engine handle, which is circular on Babylon.js (#132), with a test on both adapters' values.
 - The README node table lists new nodes; ⚡ marks live params.
+
+## 8. Renderer adapters
+
+- `SceneHandle` (`src/runtime/renderers/adapter.ts`) means the same on both adapters (`three-adapter.ts`,
+  `babylon-adapter.ts`), on plain values with no engine types: a method added or changed on one is added or changed on
+  the other, down to its units, its defaults and the state it leaves (AGENTS.md, "Both renderer adapters keep the same
+  semantics").
+- Where the engines differ, the adapter translates as the verification report gives it
+  (`docs/proposals/scene-nodes-equivalence.md`, its matrix and "What each Phase 4 issue must translate"). A translation
+  the report does not give is measured on both engines with a conformance case (§7), not taken from memory.
+- A Babylon.js feature that needs an engine extension imports it for its side effects. `VideoTexture` needs
+  `@babylonjs/core/Engines/Extensions/engine.dynamicTexture` and
+  `@babylonjs/core/Engines/Extensions/engine.videoTexture`, both imported for their side effects; a `ShadowGenerator`
+  needs `@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent` (#134); an `HDRCubeTexture` needs
+  `@babylonjs/core/Engines/Extensions/engine.rawTexture` (#135). A Node test with `NullEngine` does not
+  show a missing one: the browser cases do.
+- Releasing one object never frees, or keeps updating, a resource other objects share (a geometry; a material or a
+  texture next, #133): a Node conformance case releases one user, directly and under a released group, and checks that
+  the others still follow a live change (#132: `tests/unit/conformance/geometry-release.test.ts`).
+
+## 9. Source export
+
+- A node has an emitter for its type and target (`three`), or the export refuses it by name, never drops it (#64).
+- Graph text reaches the generated code only through `literal()`, or `commentText()` in comments
+  (`src/export/codegen/text.ts`); variable names come from the context's `name()`, and names an emitter declares itself
+  go in its `locals` (#103).
+- The emitters and registry entries of a family of nodes are built from the core's list of it (`GEOMETRY_TYPES`), with a
+  test that the catalog, the registry and the emitters know the same types (#132).
 
 ## Commands
 
@@ -102,6 +149,9 @@ Run and report each:
 - `npm run typecheck`
 - `npm test`
 - `npm run build` when the catalog, the registry or `public/graphs/` changed
+- `npm run test:e2e -- tests/e2e/source-export.spec.ts` when `src/export/codegen/` changed (long: run it in the background)
+- `npm run test:e2e -- tests/e2e/conformance.spec.ts` when `src/runtime/renderers/` changed (several minutes: run it in
+  the background)
 
 ## Report
 

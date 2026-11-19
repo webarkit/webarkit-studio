@@ -7,7 +7,9 @@
 import { NODE_CATALOG, type NodeDefinition } from '../nodes/catalog';
 import { compareVersions, isVersion, LOADED_PLUGINS } from './plugins';
 import { effectiveDefinition, isScriptType } from './script';
+import { engineProblems, ownPort } from './engine';
 import { socketsCompatible } from './sockets';
+import { checkMacros, flattenGraph, type MacroDefinitions } from './macros';
 
 export const GRAPH_FORMAT = 'webarkit-studio/graph';
 /** Format id used by the prototype when it was called WebAR-Studio; still accepted on load. */
@@ -17,10 +19,11 @@ export const LEGACY_GRAPH_FORMATS: readonly string[] = ['webar-studio/graph'];
  * v3: Scene / AR Camera split from the renderer, controller settings and events.
  * v4: multi-marker controller (`markers` tracking result + Select Marker), stats.
  * v5: `plugins`, the plugins the graph's nodes come from (jsartoolkitNFT is one).
- * v4 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
+ * v6: scene.primitive replaced by the geometry.* nodes and scene.mesh (#132); the optional `macros` (#140).
+ * v4 and v5 documents upgrade when they are loaded (src/core/migrations.ts); v2 and v3, prototype
  * formats, stay rejected. A bump ships its migration, and a test that an older document opens.
  */
-export const GRAPH_VERSION = 5;
+export const GRAPH_VERSION = 6;
 
 /** A param value; arrays hold `vector3` (3) and `matrix4` (16, column-major) params. */
 export type ParamValue = string | number | boolean | number[];
@@ -61,6 +64,11 @@ export interface GraphDocument {
   plugins?: PluginRef[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * Macro definitions by id (v6, #140): each a small graph, with the ports it exposes and the params it promotes. A
+   * `macro` node names one in its `definition` param. Absent: none. See src/core/macros.ts.
+   */
+  macros?: MacroDefinitions;
 }
 
 /** Namespace of a node type: "jsartoolkitNFT.controller" → "jsartoolkitNFT". */
@@ -68,7 +76,8 @@ export const namespaceOf = (type: unknown) => (typeof type === 'string' ? type.s
 
 /**
  * The `plugins` a document of these nodes must list: every loaded plugin a
- * node comes from, at its loaded version. The editor writes it on save.
+ * node comes from, at its loaded version. The editor writes it on save. Give it the nodes inside the document's macros
+ * too (everyNode(), src/core/macros.ts): a plugin's node in a macro needs its plugin as one outside does.
  */
 export function graphPlugins(nodes: readonly GraphNode[], loaded: Record<string, string> = LOADED_PLUGINS): PluginRef[] {
   const ids = new Set(nodes.map((n) => namespaceOf(n.type)).filter((ns) => Object.hasOwn(loaded, ns)));
@@ -100,10 +109,16 @@ export class GraphValidationError extends Error {
  * Validation of a document of the current format; loadGraphDocument()
  * (src/core/migrations.ts) upgrades an older one first. Structural: the plugins the graph needs are loaded, known node
  * types, existing ports, matching socket types, single connection on
- * non-multiple inputs, no cycles, required inputs connected.
+ * non-multiple inputs, no cycles, required inputs connected, one parent per scene object (#136), no node of one engine
+ * in a scene of the other (#138, src/core/engine.ts).
+ * Macros (#140): the definitions are checked, then the graph is flattened (src/core/macros.ts) and every check below
+ * runs on the flat graph, whose inner nodes are named `<macro node>/<inner node>`. The document is returned as it is,
+ * with its macros: the runtime flattens it again.
  * Throws GraphValidationError listing every problem found.
  * `catalog` and `loaded` (plugin id → version) are injectable for tests.
- * `unfinished`: a graph still being built may leave required inputs unconnected. Everything else is checked.
+ * `unfinished`: a graph still being built may leave required inputs unconnected, may wire an object into more than
+ * one parent (the editor draws the link), and may mix the engines (the user is changing the renderer: #138, as #136).
+ * Everything else is checked.
  */
 export function validateGraph(
   doc: unknown,
@@ -112,23 +127,23 @@ export function validateGraph(
   { unfinished = false }: { unfinished?: boolean } = {},
 ): GraphDocument {
   const problems: string[] = [];
-  const g = doc as GraphDocument;
+  const source = doc as GraphDocument;
 
-  if (!g || typeof g !== 'object') throw new GraphValidationError(['document is not an object']);
-  if (g.format !== GRAPH_FORMAT && !LEGACY_GRAPH_FORMATS.includes(String(g.format))) problems.push(`format must be "${GRAPH_FORMAT}"`);
+  if (!source || typeof source !== 'object') throw new GraphValidationError(['document is not an object']);
+  if (source.format !== GRAPH_FORMAT && !LEGACY_GRAPH_FORMATS.includes(String(source.format))) problems.push(`format must be "${GRAPH_FORMAT}"`);
   // Another version's nodes and fields follow other rules: checking them against this one only adds noise.
-  if (g.version !== GRAPH_VERSION) {
-    throw new GraphValidationError([...problems, `unsupported version ${String(g.version)} (this studio reads version ${GRAPH_VERSION})`]);
+  if (source.version !== GRAPH_VERSION) {
+    throw new GraphValidationError([...problems, `unsupported version ${String(source.version)} (this studio reads version ${GRAPH_VERSION})`]);
   }
-  if (!Array.isArray(g.nodes) || !Array.isArray(g.edges)) {
+  if (!Array.isArray(source.nodes) || !Array.isArray(source.edges)) {
     throw new GraphValidationError([...problems, 'nodes and edges must be arrays']);
   }
 
   // A missing plugin is reported once, by name, rather than as unknown types of its nodes.
   const listed = new Set<string>();
   const missing = new Set<string>();
-  if (g.plugins !== undefined && !Array.isArray(g.plugins)) problems.push('plugins must be an array of { id, version }');
-  for (const ref of Array.isArray(g.plugins) ? g.plugins : []) {
+  if (source.plugins !== undefined && !Array.isArray(source.plugins)) problems.push('plugins must be an array of { id, version }');
+  for (const ref of Array.isArray(source.plugins) ? source.plugins : []) {
     const id = String(ref?.id);
     listed.add(id);
     if (!isVersion(ref?.version)) {
@@ -140,6 +155,19 @@ export function validateGraph(
       problems.push(`requires plugin ${id} ≥ ${ref.version}, but version ${loaded[id]} is loaded`);
     }
   }
+
+  // Macros (#140): the definitions' own problems, then the flat graph, which every check below reads. A node of a
+  // missing plugin inside a definition is that plugin's, reported above, not an unknown type.
+  const macroProblems = checkMacros(
+    source.macros,
+    (n) => effectiveDefinition(n, catalog),
+    (type) => Object.hasOwn(catalog, type) || missing.has(namespaceOf(type)),
+    (type) => isScriptType(type, catalog),
+  );
+  if (macroProblems.length) throw new GraphValidationError([...problems, ...macroProblems]);
+  const flat = flattenGraph(source);
+  if (flat.problems.length) throw new GraphValidationError([...problems, ...flat.problems]);
+  const g = flat.doc;
 
   const nodes = new Map<string, GraphNode>();
   for (const n of g.nodes) {
@@ -154,7 +182,14 @@ export function validateGraph(
     }
   }
 
+  /**
+   * A port's key in the maps below: node ids are free strings and a port may hold ':', so joining them with a separator
+   * would make node "a:b" port "c" and node "a" port "b:c" the same port (Qodo on #168). A JSON array cannot collide.
+   */
+  const portKey = (node: string, port: string) => JSON.stringify([node, port]);
   const inputUse = new Map<string, number>();
+  /** Each scene object's parents (#136), by its output's portKey: the parent inputs it is wired into, as `node.port`. */
+  const parents = new Map<string, { node: GraphNode; label: string; into: string[] }>();
   for (const e of g.edges) {
     const src = nodes.get(e.from.node);
     const dst = nodes.get(e.to.node);
@@ -164,18 +199,39 @@ export function validateGraph(
     }
     if (missing.has(namespaceOf(src.type)) || missing.has(namespaceOf(dst.type))) continue; // reported as the missing plugin
     // Effective ports: a script node's come from its header (src/core/script.ts).
-    const out = effectiveDefinition(src, catalog)?.outputs[e.from.port];
-    const inp = effectiveDefinition(dst, catalog)?.inputs[e.to.port];
+    const out = ownPort(effectiveDefinition(src, catalog)?.outputs, e.from.port);
+    const inp = ownPort(effectiveDefinition(dst, catalog)?.inputs, e.to.port);
     if (!out) problems.push(`edge ${e.id}: ${src.type} has no output "${e.from.port}"`);
     if (!inp) problems.push(`edge ${e.id}: ${dst.type} has no input "${e.to.port}"`);
     if (out && inp && !socketsCompatible(out.type, inp.type)) {
       problems.push(`edge ${e.id}: cannot connect ${out.type} to ${inp.type}`);
     }
-    const key = `${e.to.node}:${e.to.port}`;
+    const key = portKey(e.to.node, e.to.port);
     inputUse.set(key, (inputUse.get(key) ?? 0) + 1);
     if (inp && !inp.multiple && (inputUse.get(key) ?? 0) > 1) {
-      problems.push(`input ${key} accepts a single connection`);
+      problems.push(`input ${e.to.node}:${e.to.port} accepts a single connection`);
     }
+    // A parent input is a sceneObject input that takes several links (an anchor's or a group's children, AR View's
+    // objects, a plugin's container): known by its definition, never by a node's or a port's name. A single
+    // sceneObject input (an action's target) is not a parent.
+    if (out && inp && inp.type === 'sceneObject' && inp.multiple) {
+      const from = portKey(e.from.node, e.from.port);
+      const entry = parents.get(from) ?? { node: src, label: out.label, into: [] };
+      entry.into.push(`${e.to.node}.${e.to.port}`);
+      parents.set(from, entry);
+    }
+  }
+  // An object has one parent (#136): wired into two, or twice into one, the engines would each keep a different one.
+  // A work in progress may hold it (the editor draws the link); Run and the export refuse it.
+  if (!unfinished) {
+    for (const { node, label, into } of parents.values()) {
+      if (into.length < 2) continue;
+      const def = effectiveDefinition(node, catalog);
+      problems.push(`node ${node.id} (${def?.label ?? node.type}): its ${label} is wired into more than one parent (${into.join(', ')}): an object has one parent`);
+    }
+    // The engine rule (#138): a node of one engine in a scene of the other never runs. A work in progress may hold it,
+    // as it may hold two parents; Run, the exports and the MCP server refuse it.
+    problems.push(...engineProblems(g, nodes, catalog));
   }
 
   for (const n of g.nodes) {
@@ -202,7 +258,7 @@ export function validateGraph(
       }
     }
     for (const [port, spec] of unfinished ? [] : Object.entries(def.inputs)) {
-      if (!spec.optional && !inputUse.has(`${n.id}:${port}`)) {
+      if (!spec.optional && !inputUse.has(portKey(n.id, port))) {
         problems.push(`node ${n.id} (${def.label}): required input "${spec.label}" is not connected`);
       }
     }
@@ -215,7 +271,7 @@ export function validateGraph(
   }
 
   if (problems.length) throw new GraphValidationError(problems);
-  return g;
+  return source;
 }
 
 /** Kahn's algorithm. Throws if the graph has a cycle. */

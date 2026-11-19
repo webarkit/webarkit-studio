@@ -300,9 +300,9 @@ describe('scene.gltf', () => {
     }
   });
 
-  it('applies every live catalog param of scene.gltf: the transform, and autoplay', () => {
+  it('applies every live catalog param of scene.gltf: the transform, autoplay, and its shadows (#134)', () => {
     const live = Object.entries(NODE_CATALOG['scene.gltf'].params).filter(([, s]) => s.live).map(([k]) => k);
-    expect([...GLTF_TRANSFORM_PARAMS, 'autoplay'].sort()).toEqual(live.sort());
+    expect([...GLTF_TRANSFORM_PARAMS, 'autoplay', 'castShadow', 'receiveShadow'].sort()).toEqual(live.sort());
     expect(NODE_CATALOG['scene.gltf'].params.autoplay).toMatchObject({ kind: 'boolean', default: false });
   });
 

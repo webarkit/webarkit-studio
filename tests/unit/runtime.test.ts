@@ -110,3 +110,36 @@ describe('GraphRuntime', () => {
     expect(journal).toEqual([]);
   });
 });
+
+describe('GraphRuntime: macros (#140)', () => {
+  /** The chain, with `b` inside a macro node `m`. */
+  const folded = () => {
+    const doc = chain();
+    const b = doc.nodes.find((n) => n.id === 'b')!;
+    doc.nodes = [...doc.nodes.filter((n) => n.id !== 'b'), { id: 'm', type: 'macro', params: { definition: 'pass' } }];
+    doc.edges = doc.edges.map((e) => ({
+      ...e,
+      from: e.from.node === 'b' ? { node: 'm', port: 'out' } : e.from,
+      to: e.to.node === 'b' ? { node: 'm', port: 'in' } : e.to,
+    }));
+    doc.macros = { pass: { name: 'Pass', nodes: [b], edges: [], inputs: { in: { node: 'b', port: 'value' } }, outputs: { out: { node: 'b', port: 'value' } } } };
+    return doc;
+  };
+
+  it('runs the flat graph: the inner node is <macro>/<inner>, wired as the macro node was', async () => {
+    const journal: Journal = [];
+    const sink: unknown[][] = [];
+    const rt = runtimeFor(folded(), testRegistry(journal, sink));
+    await rt.start();
+    expect(journal).toEqual(['init:a', 'init:c', 'init:m/b', 'init:sink']);
+    rt.tick(16);
+    rt.tick(32);
+    expect(sink).toEqual([
+      [false, false],
+      [true, true],
+    ]);
+    // Params reach the inner node by its flat id; the macro node itself does not run.
+    expect(rt.setParam('m/b', 'label', 'x')).toBe('restart');
+    expect(rt.setParam('m', 'label', 'x')).toBe('not-running');
+  });
+});

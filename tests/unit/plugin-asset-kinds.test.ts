@@ -117,7 +117,7 @@ describe('exporting a plugin kind', () => {
   const base = new URL('http://localhost/');
   const doc = (type: string, url: string): GraphDocument => ({
     format: 'webarkit-studio/graph',
-    version: 5,
+    version: 6,
     plugins: [{ id: 'acme', version: '1.0.0' }],
     nodes: [{ id: 'n', type, params: { url } }],
     edges: [],

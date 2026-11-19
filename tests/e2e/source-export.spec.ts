@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { exportZip, loadDemo, openStudio, serveDir } from './helpers';
+import { overWhite, shadowThenLost } from './shadow-helpers';
 
 const NEXT = { timeout: 30_000 };
 type Doc = { nodes: Array<{ id: string; type: string; params: Record<string, unknown> }> };
@@ -33,13 +34,27 @@ async function magenta(page: Page): Promise<{ share: number; x: number; y: numbe
   }, png);
 }
 
-/** The knot's centroid while the marker is found: the largest shares over a few seconds, averaged. */
+/** Samples of the knot seen that whileFound() averages. */
+const FOUND_SAMPLES = 5;
+
+/**
+ * The knot's centroid while the marker is found: the mean of FOUND_SAMPLES samples where it is seen. They are
+ * collected until there are enough, over as many findings as it takes, not over a fixed window: the fake camera hides
+ * the marker 2 s in every 6, a finding can be cut short, and under load one screenshot can take seconds, so a window
+ * could fall entirely in a lost phase and average nothing (#127).
+ */
 async function whileFound(page: Page) {
-  await expect.poll(async () => (await magenta(page)).share, NEXT).toBeGreaterThan(0.002);
-  const seen: Array<{ share: number; x: number; y: number }> = [];
-  const end = Date.now() + 3000;
-  while (Date.now() < end) seen.push(await magenta(page));
-  const found = seen.filter((s) => s.share > 0.002);
+  const found: Array<{ share: number; x: number; y: number }> = [];
+  await expect
+    .poll(
+      async () => {
+        const s = await magenta(page);
+        if (s.share > 0.002) found.push(s);
+        return found.length;
+      },
+      { timeout: 60_000, message: `the knot seen in ${FOUND_SAMPLES} samples within 60 s` },
+    )
+    .toBeGreaterThanOrEqual(FOUND_SAMPLES);
   const mean = (k: 'share' | 'x' | 'y') => found.reduce((a, s) => a + s[k], 0) / found.length;
   return { share: mean('share'), x: mean('x'), y: mean('y') };
 }
@@ -88,8 +103,67 @@ test('pinball-three as source code: built and served, it tracks, shows the knot 
   }
 });
 
-test('the generated app puts the knot where the studio does (projection, centre offset, lift)', async ({ page, browser }) => {
+test('pinball-material as source code (#133): the texture ships, the project builds and runs without a missing file', async ({ page, browser }) => {
   test.setTimeout(180_000);
+  await loadDemo(page, 'pinball-material');
+  const { dir, files } = await exportZip(page, 'source-code');
+  const png = files.find((f) => f.endsWith('/textures/tiles.png'));
+  expect(png, files.join('\n')).toBeDefined();
+  expect(png).toMatch(/\/public\//);
+  const main = readFileSync(join(dir, 'src/main.js'), 'utf8');
+  expect(main).toContain('new THREE.TextureLoader().loadAsync(');
+  expect(main).toMatch(/const prim_pinball = new THREE\.Mesh\(prim_pinball_geometry, chrome\);/);
+
+  const dist = buildProject(dir);
+  const server = await serveDir(dist);
+  try {
+    const app = await browser.newPage();
+    const errors: string[] = [];
+    const missing: string[] = [];
+    app.on('pageerror', (e) => errors.push(e.message));
+    // The tracker asks for a packed .zft first and falls back to the dataset's files (as export.spec.ts allows).
+    app.on('response', (r) => r.status() >= 400 && !r.url().endsWith('.zft') && missing.push(`${r.status()} ${r.url()}`));
+    const loaded = app.waitForResponse((r) => r.url().endsWith('/tiles.png'), NEXT);
+    await app.goto(server.url);
+    await expect(app.locator('.ar-view canvas')).toHaveCount(1, NEXT);
+    expect((await loaded).status()).toBe(200);
+    expect(errors).toEqual([]);
+    expect(missing).toEqual([]);
+    await app.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test('pinball-shadow as source code (#134): built and served, the cube casts its shadow on the poster', async ({ page, browser }) => {
+  test.setTimeout(240_000);
+  await loadDemo(page, 'pinball-shadow');
+  const { dir } = await exportZip(page, 'source-code');
+  const main = readFileSync(join(dir, 'src/main.js'), 'utf8');
+  expect(main).toContain('keylight.castShadow = true;');
+  expect(main).toContain('new THREE.ShadowMaterial(');
+  const dist = buildProject(dir);
+  const server = await serveDir(dist);
+  try {
+    const app = await browser.newPage();
+    const errors: string[] = [];
+    app.on('pageerror', (e) => errors.push(e.message));
+    await app.goto(server.url);
+    await expect(app.locator('.ar-view canvas')).toHaveCount(1, NEXT);
+    await overWhite(app);
+    // The generated app's stats box is grey and has no class to hide: a baseline of up to 1 % of the view.
+    await shadowThenLost(app, undefined, 0.01);
+    expect(errors).toEqual([]);
+    await app.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test('the generated app puts the knot where the studio does (projection, centre offset, lift)', async ({ page, browser }) => {
+  // Two whileFound() polls of up to 60 s each, plus the export, the synchronous build and two page loads (about 40 s
+  // here, more under load): 240 s, so a poll that fails reports its own message, not the test's timeout.
+  test.setTimeout(240_000);
   // The knot still, in both: its spin would move the centroid between the two captures.
   const doc = JSON.parse(readFileSync('public/graphs/pinball-three.json', 'utf8')) as Doc;
   doc.nodes.find((n) => n.id === 'prim_pinball')!.params.spin = false;

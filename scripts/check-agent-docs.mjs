@@ -16,8 +16,8 @@ const CANONICAL = 'AGENTS.md';
 
 /** Path prefixes checked for existence; anything else in backticks is ignored. */
 const PATH_PREFIXES = ['src/', 'plugins/', 'packages/', 'tests/', 'scripts/', 'public/', 'docs/', '.github/', '.claude/', '.gemini/'];
-/** Named in the docs, never committed: the generated folders, and a personal file that only this check has to allow for. */
-const NOT_COMMITTED = [...GENERATED_FOLDERS, '.claude/settings.local.json'];
+/** Named in the docs, never committed: the generated folders, a personal settings file, and the worktrees of desktop sessions (ignored in .gitignore), which only this check has to allow for. */
+const NOT_COMMITTED = [...GENERATED_FOLDERS, '.claude/settings.local.json', '.claude/worktrees'];
 
 const problems = [];
 const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};

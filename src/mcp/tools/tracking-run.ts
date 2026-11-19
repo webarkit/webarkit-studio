@@ -8,6 +8,7 @@ import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as z from 'zod';
 import { resolveParams } from '../../core/graph';
+import { flattenGraph } from '../../core/macros';
 import { loadGraphDocument, upgradeNote } from '../../core/migrations';
 import { effectiveDefinition, isScriptType } from '../../core/script';
 import type { TraceFrame, TraceSource } from '../../runtime/trackers/trace';
@@ -68,7 +69,8 @@ export const trackingRun = defineTool({
   }),
   run: (input, env) => oneAtATime(async () => {
     const loaded = loadGraphDocument(readGraphInput(input, env));
-    const { doc } = loaded;
+    // The flat graph (#140), as the runtime runs it: a node inside a macro is `<macro>/<inner>`.
+    const doc = flattenGraph(loaded.doc).doc;
     // A script would run arbitrary code in this Node process, with no trust prompt (#35): refused before anything runs.
     const scripts = doc.nodes.filter((n) => isScriptType(n.type));
     if (scripts.length) {

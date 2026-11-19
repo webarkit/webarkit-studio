@@ -14,7 +14,7 @@ import { html, render, nothing, svg, type TemplateResult } from 'lit';
 import { Scope } from 'rete';
 import type { RenderSignal as AreaRenderSignal } from 'rete-area-plugin';
 import { classicConnectionPath, getDOMSocketPosition } from 'rete-render-utils';
-import type { StudioConnection, StudioNode } from './studio-node';
+import { hiddenParam, type StudioConnection, type StudioNode } from './studio-node';
 import { SOCKET_TYPES, type SocketType } from '../core/sockets';
 import type { NodeDefinition, ParamSpec } from '../nodes/catalog';
 import type { ParamValue } from '../core/graph';
@@ -115,11 +115,11 @@ export class LitRenderPlugin extends Scope<never, [RenderSignal]> {
         ${Object.entries(node.def.outputs).map(
           ([key, spec]) => html`<div class="port output"><span class="port-label">${spec.label}</span>${socket('output', key, spec.type)}</div>`,
         )}
-        ${Object.keys(node.def.params).length
+        ${Object.keys(node.def.params).some((key) => !hiddenParam(node.type, key))
           ? html`<div class="params" @pointerdown=${stop} @wheel=${stop} @contextmenu=${stop}>
               ${isScriptType(node.type) ? scriptControls(node, this.opts.script) : nothing}
               ${Object.entries(node.def.params)
-                .filter(([key]) => !(isScriptType(node.type) && SCRIPT_OWN_PARAMS.includes(key)))
+                .filter(([key]) => !(isScriptType(node.type) && SCRIPT_OWN_PARAMS.includes(key)) && !hiddenParam(node.type, key))
                 .map(([key, spec]) => this.paramEditor(node, key, spec))}
             </div>`
           : nothing}

@@ -32,7 +32,7 @@ Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 `source.videoFile` plays a recorded video the same way; if you fetched the
 assets before this demo existed, run `npm run assets` again for the photo).
 "pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
-`math.vector3` wired into the Primitive's Position, and fades it with `color.rgba` on its Color;
+`math.vector3` wired into the Mesh's Position, and fades it with `color.rgba` on its Color;
 "pinball · one formula" moves it the same way with a single `math.expression`
 (`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
 `onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
@@ -44,8 +44,51 @@ Editing:
 
 - **Add a node:** right-click the canvas and type to search (name, category or library), or filter the palette.
 - **Undo / redo:** ↶ / ↷, or Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y). Param edits are undone too.
-- **Copy / paste / duplicate:** Ctrl+C / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
+- **Select:** click a node; Ctrl+click or Shift+click adds it, or removes it if it is selected; Shift+drag on the
+  canvas draws a box that selects the nodes it touches (with Ctrl, adds them); Ctrl+A selects every node; Escape
+  clears. A plain drag on the canvas pans; Ctrl+drag (or Shift+drag) on a selected node moves the whole selection.
+- **Copy / cut / paste / duplicate:** Ctrl+C, Ctrl+X / Ctrl+V (at the pointer, also between studio tabs) and Ctrl+D,
   or Duplicate in a node's right-click menu. Wires between the copied nodes are kept.
+- **Delete:** Delete or Backspace removes the selected nodes and their wires, and so does Delete in a selected
+  node's menu. Each of these is one undo step. Keys typed in a field, a select or the log are never taken as
+  shortcuts.
+- **Macros** (#140): fold nodes into one reusable node.
+  - **Create macro** in a node's menu folds the selection into a macro node. The wires that crossed the selection's
+    border become its ports, named after the inner node and port (`select_pinball_pose`, shown as "Select Marker
+    Pose"). A selection that holds a macro node is refused (no macro inside a macro). On an input that takes several
+    wires, such as the tracker's datasets, the order of its wires is kept; a selection that cannot keep it (a
+    selected node's input wired from outside before it is wired from inside) is refused.
+  - **Dissolve macro** puts its nodes back where it is, rewired, with the values set on the macro node. Dissolving a
+    macro just made gives the same graph back.
+  - **Enter macro** shows its inside, editable; the bar above the editor names it, and **← Graph** goes back. An edit
+    inside changes the definition, so every instance of it, and a running preview applies a live param in each.
+    Inside, **Promote** next to a param in Properties sets it on the macro node, per instance; **Unpromote** takes it
+    back. A script's code is never promoted.
+  - **Rename macro** in its menu, or the name field in the bar inside it, renames the definition: every instance's
+    title follows. A blank name is refused. A new macro is called "Macro", or "Macro 2", "Macro 3"… when that name
+    is taken.
+  - Create, Dissolve and Rename are one undo step each. Inside a macro, undo and redo reach only the edits made
+    inside; back in the graph, all of them are one step, which one undo reverts.
+  - **The macro library** (#141), the palette's **Macros** section, first in the palette:
+    - **Presets:** Box, Sphere, Cylinder, Plane, Torus, Torus knot and Capsule, each a geometry node already wired
+      into a Mesh, added expanded (its two nodes, not a macro node) as one undo step. Wire its scene, and the Mesh
+      into an anchor. They ship with the studio and cannot be removed.
+    - **Export macro…** in a macro node's menu saves its definition as a `.wmacro` file, with a description. It
+      lists the project assets the macro uses, by node and param: the file keeps them as references, not the files.
+    - **Import macro…** adds a `.wmacro` to the project's library. A file is checked as a graph is: an unknown
+      node type or a missing plugin refuses it by name. It names the project assets it uses that this project does
+      not have; those fail at Run, on the macro node, until you pick a file. A script inside asks before it runs,
+      as any script from someone else does.
+    - A library macro is added from the palette like any node, and its definition is copied into the graph: a graph
+      never depends on the library to open. When the graph already uses that macro's id for another content, the
+      studio asks: **Keep both** (the new one under another id), or **Replace** it (every instance follows, one
+      undo step). A file's id is its macro's name, so two versions of one macro clash and two different macros do
+      not. × removes a macro from the library; the graphs that use it keep their copy.
+    - The library is saved in the browser beside the autosave, and in project files (`library.json`). A project
+      without one opens with an empty library. Every library a project replaced is kept in localStorage, together
+      (`webarkit-studio:macro-library-replaced`): one entry per macro, and another content under an id already there
+      under a free id. A `library.json` this studio cannot read leaves the library as it
+      was, and the rest of the project opens.
 - **Arrange** lays the graph out left to right; the minimap (bottom right) moves the view.
 - **Properties** (under the preview): every param of the selected node, including vectors and 4×4 matrices.
 
@@ -370,7 +413,7 @@ marks it (`runsCode`), never by its name.
 ### three.js Script
 
 **three.js Script** (`three.script`) builds part of the scene with three.js.
-Wire its *Object* into a Marker Anchor's *Children*, like a Primitive: the
+Wire its *Object* into a Marker Anchor's *Children*, like a Mesh: the
 studio keeps the camera, the marker pose, found / lost visibility and the
 export, and the script only creates and animates content. "pinball · a three.js
 script builds the scene" is a knot and a ring of spheres made that way.
@@ -448,7 +491,7 @@ uses), and on nothing of the studio:
 
 The first version writes the nodes of "pinball · Three.js" (camera, the jsartoolkitNFT camera
 parameters, dataset, settings and controller, the One Euro filter, Select Marker, Three.js renderer,
-scene, AR camera, light, primitive, anchor, AR view, Inspector and Tracking stats) and glTF models. A
+scene, AR camera, light, mesh and geometry, anchor, AR view, Inspector and Tracking stats) and glTF models. A
 graph with any other node (math, logic, actions, scripts, `page.*`, `ui.*`, Babylon.js…) is refused,
 with the list of those nodes: export a Standalone app for it. The controller's Threaded and Auto
 builds are refused too, as they need a cross-origin isolated page. Plugins write their own nodes'
@@ -566,7 +609,7 @@ Key decisions:
    implements the same render contract with lit-html.
 6. **Renderer → Scene → objects.** A renderer node (`three.renderer`,
    `babylon.renderer`) is only the engine and its canvas. A **Scene** node,
-   connected to it, is where Primitive, Light and Marker Anchor create their
+   connected to it, is where Mesh, Geometry, Light and Marker Anchor create their
    objects (Babylon.js requires a scene at creation time). AR View draws a
    scene through an **AR Camera** fed by the tracker projection. Switching
    engine = rewiring one node. Each engine is loaded with a dynamic import.
@@ -596,9 +639,10 @@ Key decisions:
 
 Node types are `<namespace>.<name>`, with the wrapped library as namespace:
 `jsartoolkitNFT.controller`, `three.renderer`, `babylon.renderer`. Built-ins
-use functional namespaces (`scene.*`, `filter.*`, `tracking.*`, `debug.*`,
+use functional namespaces (`scene.*`, `geometry.*`, `filter.*`, `tracking.*`, `debug.*`,
 `output.*`, `source.*`, `math.*`, `color.*`, `logic.*`, `action.*`, `page.*`, `ui.*`).
-**`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
+`macro` is reserved for the macro node, whose ports come from its definition in the
+graph (#140). **`webarkit.*` is reserved** for the webarkit/webarkit packages, so a future
 `webarkit.nftTracker` (@webarkit/nft-tracker) cannot be confused with the
 JsartoolkitNFT controller. Library-specific data has its own socket type,
 defined by its plugin and prefixed with the plugin id
@@ -612,7 +656,10 @@ plane with +Z out of it, column-major 4x4 matrices, camera at the origin
 looking down −Z with the AR Camera projection. Babylon.js runs in
 right-handed mode so ARToolKit poses apply unchanged. Objects remember the
 scene that created them: wiring an object into a node of another scene (or
-engine) fails at init with a clear error.
+engine) fails at init with a clear error. A graph that puts a node of one
+engine in a scene of the other (a `babylon.*` node in a Three.js scene, a
+`three.*` node in a Babylon.js scene, directly or through what it feeds) is
+refused before it runs, naming the node; a work in progress still opens.
 
 ### Lights and spaces
 
@@ -623,7 +670,9 @@ there and lights the scene from the viewer. Wired to a Marker Anchor's
 marker). The adapters hide engine differences: Three.js derives a hemisphere
 light's direction from its world position, and Babylon.js ignores a
 hemispheric light's parent, so both are re-oriented from the parent each
-frame. Intensities use the Three.js scale; Babylon scales them down.
+frame. Intensities and colours use the Three.js scale: the Babylon.js adapter
+renders on `PBRMaterial`, as Three.js on `MeshStandardMaterial`, and maps
+them so the same graph looks alike on both.
 
 ### Execution model
 
@@ -693,16 +742,29 @@ Planned split once the format stabilises (npm workspaces):
 | `tracking.selectMarker` | ✅ ⚡ | markers → pose, found, onFound, onLost, markerInfo |
 | `jsartoolkitNFT.nativeFilter` | ✅ | → poseFilter (the tracker's `'native'` filter) |
 | `filter.oneEuro` | ✅ | → poseFilter (One Euro, @webarkit/oneeurofilter-ts inside the tracker) |
-| `three.renderer` | ✅ | → renderer |
-| `babylon.renderer` | ✅ | → renderer |
+| `three.renderer` | ✅ ⚡ | → renderer, info (*antialias*, *power preference*, *preserve drawing buffer*, *stencil* recreate it; ⚡ *max pixel ratio*, *tone mapping*, *exposure*, *output colour space*) |
+| `babylon.renderer` | ✅ ⚡ | → renderer, info (*antialias*, *power preference*, *preserve drawing buffer*, *stencil* recreate it; ⚡ *max pixel ratio*, *tone mapping* on / off, *tone mapping type*, *exposure*) |
 | `scene.scene` | ✅ | renderer → scene |
 | `scene.arCamera` | ✅ | projection → camera |
-| `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient) |
-| `scene.primitive` | ✅ ⚡ | scene, position?, color? → sceneObject (box, sphere, torus knot; position, rotation, spin; alpha below 1 is transparent) |
+| `scene.light` | ✅ ⚡ | scene, color? → sceneObject (directional / hemisphere / ambient / point / spot; position, target, distance, spot angle and penumbra; point and spot intensity in candela at 1 m; directional and spot cast shadows, map size and bias) |
+| `scene.mesh` | ✅ ⚡ | scene, geometry, position?, rotation?, scale?, color?, material? → sceneObject (rests on the marker; position, rotation, scale per axis, spin; a default PBR material, alpha below 1 is transparent; a connected material replaces it and sets the colour aside; casts and receives shadows; connected inputs override the params) |
+| `babylon.nodeMaterial` | ✅ | scene → material (a Babylon.js Node Material from a `.json` saved by the Node Material Editor; Babylon.js only: refused in a Three.js scene; exposed inputs not mapped yet; a texture named by URL is refused) |
+| `scene.material` | ✅ ⚡ | scene, color?, emissive?, map? → material (PBR: colour, metalness, roughness, emissive and its intensity, opacity, side front / back / double, unlit; shared by every mesh it reaches; connected colour and emissive override the params) |
+| `scene.texture` | ✅ ⚡ | scene, video? → texture (an image URL or upload, or a connected video, which wins; sRGB, the same way up on both renderers; wrap clamp / repeat / mirror and repeat U, V live, the URL on the next Run) |
+| `geometry.box` | ✅ ⚡ | scene → geometry (width X, depth Y, height Z, in mm) |
+| `geometry.sphere` | ✅ ⚡ | scene → geometry (radius, detail; poles on Z) |
+| `geometry.cylinder` | ✅ ⚡ | scene → geometry (top and bottom radius, height, detail; along Z; a top radius of 0 is a cone) |
+| `geometry.plane` | ✅ ⚡ | scene → geometry (width X, depth Y; on the marker, facing +Z) |
+| `geometry.torus` | ✅ ⚡ | scene → geometry (radius, tube, detail; the ring in XY) |
+| `geometry.torusKnot` | ✅ ⚡ | scene → geometry (radius, tube, p, q, detail) |
+| `geometry.capsule` | ✅ ⚡ | scene → geometry (radius, total height, detail; along Z) |
 | `three.script` | ✅ ⚡ | scene, the inputs its script's header declares → sceneObject (a three.js script builds a group on the marker; Three.js only; asks before running a script from someone else; see "three.js Script") |
 | `three.renderScript` | ✅ ⚡ | video, pose, found, projection, markerInfo, the inputs its script's header declares → — (a three.js script with its own renderer, scene and camera over the video; asks before running a script from someone else; see "three.js Render Script") |
-| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; connected position and rotation override the params) |
+| `scene.gltf` | ✅ ⚡ | scene, position?, rotation? → sceneObject (glTF / GLB model, URL or upload; scale, rotation, position; autoplay of its first clip; casts and receives shadows; connected position and rotation override the params) |
+| `scene.shadowCatcher` | ✅ ⚡ | scene, markerInfo? → sceneObject (a plane on the marker showing only the shadows cast on it; width, depth, opacity; the marker's size when markerInfo is wired) |
+| `scene.environment` | ✅ ⚡ | scene → sceneObject (image-based lighting and reflections, never drawn; neutral (a soft room made offline) or an uploaded `.hdr`; intensity and rotation; camera space, or following the marker when wired into a Marker Anchor; one per scene) |
 | `scene.anchor` | ✅ | scene, pose, found?, markerInfo?, children[]? → sceneObject |
+| `scene.group` | ✅ ⚡ | scene, children[]?, position?, rotation?, scale? → sceneObject (moves, turns, scales and hides its children together; position mm, rotation degrees X then Y then Z, scale per axis; connected inputs override the params; an object has one parent) |
 | `output.arView` | ✅ | scene, camera, video, objects[]? → |
 | `math.expression` | ✅ ⚡ | a?, b?, c?, d?, t? → number, color, vector3 (a formula, e.g. `40 + 30 * sin(t * 180)`: `+ - * / % ^`, `!`, comparisons, `&& \|\|`, `? :`, functions in degrees; a–d override their params, t is its own clock unless wired; no `eval`. A whole formula of `rgba(r, g, b, a)` gives the colour, clamped to 0–1, and one of `vec3(x, y, z)` the vector; only the matching output gets a value) |
 | `math.number` | ✅ ⚡ | → number |
@@ -746,7 +808,7 @@ Planned split once the format stabilises (npm workspaces):
 | `logic.branch` | ✅ | trigger, condition? → onTrue, onFalse (if / else for events) |
 | `logic.switch` | ✅ ⚡ | trigger, index? → case0–case3, onDefault |
 | `action.playAnimation` | ✅ ⚡ | target, play?, pause?, stop? (events) → (a clip of a glTF model; *loop*, *speed*) |
-| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a primitive) |
+| `action.setVisible` | ✅ | target, show?, hide?, toggle? (events) → (a model or a mesh) |
 | `action.playSound` | ✅ ⚡ | play?, stop? (events) → (a sound file; *volume*, *loop*) |
 | `action.openUrl` | ✅ ⚡ | show?, hide? (events) → (a link on the AR view; http and https only; *label*) |
 | `action.dispatchEvent` | ✅ | trigger? (event) → (a named event to the page: DOM or postMessage; see "Talking to the page") |
@@ -812,7 +874,13 @@ worker (`createNFTTrackerWorker` from `@webarkit/jsartoolkit-nft/client`,
 - The tracker's One Euro filter (`@webarkit/oneeurofilter-ts`) fixes `dCutOff`
   at 0.001, so the One Euro node exposes min cutoff, beta and warm-up only. The
   warm-up poses pass through unfiltered but are fed to the filter.
-- Graph format is `webarkit-studio/graph` v5. A v4 graph upgrades when it is opened,
+- A graph may hold macro definitions (`macros`, #140): a `macro` node's ports and params are
+  the inner ports and params its definition exposes. The studio checks and runs the flat graph,
+  where each macro node is its inner nodes, named `<macro node>/<inner node>`; an inner node's
+  report or error shows on its macro node. The `.json`, the autosave, the project and the app's
+  `graph.json` keep the macros. In the editor, a macro is made from a selection, dissolved,
+  entered, renamed, and its inner params promoted (see "Editing").
+- Graph format is `webarkit-studio/graph` v6. A v4 or v5 graph upgrades when it is opened,
   and the file itself is not touched. v2 and v3, prototype formats, are refused, and
   a newer document asks for a newer studio. An unfinished graph, with a required
   input not connected, reopens from an autosave or a file on **Import…** (a `.json` or
@@ -883,9 +951,9 @@ The source of truth for the roadmap is
 - [x] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
 - [x] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
-**Phase 4 — Scene and editor (v0.4.0)**
-- [ ] Node selection and macros in the editor
-- [ ] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
+**Phase 4 — Scene and editor (released in [v0.4.0](https://github.com/webarkit/webarkit-studio/releases/tag/v0.4.0); [#142](https://github.com/webarkit/webarkit-studio/issues/142) has the full list)**
+- [x] Node selection and macros in the editor
+- [x] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
 
 **Phase 5 — Authoring tools and interaction (v0.5.0)**
 - [ ] Near / far on AR Camera, a preview camera, scene helpers, fog, custom geometry

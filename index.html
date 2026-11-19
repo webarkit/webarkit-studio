@@ -20,10 +20,13 @@
         <option value="pinball-babylon">Demo: pinball · Babylon.js</option>
         <option value="multi-three">Demo: multi NFT (pinball + kuva)</option>
         <option value="pinball-image">Demo: pinball · image, no camera</option>
+        <option value="pinball-shadow">Demo: pinball · a model standing on the poster, with its shadow</option>
+        <option value="pinball-material">Demo: pinball · a textured poster and a chrome knot (materials)</option>
         <option value="pinball-math">Demo: pinball · math and colour nodes (bobbing, fading cube)</option>
         <option value="pinball-expression">Demo: pinball · one formula (Expression node)</option>
         <option value="pinball-animated">Demo: pinball · animated model (plays on found, pauses on lost)</option>
         <option value="pinball-math-model">Demo: pinball · math on a model (bobbing, turning cube)</option>
+        <option value="pinball-group">Demo: pinball · a group of shapes turning on the marker</option>
         <option value="pinball-script">Demo: pinball · one script (the math demo in a Script node)</option>
         <option value="pinball-three-script">Demo: pinball · a three.js script builds the scene</option>
         <option value="pinball-render-script">Demo: pinball · one three.js script renders it all</option>
@@ -48,7 +51,15 @@
         <input id="palette-search" type="search" placeholder="Search nodes…" title="Filter the palette. Right-click the canvas to add a node where you click." aria-label="Search nodes" />
         <div id="palette"></div><section id="assets-panel"></section>
       </aside>
-      <section id="editor" class="editor"></section>
+      <section class="editor-pane">
+        <nav id="macro-path" class="macro-path" aria-label="Macro" hidden>
+          <button id="btn-leave-macro" title="Back to the graph: the edits made inside are one undo step there">← Graph</button>
+          <span aria-hidden="true">›</span>
+          <input id="macro-name" type="text" aria-label="Macro name" title="The macro's name: every instance's title" spellcheck="false" />
+          <small>editing the definition: every instance changes</small>
+        </nav>
+        <section id="editor" class="editor"></section>
+      </section>
       <aside class="preview">
         <div id="stage" class="stage"><p class="hint">Press ▶ Run to preview the graph.</p></div>
         <section id="inspector" class="inspector" aria-label="Properties"></section>
@@ -77,6 +88,29 @@
         <button value="no">Don't run them</button>
         <button value="run" class="primary">Run the scripts</button>
       </form>
+    </dialog>
+    <dialog id="macro-clash" class="script-trust macro-dialog" aria-label="Macro already in the graph">
+      <h2>This macro's id is already used</h2>
+      <p>
+        The macro <strong class="macro-clash-name"></strong> has the id <code class="macro-clash-id"></code>, which another
+        macro already uses: <strong class="macro-clash-existing"></strong>.
+      </p>
+      <p>Keep both, the new one under another id, or replace the other one: every instance of it in the graph follows.</p>
+      <form method="dialog">
+        <button value="cancel">Cancel</button>
+        <button value="replace">Replace</button>
+        <button value="keep-both" class="primary" autofocus>Keep both</button>
+      </form>
+    </dialog>
+    <dialog id="macro-export" class="script-trust macro-dialog" aria-label="Export macro">
+      <h2>Export macro · <span class="macro-export-name"></span></h2>
+      <label>Description <textarea rows="3" spellcheck="true" placeholder="What the macro does, for whoever imports it"></textarea></label>
+      <p>Project assets it uses, kept as references (the file does not carry them):</p>
+      <ul class="macro-export-assets"></ul>
+      <div class="macro-dialog-buttons">
+        <button type="button" class="macro-export-cancel">Cancel</button>
+        <button type="button" class="macro-export-save primary">Save…</button>
+      </div>
     </dialog>
     <script type="module" src="/src/app/studio.ts"></script>
   </body>

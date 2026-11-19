@@ -3,15 +3,17 @@
  * the AR camera. The renderer (and its canvas) is reached through the scene.
  */
 import type { CameraValue, NodeFactory, SceneObjectValue, SceneValue, VideoValue } from '../types';
-import { mountArFrame, type ArFrame } from '../ar-frame';
+import { cappedPixelRatio, mountArFrame, type ArFrame } from '../ar-frame';
 
 export const arView: NodeFactory = (params, ctx) => {
   let scene: SceneValue | null = null;
-  let frame: ArFrame | null = null;
+  let arFrame: ArFrame | null = null;
   let wrapper: HTMLDivElement | null = null;
   let fpsLabel: HTMLDivElement | null = null;
   let fpsFrames = 0;
   let fpsTime = 0;
+  /** The renderer's pixel ratio cap the canvas was last sized with (#137): a live change sizes it again. */
+  let sizedCap = 0;
 
   return {
     init(inputs) {
@@ -19,9 +21,10 @@ export const arView: NodeFactory = (params, ctx) => {
       scene = inputs.scene as SceneValue;
       const renderer = scene.renderer;
 
-      // The frame three.renderScript mounts too (#37).
-      frame = mountArFrame(ctx.stage, video, renderer.canvas, (w, h) => renderer.setSize(w, h));
-      wrapper = frame.wrapper;
+      // The frame three.renderScript mounts too (#37), at devicePixelRatio capped by the renderer's maxPixelRatio (#137).
+      sizedCap = renderer.maxPixelRatio;
+      arFrame = mountArFrame(ctx.stage, video, renderer.canvas, (w, h) => renderer.setSize(w, h), () => cappedPixelRatio(window.devicePixelRatio, sizedCap));
+      wrapper = arFrame.wrapper;
 
       const badge = document.createElement('div');
       badge.className = 'ar-view-badge'; // kept clear of by ui.* panels
@@ -40,6 +43,10 @@ export const arView: NodeFactory = (params, ctx) => {
 
     update(inputs, frame) {
       if (!scene) return;
+      if (scene.renderer.maxPixelRatio !== sizedCap) {
+        sizedCap = scene.renderer.maxPixelRatio;
+        arFrame?.resize();
+      }
       scene.render((inputs.camera as CameraValue | undefined)?.projection ?? null);
 
       if (fpsLabel && params.stats) {
@@ -58,7 +65,7 @@ export const arView: NodeFactory = (params, ctx) => {
     },
 
     dispose() {
-      frame?.remove();
+      arFrame?.remove();
     },
   };
 };

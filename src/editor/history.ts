@@ -67,6 +67,27 @@ export class NameEditAction implements HistoryAction {
 }
 
 /**
+ * An edit of a value the editor keeps beside rete's state (#140): a macro definition's content, recorded when the
+ * user leaves it, or its promoted params, recorded while inside. `apply` sets a value without recording it.
+ */
+export class ValueAction<T> implements HistoryAction {
+  constructor(
+    readonly before: T,
+    /** Mutable: the keystrokes of one rename fold into one action (#140), as the graph name's do (#118). */
+    public after: T,
+    private readonly apply: (value: T) => void,
+  ) {}
+
+  undo() {
+    this.apply(this.before);
+  }
+
+  redo() {
+    this.apply(this.after);
+  }
+}
+
+/**
  * Folds `next` into `prev`, an edit of the same session (the name field kept the focus, and nothing else was
  * recorded since), so typing a name is one undo step back to the name before it. Returns true if merged.
  */

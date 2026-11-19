@@ -19,6 +19,7 @@
  */
 import { NODE_CATALOG, type NodeDefinition, type ParamSpec, type PortSpec } from '../nodes/catalog';
 import type { ParamValue } from './graph';
+import { everyNode, MACRO_TYPE, macroInstanceDefinition, type MacroDefinitions } from './macros';
 import type { CoreSocketType } from './sockets';
 
 /** Value sockets a script may use: no renderer types, so a script runs the same on every renderer. */
@@ -31,6 +32,21 @@ export type ScriptSocket = (typeof SCRIPT_VALUE_SOCKETS)[number];
  */
 export const isScriptType = (type: string, catalog: Record<string, NodeDefinition> = NODE_CATALOG): boolean =>
   Object.hasOwn(catalog, type) && catalog[type].runsCode === true;
+
+/**
+ * The script nodes of a document, inside its macros too (#140): what the trust prompt asks about and what the player
+ * refuses from a link. A node inside a definition comes back as a copy named `<definition id>/<node id>`. Reads a
+ * document that was not validated yet: anything that is not a node is skipped.
+ */
+export function scriptNodesIn(
+  doc: { nodes?: unknown; macros?: unknown },
+  catalog: Record<string, NodeDefinition> = NODE_CATALOG,
+): Array<{ id: string; type: string; params: Record<string, ParamValue> }> {
+  const g = { nodes: Array.isArray(doc?.nodes) ? doc.nodes : [], macros: doc?.macros && typeof doc.macros === 'object' ? (doc.macros as MacroDefinitions) : undefined };
+  return everyNode(g)
+    .filter(({ node }) => typeof node?.type === 'string' && isScriptType(node.type, catalog))
+    .map(({ node, macro }) => ({ ...node, id: macro === undefined ? String(node.id) : `${macro}/${String(node.id)}`, params: node.params ?? {} }));
+}
 
 /** The node's own params, and the variables every script has (`__last` and `__done` are the node's): header names may not take them. */
 const OWN_NAMES = ['time', 'delta', 'state', 'script', 'file', '__last', '__done'];
@@ -291,16 +307,20 @@ function entry(base: NodeDefinition, text: string) {
 }
 
 /**
- * A node's definition with its effective ports and params: the catalog's, and for a script node, the ones
- * its header declares. Every place that reads a node's ports goes through this (validation, the runtime, the
- * editor, the MCP server). Undefined for an unknown type.
+ * A node's definition with its effective ports and params: the catalog's, for a script node the ones its header
+ * declares, and for a macro node (#140) the ones its definition in `macros` (the document's) exposes and promotes.
+ * Every place that reads a node's ports goes through this (validation, the runtime, the editor, the MCP server).
+ * Undefined for an unknown type. Without `macros`, a macro node has no ports: validation and the runtime read the
+ * flat graph (src/core/macros.ts), which has none.
  */
 export function effectiveDefinition(
   node: { type: string; params?: Record<string, ParamValue> },
   catalog: Record<string, NodeDefinition> = NODE_CATALOG,
+  macros?: MacroDefinitions,
 ): NodeDefinition | undefined {
   if (!Object.hasOwn(catalog, node.type)) return undefined;
   const base = catalog[node.type];
+  if (node.type === MACRO_TYPE) return macroInstanceDefinition(node, macros, base, (inner) => effectiveDefinition(inner, catalog));
   if (!base?.runsCode) return base;
   return entry(base, scriptTextOf(node.params, base)).def;
 }

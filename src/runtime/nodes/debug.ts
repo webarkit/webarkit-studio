@@ -5,14 +5,57 @@
  *  - debug.stats shows frame rates and tracker timings (optionally on the AR view);
  *  - debug.trace records a tracker's trace and downloads it (studio only).
  */
-import type { NodeFactory, TrackingStatsValue, TrackingTraceValue } from '../types';
+import type { GeometryValue, NodeFactory, RendererInfoValue, TrackingStatsValue, TrackingTraceValue } from '../types';
 import { serializeTrace, type TraceHeader, type TraceRecord } from '../trackers/trace';
+import { rgbaToHex } from '../../core/color';
+import type { MaterialSpec, TextureSpec } from '../../core/material';
 
 const REPORT_INTERVAL_MS = 200;
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3));
 
 function isMatrix4(v: unknown): v is ArrayLike<number> {
   return !!v && typeof v === 'object' && 'length' in v && (v as ArrayLike<unknown>).length === 16 && typeof (v as ArrayLike<unknown>)[0] === 'number';
+}
+
+/** A geometry socket value (#132): a handle with its spec and bounds. */
+function isGeometryValue(o: Record<string, unknown>): o is Record<string, unknown> & GeometryValue {
+  const handle = o.handle as { kind?: unknown } | null | undefined;
+  const bounds = o.bounds as { min?: unknown; max?: unknown } | null | undefined;
+  const spec = o.spec as { shape?: unknown } | null | undefined;
+  return handle?.kind === 'geometry' && typeof spec?.shape === 'string' && Array.isArray(bounds?.min) && Array.isArray(bounds?.max);
+}
+
+/** A rendererInfo value (#137): plain data, recognised by its fields. */
+function isRendererInfo(o: Record<string, unknown>): o is Record<string, unknown> & RendererInfoValue {
+  // Every field formatRendererInfo reads, with its type, so an object that only looks like one falls through to the
+  // generic formatter (Qodo on #170).
+  const c = o.context as Record<string, unknown> | null | undefined;
+  const context = c === null || (typeof c === 'object' && typeof c?.antialias === 'boolean' && typeof c.stencil === 'boolean' && typeof c.powerPreference === 'string');
+  return (
+    typeof o.engine === 'string' &&
+    typeof o.webgl === 'number' &&
+    typeof o.gpuVendor === 'string' &&
+    typeof o.gpuRenderer === 'string' &&
+    typeof o.maxTextureSize === 'number' &&
+    Array.isArray(o.extensions) &&
+    typeof o.drawCalls === 'number' &&
+    typeof o.triangles === 'number' &&
+    context
+  );
+}
+
+const yesNo = (v: boolean) => (v ? 'yes' : 'no');
+
+/** The renderer's info as lines: what the author checks first (the GPU, antialias granted), the extensions as a count. */
+function formatRendererInfo(i: RendererInfoValue): string {
+  const c = i.context;
+  return [
+    `${i.engine} · ${i.webgl ? `WebGL ${i.webgl}` : 'no WebGL context'}`,
+    i.gpuVendor || i.gpuRenderer ? `GPU: ${[i.gpuVendor, i.gpuRenderer].filter(Boolean).join(' · ')}` : 'GPU: not given by the browser',
+    ...(c ? [`antialias: ${yesNo(c.antialias)} · stencil: ${yesNo(c.stencil)} · power: ${c.powerPreference}`] : i.webgl ? ['context: lost'] : []),
+    `max texture ${i.maxTextureSize} · ${i.extensions.length} extensions`,
+    `${i.drawCalls} draw calls · ${i.triangles} triangles`,
+  ].join('\n');
 }
 
 /** Readable text for any socket value. */
@@ -46,11 +89,34 @@ export function formatValue(value: unknown): string {
     if (typeof o.count === 'number' && typeof o.time === 'number') {
       return o.count === 0 ? 'event: not fired yet' : `event fired ${o.count}× · last ${new Date(o.time).toLocaleTimeString()}`;
     }
+    if (isRendererInfo(o)) return formatRendererInfo(o);
     // Engine handles (renderer, scene, objects) are not data: show their kind.
     if ('renderer' in o && typeof (o.renderer as { kind?: string })?.kind === 'string') {
       return `${(o.renderer as { kind: string }).kind} scene`;
     }
     if (typeof o.kind === 'string' && 'canvas' in o) return `${o.kind} renderer`;
+    // A geometry (#132): its shape and its bounds' extents, never its handle (Babylon.js's geometry and scene are
+    // circular, so JSON.stringify would throw).
+    if (isGeometryValue(o)) {
+      const { min, max } = o.bounds;
+      return `${o.spec.shape} ${[0, 1, 2].map((k) => num(max[k] - min[k])).join(' × ')} mm`;
+    }
+    // A material or a texture (#133): their values as text, never their handles (engine objects, circular on Babylon.js).
+    const kind = (o.handle as { kind?: unknown } | null | undefined)?.kind;
+    // A Node Material (#138) has no spec: what it is, never a colour it does not have.
+    const nodeMaterial = o.nodeMaterial as { file?: unknown; blocks?: unknown } | null | undefined;
+    if (kind === 'material' && typeof nodeMaterial?.file === 'string' && typeof nodeMaterial.blocks === 'number') {
+      return `node material ${nodeMaterial.file} · ${nodeMaterial.blocks} blocks`;
+    }
+    if (kind === 'material' && o.spec && typeof o.spec === 'object') {
+      const s = o.spec as MaterialSpec;
+      const extras = [s.unlit ? 'unlit' : `metal ${num(s.metalness)} rough ${num(s.roughness)}`, s.opacity < 1 ? `opacity ${num(s.opacity)}` : '', s.side !== 'front' ? s.side : ''];
+      return `material ${rgbaToHex(s.color)} ${extras.filter(Boolean).join(' ')}`;
+    }
+    if (kind === 'texture' && o.spec && typeof o.spec === 'object') {
+      const s = o.spec as TextureSpec;
+      return `${o.video ? 'video' : 'image'} texture ${o.width}×${o.height} · ${s.wrap} ${num(s.repeatU)}×${num(s.repeatV)}`;
+    }
     if ('scene' in o && 'native' in o) return 'scene object';
     // Video values: by tag name, not instanceof, so this also runs outside a browser.
     const tag = (o.element as { tagName?: unknown } | null | undefined)?.tagName;

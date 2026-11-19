@@ -9,7 +9,8 @@ import { assetSize, type AssetStore } from '../assets/asset-store';
 
 /** What the upload picker offers: the plugins' files, then the built-in ones. */
 export const uploadAccept = () =>
-  [...pluginAssetKinds().flatMap((k) => k.extensions), ...MODEL_EXTENSIONS].map((ext) => `.${ext}`).concat('image/*', 'video/*', 'audio/*', '.dat').join(',');
+  // .hdr: an environment's equirectangular image (#135), a `file` asset.
+  [...pluginAssetKinds().flatMap((k) => k.extensions), ...MODEL_EXTENSIONS].map((ext) => `.${ext}`).concat('image/*', 'video/*', 'audio/*', '.dat', '.hdr').join(',');
 
 /** ".a", ".a and .b", ".a, .b and .c" */
 const extensionList = (extensions: readonly string[]) => {
@@ -19,19 +20,31 @@ const extensionList = (extensions: readonly string[]) => {
 
 /** The upload button's tooltip. */
 export const uploadHint = () =>
-  `Images, videos, sounds, glTF / GLB models${pluginAssetKinds()
+  `Images, videos, sounds, .hdr environments, glTF / GLB models${pluginAssetKinds()
     .map((k) => ` and ${k.label}s (select the ${extensionList(k.extensions)} files together)`)
     .join('')}`;
 
 const formatSize = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-/** `inUse(id)`: whether the current graph references the asset (asked before removing it). */
+/** Where an uploaded asset is used: the current graph, the macro library (#141). */
+export interface AssetUse {
+  graph: boolean;
+  library: boolean;
+}
+
+/** The question asked before removing an asset in use, naming where it is used; null when it is used nowhere. */
+export function assetInUseQuestion(name: string, use: AssetUse): string | null {
+  const where = use.graph && use.library ? 'The graph and the macro library use' : use.graph ? 'The graph uses' : use.library ? 'The macro library uses' : null;
+  return where && `${where} "${name}". Remove it from the project anyway?`;
+}
+
+/** `inUse(id)`: where the asset is used (asked before removing it). */
 export function mountAssetsPanel(
   container: HTMLElement,
   store: AssetStore,
   log: (msg: string) => void,
-  inUse: (id: string) => boolean = () => false,
+  inUse: (id: string) => AssetUse = () => ({ graph: false, library: false }),
 ): void {
   container.innerHTML = `
     <h3>assets</h3>
@@ -75,7 +88,8 @@ export function mountAssetsPanel(
         li.querySelector('small')!.textContent = `${assetKindLabel(asset.kind)} · ${formatSize(assetSize(asset))}`;
         const remove = Object.assign(document.createElement('button'), { className: 'asset-remove', textContent: '×', title: 'Remove from the project' });
         remove.onclick = () => {
-          if (inUse(asset.id) && !confirm(`The graph uses "${asset.name}". Remove it from the project anyway?`)) return;
+          const question = assetInUseQuestion(asset.name, inUse(asset.id));
+          if (question && !confirm(question)) return;
           store.remove(asset.id).then(
             () => log(`- asset ${asset.name}`),
             (err: Error) => log(`✗ cannot remove ${asset.name}: ${err.message}`),

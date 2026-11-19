@@ -9,6 +9,7 @@
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
 import { createThreeAdapter } from '../../../src/runtime/renderers/three-adapter';
 import type { AnimationOptions, RendererAdapter, SceneHandle, SceneObject } from '../../../src/runtime/renderers/adapter';
+import { createPrimitive } from '../../helpers/primitive';
 
 /** Looking down -Z at the origin, with a plain perspective: only so that render() has a projection. */
 const PROJECTION = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0];
@@ -67,7 +68,7 @@ async function open(engine: 'three' | 'babylon', glbBase64: string): Promise<Har
   const anchor = scene.createGroup();
   scene.addRoot(anchor);
   scene.addChild(anchor, model);
-  const primitive = scene.createPrimitive({ shape: 'box', size: 1, color: '#ffffff' });
+  const primitive = createPrimitive(scene, { shape: 'box', size: 1, color: '#ffffff' });
 
   // Babylon's animation clock starts once the scene has nothing left to wait for.
   const native = model.native as { getScene?(): { getWaitingItemsCount(): number } };

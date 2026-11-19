@@ -1,4 +1,4 @@
-// three.script (#36): a three.js script builds part of the scene, on a Marker Anchor like a Primitive.
+// three.script (#36): a three.js script builds part of the scene, on a Marker Anchor like a Mesh.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { exportApp, loadDemo, nodeStatus, openStudio, run, serveDir } from './helpers';
@@ -11,10 +11,13 @@ const babylon = (doc: Doc) => {
   Object.assign(doc.nodes.find((n) => n.type === 'three.renderer')!, { type: 'babylon.renderer', params: {} });
   return doc;
 };
-/** The still-photo demo (its marker always found) with the demo's script in place of its Primitive. */
+/** The still-photo demo (its marker always found) with the demo's script in place of its Mesh (and its geometry). */
 function photoGraph(script?: string): Doc {
   const doc = readGraph('pinball-image');
   const scenery = readGraph('pinball-three-script').nodes.find((n) => n.id === 'scenery')!;
+  // The mesh's geometry goes: a script has no geometry input.
+  doc.nodes = doc.nodes.filter((n) => n.id !== 'prim_pinball_geometry');
+  doc.edges = doc.edges.filter((e) => e.from.node !== 'prim_pinball_geometry' && e.to.node !== 'prim_pinball_geometry');
   Object.assign(doc.nodes.find((n) => n.id === 'prim_pinball')!, { id: 'scenery', type: 'three.script', params: { ...scenery.params, ...(script && { script }) } });
   for (const e of doc.edges) {
     if (e.from.node === 'prim_pinball') e.from.node = 'scenery';
@@ -63,13 +66,15 @@ test('pinball-three-script: the script-built scene follows the marker, and hides
   expect(errors).toEqual([]);
 });
 
-test('with the Babylon.js renderer, the node says it needs Three.js, as any node that fails to start does', async ({ page }) => {
+// The engine rule (#138) refuses it before it runs; the node's own init check stays as a second guard
+// (tests/unit/three-script.test.ts), which the studio no longer reaches.
+test('with the Babylon.js renderer, Run refuses the graph naming the node, before anything starts (#138)', async ({ page }) => {
   await openStudio(page);
   await importGraph(page, babylon(photoGraph()));
   await trustDialog(page).locator('button[value="run"]').click(); // imported, not loaded as a demo: it asks
   await page.click('#btn-run');
-  await expect(page.locator('#log')).toContainText('three.js Script needs the Three.js renderer (three.renderer); this scene is rendered by Babylon.js', NEXT);
-  await expect(page.locator('.studio-node:has(.title span:text-is("three.js Script")) pre.status.error')).toContainText('needs the Three.js renderer');
+  await expect(page.locator('#log')).toContainText('node scenery (three.js Script) is a Three.js node, but its scene renders with Babylon.js', NEXT);
+  await expect(page.locator('#log')).not.toContainText('init three.script');
   await expect(page.locator('#btn-run')).toBeEnabled(); // stopped: the graph can be run again
 });
 

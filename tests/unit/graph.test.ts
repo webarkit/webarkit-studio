@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type ParamValue } from '../../src/core/graph';
+import { GRAPH_VERSION, GraphValidationError, graphPlugins, resolveParams, topologicalOrder, validateGraph, type GraphDocument, type ParamValue } from '../../src/core/graph';
 import { LOADED_PLUGINS } from '../../src/core/plugins';
-import { NODE_CATALOG } from '../../src/nodes/catalog';
+import { NODE_CATALOG, type NodeDefinition } from '../../src/nodes/catalog';
 import { effectiveDefinition } from '../../src/core/script';
 import { CORE_SOCKET_TYPES, isSocketType, socketsCompatible } from '../../src/core/sockets';
 import { graph, TEST_CATALOG } from '../helpers/fake-catalog';
@@ -25,7 +25,7 @@ describe('validateGraph', () => {
 
   it('rejects wrong format and version', () => {
     const doc = { ...graph([], []), format: 'other', version: 1 };
-    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 5)']);
+    expect(problems(doc)).toEqual(['format must be "webarkit-studio/graph"', 'unsupported version 1 (this studio reads version 6)']);
   });
 
   it('still accepts the format id of the WebAR-Studio prototype', () => {
@@ -164,14 +164,14 @@ describe('validateGraph: plugins (v5)', () => {
     }
   };
 
-  it('is version 5, and rejects version 4 documents', () => {
-    expect(GRAPH_VERSION).toBe(5);
-    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+  it('is version 6, and rejects version 4 documents', () => {
+    expect(GRAPH_VERSION).toBe(6);
+    expect(problems({ ...graph([], []), version: 4 })).toEqual(['unsupported version 4 (this studio reads version 6)']);
   });
 
   it('reports only the version of a document in another version, not what that version lacks', () => {
     // A v4 graph cannot list plugins: its plugin nodes are not errors of their own.
-    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 5)']);
+    expect(problemsWith({ ...withAcme(), version: 4 }, { acme: '0.1.0' })).toEqual(['unsupported version 4 (this studio reads version 6)']);
   });
 
   it('accepts a graph that lists the plugins of its nodes', () => {
@@ -229,9 +229,9 @@ describe('topologicalOrder', () => {
 
 describe('resolveParams', () => {
   it('fills defaults and keeps explicit values', () => {
-    const def = NODE_CATALOG['scene.primitive'];
-    const params = resolveParams(def, { size: 120 });
-    expect(params).toEqual({ shape: 'box', size: 120, color: '#ff0055', spin: true, position: [0, 0, 0], rotation: [0, 0, 0] });
+    const def = NODE_CATALOG['scene.mesh'];
+    const params = resolveParams(def, { spin: true });
+    expect(params).toEqual({ color: '#ff0055', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], rest: true, spin: true, castShadow: false, receiveShadow: false });
   });
 
   it('copies array values, so a node changing one never changes the default or the document', () => {
@@ -306,5 +306,85 @@ describe('catalog', () => {
       expect(def.params.url, type).toMatchObject({ kind: 'string', asset: 'file' });
     }
     expect(NODE_CATALOG['source.videoFile'].params.loop).toMatchObject({ kind: 'boolean', default: true, live: true });
+  });
+});
+
+describe('one parent per scene object (#136)', () => {
+  // Parents are known by their input's definition (a sceneObject input that takes several links), never by a node's or
+  // a port's name: a plugin's container is a parent too. A single sceneObject input (a target) is not a parent.
+  const node = (type: string, inputs: NodeDefinition['inputs'], outputs: NodeDefinition['outputs'] = {}): NodeDefinition => ({
+    type,
+    label: type,
+    category: 'scene',
+    provider: 'test',
+    description: '',
+    inputs,
+    outputs,
+    params: {},
+  });
+  const catalog: Record<string, NodeDefinition> = {
+    'test.object': node('test.object', {}, { object: { type: 'sceneObject', label: 'Object' } }),
+    'test.box': node('test.box', { contents: { type: 'sceneObject', label: 'Contents', multiple: true, optional: true } }, { object: { type: 'sceneObject', label: 'Box' } }),
+    'test.view': node('test.view', { things: { type: 'sceneObject', label: 'Things', multiple: true, optional: true } }),
+    'test.toggle': node('test.toggle', { target: { type: 'sceneObject', label: 'Target' } }),
+  };
+  const check = (doc: GraphDocument, unfinished = false) => () => validateGraph(doc, catalog, {}, { unfinished });
+
+  it('one parent, and any number of single targets, is valid', () => {
+    const doc = graph(
+      [['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view'], ['t1', 'test.toggle'], ['t2', 'test.toggle']],
+      [['o', 'object', 'b', 'contents'], ['b', 'object', 'v', 'things'], ['o', 'object', 't1', 'target'], ['o', 'object', 't2', 'target']],
+    );
+    expect(check(doc)).not.toThrow();
+  });
+
+  it('an object wired into two parents is refused, naming the object and both parents', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'v', 'things']]);
+    expect(check(doc)).toThrow(/node o \(test\.object\): its Object is wired into more than one parent \(b\.contents, v\.things\): an object has one parent/);
+  });
+
+  it('the same object wired twice into the same parent input is refused too', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'b', 'contents']]);
+    expect(check(doc)).toThrow(/node o \(test\.object\): its Object is wired into more than one parent \(b\.contents, b\.contents\)/);
+  });
+
+  it('a work in progress (an autosave, a file on Import) still opens; Run stays strict', () => {
+    const doc = graph([['o', 'test.object'], ['b', 'test.box'], ['v', 'test.view']], [['o', 'object', 'b', 'contents'], ['o', 'object', 'v', 'things']]);
+    expect(check(doc, true)).not.toThrow();
+    expect(check(doc)).toThrow(GraphValidationError);
+  });
+
+  // Node ids are free strings and a port name may hold ':' (a script's header, a plugin): a key that joins them with ':'
+  // makes node "a:b" port "object" and node "a" port "b:object" the same output (Qodo on #168), and the same for inputs.
+  const colliding: Record<string, NodeDefinition> = {
+    ...catalog,
+    'test.odd': node('test.odd', { 'b:target': { type: 'sceneObject', label: 'Odd target', optional: true } }, { 'b:object': { type: 'sceneObject', label: 'Odd object' } }),
+  };
+
+  it('two outputs whose node and port join to the same text are two objects, each with its own parent', () => {
+    const doc = graph(
+      [['a:b', 'test.object'], ['a', 'test.odd'], ['p1', 'test.box'], ['p2', 'test.box']],
+      [['a:b', 'object', 'p1', 'contents'], ['a', 'b:object', 'p2', 'contents']],
+    );
+    expect(() => validateGraph(doc, colliding, {})).not.toThrow();
+  });
+
+  it('two single inputs whose node and port join to the same text take one link each', () => {
+    const doc = graph(
+      [['o1', 'test.object'], ['o2', 'test.object'], ['a:b', 'test.toggle'], ['a', 'test.odd']],
+      [['o1', 'object', 'a:b', 'target'], ['o2', 'object', 'a', 'b:target']],
+    );
+    expect(() => validateGraph(doc, colliding, {})).not.toThrow();
+  });
+
+  // Every demo graph holds: "demo graph … is valid against the real catalog" above runs the strict check on each.
+});
+
+describe('catalog and registry (#140)', () => {
+  it('hold the same core types, but for macro, which is flattened before it runs and has no factory', async () => {
+    const { NODE_REGISTRY } = await import('../../src/runtime/registry');
+    const catalog = Object.keys(NODE_CATALOG).filter((t) => t !== 'macro').sort();
+    expect(Object.keys(NODE_REGISTRY).sort()).toEqual(catalog);
+    expect(Object.hasOwn(NODE_REGISTRY, 'macro')).toBe(false);
   });
 });

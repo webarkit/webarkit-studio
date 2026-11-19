@@ -20,6 +20,11 @@ export interface PortSpec {
   multiple?: boolean;
   /** Inputs only: the node works without it. Required inputs are checked by validateGraph(). */
   optional?: boolean;
+  /**
+   * Inputs only: params of the node this input sets aside while it is wired, beside the one of its own name (the inputs
+   * override params rule): the editor shows them disabled. scene.mesh's material input sets its colour aside (#133).
+   */
+  overrides?: readonly string[];
 }
 
 interface ParamBase {
@@ -54,7 +59,7 @@ export type ParamSpec = ParamBase &
     | { kind: 'matrix4'; default: number[] }
   );
 
-export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug';
+export type NodeCategory = 'source' | 'tracking' | 'filter' | 'renderer' | 'scene' | 'geometry' | 'output' | 'math' | 'color' | 'logic' | 'action' | 'debug' | 'macro';
 
 export interface NodeDefinition {
   type: string;
@@ -72,7 +77,17 @@ export interface NodeDefinition {
    * it from a `?graph=` link and the MCP server never runs it. These read this flag, never the node's name.
    */
   runsCode?: true;
+  /**
+   * The engine the node needs (#138): it makes or reads that engine's objects, so validateGraph() refuses it in a scene
+   * whose renderer is the other engine. A renderer node declares the engine it is. Every built-in `three.*` and
+   * `babylon.*` node declares it; the rule reads this field, never the node's name. Its fallback to the type's prefix
+   * for a node that declares none guards the built-ins: a plugin cannot use the `three` or `babylon` namespace.
+   */
+  engine?: Engine;
 }
+
+/** The engines a node can need (#138), as NodeDefinition.engine names them. */
+export type Engine = 'three' | 'babylon';
 
 /** A number input and the live param of the same name that it overrides: key, label, default, step. */
 type NumberPort = [key: string, label: string, value: number, step?: number];
@@ -246,7 +261,7 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
     label: 'Matrix4',
     description:
       'A transform matrix from a position (mm), a rotation (degrees, X then Y then Z) and a uniform scale: T · R · S, the ' +
-      'convention models and primitives are placed with. Connected inputs override the params.',
+      'convention models and meshes are placed with. Connected inputs override the params.',
     inputs: { position: vec3In('Position'), rotation: vec3In('Rotation (°)'), scale: { type: 'number', label: 'Scale', optional: true } },
     outputs: { matrix: { type: 'matrix4', label: 'Matrix' } },
     params: {
@@ -311,6 +326,9 @@ const VECTOR_MATRIX_NODES: NodeDefinition[] = [
     params: { point: VEC3('Point', 'mm') },
   }),
 ];
+
+/** WebGL's powerPreference (#137), the same names on both renderers; each node keeps its engine's default. */
+const POWER_PREFERENCES = { Default: 'default', 'High performance': 'high-performance', 'Low power': 'low-power' };
 
 /** The built-in nodes. Plugins add theirs to NODE_CATALOG when they are installed (src/plugins/host.ts). */
 export const CORE_NODES: NodeDefinition[] = [
@@ -534,20 +552,71 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'Three.js Renderer',
     category: 'renderer',
     provider: 'Three.js',
-    description: 'Three.js WebGL renderer (engine + canvas). Connect it to Scene nodes.',
+    engine: 'three',
+    description:
+      'Three.js WebGL renderer (engine + canvas). Connect it to Scene nodes. Its options are three.js\'s own, with its defaults; ' +
+      'antialias, power preference, preserve drawing buffer and stencil recreate the renderer. Max pixel ratio caps the ' +
+      'device pixel ratio AR View sizes the canvas with (0: no cap). Three.js applies the exposure only with a tone mapping ' +
+      'on. The camera video under the canvas is never tone-mapped. Info: the WebGL context granted, and the last frame\'s ' +
+      'draw calls and triangles (shadow passes included), once a second, for an Inspector.',
     inputs: {},
-    outputs: { renderer: { type: 'renderer', label: 'Renderer' } },
-    params: { antialias: { kind: 'boolean', label: 'Antialias', default: true } },
+    outputs: { renderer: { type: 'renderer', label: 'Renderer' }, info: { type: 'rendererInfo', label: 'Info' } },
+    params: {
+      antialias: { kind: 'boolean', label: 'Antialias', default: true },
+      powerPreference: { kind: 'select', label: 'Power preference', default: 'default', options: POWER_PREFERENCES },
+      preserveDrawingBuffer: { kind: 'boolean', label: 'Preserve drawing buffer', default: false },
+      stencil: { kind: 'boolean', label: 'Stencil', default: false },
+      maxPixelRatio: { kind: 'number', label: 'Max pixel ratio', default: 0, min: 0, max: 4, step: 0.25, live: true },
+      toneMapping: {
+        kind: 'select',
+        label: 'Tone mapping',
+        default: 'NoToneMapping',
+        options: {
+          None: 'NoToneMapping',
+          Linear: 'LinearToneMapping',
+          Reinhard: 'ReinhardToneMapping',
+          Cineon: 'CineonToneMapping',
+          'ACES Filmic': 'ACESFilmicToneMapping',
+          AgX: 'AgXToneMapping',
+          Neutral: 'NeutralToneMapping',
+        },
+        live: true,
+      },
+      toneMappingExposure: { kind: 'number', label: 'Exposure', default: 1, min: 0, max: 10, step: 0.05, live: true },
+      outputColorSpace: { kind: 'select', label: 'Output colour space', default: 'srgb', options: { sRGB: 'srgb', 'Linear sRGB': 'srgb-linear' }, live: true },
+    },
   },
   {
     type: 'babylon.renderer',
     label: 'Babylon.js Renderer',
     category: 'renderer',
     provider: 'Babylon.js',
-    description: 'Babylon.js engine + canvas (loaded on demand). Connect it to Scene nodes.',
+    engine: 'babylon',
+    description:
+      'Babylon.js engine + canvas (loaded on demand). Connect it to Scene nodes. Its options are Babylon.js\'s own, with its ' +
+      'defaults; antialias, power preference, preserve drawing buffer and stencil recreate the engine. Max pixel ratio caps ' +
+      'the device pixel ratio AR View sizes the canvas with (0: no cap). Tone mapping and exposure go to the image processing ' +
+      'of every scene of the engine, which applies the exposure with tone mapping on or off. The output is always encoded ' +
+      'with the exact sRGB curve. The camera video under the canvas is never tone-mapped. Info: the WebGL context granted, ' +
+      'and the last frame\'s draw calls and triangles (of the active meshes), once a second, for an Inspector.',
     inputs: {},
-    outputs: { renderer: { type: 'renderer', label: 'Renderer' } },
-    params: { antialias: { kind: 'boolean', label: 'Antialias', default: true } },
+    outputs: { renderer: { type: 'renderer', label: 'Renderer' }, info: { type: 'rendererInfo', label: 'Info' } },
+    params: {
+      antialias: { kind: 'boolean', label: 'Antialias', default: true },
+      powerPreference: { kind: 'select', label: 'Power preference', default: 'high-performance', options: POWER_PREFERENCES },
+      preserveDrawingBuffer: { kind: 'boolean', label: 'Preserve drawing buffer', default: false },
+      stencil: { kind: 'boolean', label: 'Stencil', default: true },
+      maxPixelRatio: { kind: 'number', label: 'Max pixel ratio', default: 0, min: 0, max: 4, step: 0.25, live: true },
+      toneMappingEnabled: { kind: 'boolean', label: 'Tone mapping', default: false, live: true },
+      toneMappingType: {
+        kind: 'select',
+        label: 'Tone mapping type',
+        default: 'TONEMAPPING_STANDARD',
+        options: { Standard: 'TONEMAPPING_STANDARD', ACES: 'TONEMAPPING_ACES', 'KHR PBR Neutral': 'TONEMAPPING_KHR_PBR_NEUTRAL' },
+        live: true,
+      },
+      exposure: { kind: 'number', label: 'Exposure', default: 1, min: 0, max: 10, step: 0.05, live: true },
+    },
   },
 
   // --------------------------------------------------------------- scene
@@ -579,7 +648,13 @@ export const CORE_NODES: NodeDefinition[] = [
     description:
       'A light. Left unconnected (or wired to AR View) it lives in camera space and lights the scene from the viewer; ' +
       'wired to a Marker Anchor it follows the marker and lights from above it. ' +
-      'Turn off "Default lights" on the Scene to light only with these.',
+      'Turn off "Default lights" on the Scene to light only with these. ' +
+      'Point and spot lights sit at Position; a spot and a directional light shine from Position towards Target (mm, in ' +
+      'the space of what the light is wired to); hemisphere and ambient lights read neither. A point or spot light fades with ' +
+      'the square of the distance and stops at Distance (0: no limit); its intensity is in candela at 1 m. Angle and ' +
+      'Penumbra shape a spot\'s cone: its edge is the same on both renderers, the fade inside the penumbra is not. ' +
+      'Directional and spot lights can cast shadows on meshes that receive them and on a Shadow Catcher; put a casting ' +
+      'light on the Marker Anchor, where its shadow camera covers the marker (±250 mm).',
     inputs: {
       scene: { type: 'scene', label: 'Scene' },
       // Overrides the color param while connected (alpha ignored: a light has no opacity).
@@ -587,34 +662,112 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     outputs: { object: { type: 'sceneObject', label: 'Light' } },
     params: {
-      kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient' } },
+      kind: { kind: 'select', label: 'Type', default: 'directional', options: { Directional: 'directional', Hemisphere: 'hemisphere', Ambient: 'ambient', Point: 'point', Spot: 'spot' } },
       color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
       intensity: { kind: 'number', label: 'Intensity', default: 1.5, min: 0, max: 10, step: 0.1, live: true },
+      position: { kind: 'vector3', label: 'Position', default: [200, -300, 1000], step: 1, unit: 'mm', live: true },
+      target: { kind: 'vector3', label: 'Target', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      distance: { kind: 'number', label: 'Distance (mm, 0: no limit)', default: 0, min: 0, max: 100000, step: 10, live: true },
+      angle: { kind: 'number', label: 'Spot angle (°)', default: 30, min: 1, max: 89, step: 1, live: true },
+      penumbra: { kind: 'number', label: 'Spot penumbra', default: 0, min: 0, max: 1, step: 0.05, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      shadowMapSize: { kind: 'select', label: 'Shadow map size', default: '1024', options: { '512': '512', '1024': '1024', '2048': '2048' }, live: true },
+      shadowBias: { kind: 'number', label: 'Shadow bias', default: -0.0005, min: -0.01, max: 0.01, step: 0.0001, live: true },
     },
   },
   {
-    type: 'scene.primitive',
-    label: 'Primitive',
+    type: 'scene.mesh',
+    label: 'Mesh',
     category: 'scene',
     provider: 'core',
     description:
-      'A simple mesh created in the connected scene, resting on the marker. Position (mm) and rotation (degrees, X then Y then Z) ' +
-      'move it from there; Spin turns it about its own Z axis.',
+      'A mesh of the connected geometry, created in the connected scene, with a default physically based material. Rest puts ' +
+      'it on the marker (its geometry\'s bottom on the marker plane, before its rotation); position (mm), rotation (degrees, X ' +
+      'then Y then Z) and scale (per axis) apply from there. Spin turns it about its own Z axis. Connected inputs override ' +
+      'the params; a colour with alpha below 1 makes it transparent. A connected Material replaces the default one: the ' +
+      "mesh's colour, param and input, is then set aside.",
     inputs: {
       scene: { type: 'scene', label: 'Scene' },
-      // Overrides the position param while connected (e.g. from math nodes).
+      geometry: { type: 'geometry', label: 'Geometry' },
       position: { type: 'vector3', label: 'Position', optional: true },
-      // Overrides the color param while connected; alpha below 1 makes it transparent.
+      rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
+      scale: { type: 'vector3', label: 'Scale', optional: true },
       color: { type: 'color', label: 'Color', optional: true },
+      material: { type: 'material', label: 'Material', optional: true, overrides: ['color'] },
     },
     outputs: { object: { type: 'sceneObject', label: 'Object' } },
     params: {
-      shape: { kind: 'select', label: 'Shape', default: 'box', options: { Box: 'box', Sphere: 'sphere', 'Torus knot': 'torusKnot' } },
-      size: { kind: 'number', label: 'Size (mm)', default: 80, min: 1, max: 1000, step: 1 },
       color: { kind: 'color', label: 'Color', default: '#ff0055', live: true },
-      spin: { kind: 'boolean', label: 'Spin', default: true, live: true },
       position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
       rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+      scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
+      rest: { kind: 'boolean', label: 'Rest on the marker', default: true, live: true },
+      spin: { kind: 'boolean', label: 'Spin', default: false, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      receiveShadow: { kind: 'boolean', label: 'Receive shadows', default: false, live: true },
+    },
+  },
+  {
+    type: 'babylon.nodeMaterial',
+    label: 'Babylon.js Node Material',
+    category: 'scene',
+    provider: 'Babylon.js',
+    engine: 'babylon',
+    description:
+      'A Babylon.js Node Material, from a .json file saved by Babylon.js\'s Node Material Editor, for meshes (their Material ' +
+      'input), as a Material\'s. Babylon.js only: a graph that puts it in a scene of the other renderer is refused before ' +
+      'it runs, and the source code export refuses it. Its exposed inputs are not mapped yet, and a texture the file ' +
+      'names by URL is not supported yet: the file is refused.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { material: { type: 'material', label: 'Material' } },
+    params: { url: { kind: 'string', label: 'Node Material (.json)', default: 'materials/green-node-material.json', asset: 'file' } },
+  },
+  {
+    type: 'scene.material',
+    label: 'Material',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A physically based material for meshes (their Material input), shared by every mesh it is connected to: colour, ' +
+      'metalness, roughness, emissive glow, opacity, the sides drawn, and Unlit (the colour and map as they are, no light ' +
+      'and no emissive). A Texture on Map multiplies the colour; a transparent material uses the map\'s alpha too. ' +
+      "Connected colour and emissive inputs override the params; the colour input's alpha multiplies the opacity.",
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      color: { type: 'color', label: 'Color', optional: true },
+      emissive: { type: 'color', label: 'Emissive', optional: true },
+      map: { type: 'texture', label: 'Map', optional: true },
+    },
+    outputs: { material: { type: 'material', label: 'Material' } },
+    params: {
+      color: { kind: 'color', label: 'Color', default: '#ffffff', live: true },
+      metalness: { kind: 'number', label: 'Metalness', default: 0, min: 0, max: 1, step: 0.05, live: true },
+      roughness: { kind: 'number', label: 'Roughness', default: 1, min: 0, max: 1, step: 0.05, live: true },
+      emissive: { kind: 'color', label: 'Emissive', default: '#000000', live: true },
+      emissiveIntensity: { kind: 'number', label: 'Emissive intensity', default: 1, min: 0, max: 100, step: 0.1, live: true },
+      opacity: { kind: 'number', label: 'Opacity', default: 1, min: 0, max: 1, step: 0.05, live: true },
+      side: { kind: 'select', label: 'Side', default: 'front', options: { Front: 'front', Back: 'back', Double: 'double' }, live: true },
+      unlit: { kind: 'boolean', label: 'Unlit', default: false, live: true },
+    },
+  },
+  {
+    type: 'scene.texture',
+    label: 'Texture',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'An image, or a connected video, as a texture for a Material\'s map: sRGB, the same way up on both renderers. A ' +
+      'connected Video wins over the URL. Wrap and repeat apply along U and V; the URL applies on the next Run.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      video: { type: 'video', label: 'Video', optional: true },
+    },
+    outputs: { texture: { type: 'texture', label: 'Texture' } },
+    params: {
+      url: { kind: 'string', label: 'Image URL', default: 'textures/tiles.png', asset: 'file' },
+      wrap: { kind: 'select', label: 'Wrap', default: 'repeat', options: { Clamp: 'clamp', Repeat: 'repeat', Mirror: 'mirror' }, live: true },
+      repeatU: { kind: 'number', label: 'Repeat U', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },
+      repeatV: { kind: 'number', label: 'Repeat V', default: 1, min: 0.001, max: 1000, step: 0.1, live: true },
     },
   },
   {
@@ -639,6 +792,49 @@ export const CORE_NODES: NodeDefinition[] = [
       position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
       rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
       autoplay: { kind: 'boolean', label: 'Autoplay first clip', default: false, live: true },
+      castShadow: { kind: 'boolean', label: 'Cast shadows', default: false, live: true },
+      receiveShadow: { kind: 'boolean', label: 'Receive shadows', default: false, live: true },
+    },
+  },
+  {
+    type: 'scene.shadowCatcher',
+    label: 'Shadow Catcher',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'A plane on the marker that shows only the shadows cast on it, so content stands on the poster. Wire it into a ' +
+      'Marker Anchor\'s children (with Center on, it lies over the marker); with Marker info wired it takes the ' +
+      'marker\'s size. Opacity is how dark a full shadow is. Shadows come from directional and spot lights that cast them.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      markerInfo: { type: 'markerInfo', label: 'Marker info', optional: true, overrides: ['width', 'depth'] },
+    },
+    outputs: { object: { type: 'sceneObject', label: 'Catcher' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 300, min: 0, max: 10000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 300, min: 0, max: 10000, step: 1, live: true },
+      opacity: { kind: 'number', label: 'Opacity', default: 0.5, min: 0, max: 1, step: 0.05, live: true },
+    },
+  },
+  {
+    type: 'scene.environment',
+    label: 'Environment',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'Image-based lighting: lights every metallic and glossy surface of the scene and gives it something to reflect. ' +
+      'It is never drawn: the camera video stays the background. Left unconnected (or wired to AR View) it lives in ' +
+      "camera space, its up the view's vertical; wired into a Marker Anchor's children it follows the marker, its up " +
+      'out of the marker (+Z), and keeps its last turn while the marker is lost. Rotation turns it about its up. ' +
+      'Neutral is a soft room made offline, alike on both renderers but not the same; HDR uses an uploaded equirectangular ' +
+      '.hdr file. Intensity looks the same on both renderers up to 1. One per scene.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { object: { type: 'sceneObject', label: 'Environment' } },
+    params: {
+      source: { kind: 'select', label: 'Source', default: 'neutral', options: { Neutral: 'neutral', HDR: 'hdr' }, live: true },
+      url: { kind: 'string', label: '.hdr URL', default: '', asset: 'file' },
+      intensity: { kind: 'number', label: 'Intensity', default: 1, min: 0, max: 10, step: 0.1, live: true },
+      rotation: { kind: 'number', label: 'Rotation (°)', default: 0, min: 0, max: 360, step: 1, live: true },
     },
   },
   {
@@ -656,6 +852,133 @@ export const CORE_NODES: NodeDefinition[] = [
     },
     outputs: { object: { type: 'sceneObject', label: 'Anchor' } },
     params: { center: { kind: 'boolean', label: 'Center on marker', default: true, live: true } },
+  },
+  {
+    type: 'scene.group',
+    label: 'Group',
+    category: 'scene',
+    provider: 'core',
+    description:
+      'Moves, turns, scales and hides its children together. Wire it into a Marker Anchor, another Group or AR View; ' +
+      'position (mm), rotation (degrees, X then Y then Z) and scale (per axis) apply in the space of what it is wired ' +
+      'into, as a Mesh\'s do. Connected inputs override the params. Hiding the group (Set Visible) hides its children and ' +
+      'turns off the lights in it; an Environment in it still lights the scene. An object has one parent.',
+    inputs: {
+      scene: { type: 'scene', label: 'Scene' },
+      children: { type: 'sceneObject', label: 'Children', multiple: true, optional: true },
+      position: { type: 'vector3', label: 'Position', optional: true },
+      rotation: { type: 'vector3', label: 'Rotation (°)', optional: true },
+      scale: { type: 'vector3', label: 'Scale', optional: true },
+    },
+    outputs: { object: { type: 'sceneObject', label: 'Group' } },
+    params: {
+      position: { kind: 'vector3', label: 'Position', default: [0, 0, 0], step: 1, unit: 'mm', live: true },
+      rotation: { kind: 'vector3', label: 'Rotation', default: [0, 0, 0], step: 1, unit: '°', live: true },
+      scale: { kind: 'vector3', label: 'Scale', default: [1, 1, 1], step: 0.1, live: true },
+    },
+  },
+
+  // ------------------------------------------------------------ geometry
+  // Shapes in mm, in marker space (+Z out of the marker), for scene.mesh (#132). Every param is live: a change rebuilds
+  // the geometry in place, and the meshes made from it follow. Detail is rounded per shape (src/core/geometry.ts).
+  {
+    type: 'geometry.box',
+    label: 'Box',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A box, centred on its origin: width along X, depth along Y, height along Z (out of the marker).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.sphere',
+    label: 'Sphere',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A sphere, centred on its origin, its poles on Z. Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 40, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 8, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.cylinder',
+    label: 'Cylinder',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A cylinder along Z, centred on its origin, the top radius at +Z: a top radius of 0 makes a cone. Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radiusTop: { kind: 'number', label: 'Top radius (mm)', default: 20, min: 0, max: 1000, step: 1, live: true },
+      radiusBottom: { kind: 'number', label: 'Bottom radius (mm)', default: 20, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 4, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.plane',
+    label: 'Plane',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A flat rectangle on the marker plane, facing +Z: width along X, depth along Y.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      width: { kind: 'number', label: 'Width (X, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
+      depth: { kind: 'number', label: 'Depth (Y, mm)', default: 80, min: 0, max: 1000, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.torus',
+    label: 'Torus',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A ring in the XY plane, around Z: radius to the middle of the tube, and the tube\'s radius. Detail: segments around the ring and the tube (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 30, min: 0, max: 1000, step: 1, live: true },
+      tube: { kind: 'number', label: 'Tube radius (mm)', default: 10, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 32, min: 4, max: 256, step: 4, live: true },
+    },
+  },
+  {
+    type: 'geometry.torusKnot',
+    label: 'Torus Knot',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A (p, q) torus knot lying in the XY plane: it winds p times around Z and q times through the ring. Detail: segments along the knot.',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 27, min: 0, max: 1000, step: 1, live: true },
+      tube: { kind: 'number', label: 'Tube radius (mm)', default: 8, min: 0, max: 1000, step: 1, live: true },
+      p: { kind: 'number', label: 'p', default: 2, min: 1, max: 20, step: 1, live: true },
+      q: { kind: 'number', label: 'q', default: 3, min: 1, max: 20, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 100, min: 3, max: 1024, step: 1, live: true },
+    },
+  },
+  {
+    type: 'geometry.capsule',
+    label: 'Capsule',
+    category: 'geometry',
+    provider: 'core',
+    description: 'A capsule along Z, centred on its origin: a cylinder with a half sphere at each end. Height is the total, caps included, at least twice the radius (less gives a sphere). Detail: segments around Z (a multiple of 4).',
+    inputs: { scene: { type: 'scene', label: 'Scene' } },
+    outputs: { geometry: { type: 'geometry', label: 'Geometry' } },
+    params: {
+      radius: { kind: 'number', label: 'Radius (mm)', default: 15, min: 0, max: 1000, step: 1, live: true },
+      height: { kind: 'number', label: 'Height (Z, total, mm)', default: 60, min: 0, max: 1000, step: 1, live: true },
+      detail: { kind: 'number', label: 'Detail', default: 16, min: 4, max: 256, step: 4, live: true },
+    },
   },
 
   // -------------------------------------------------------------- output
@@ -839,7 +1162,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'RGBA Color',
     category: 'color',
     provider: 'core',
-    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Primitive transparent.',
+    description: 'A colour from red, green, blue and alpha (0–1, sRGB). Alpha below 1 makes a Mesh transparent.',
     inputs: {
       r: { type: 'number', label: 'R', optional: true },
       g: { type: 'number', label: 'G', optional: true },
@@ -982,8 +1305,9 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'three.js Script',
     category: 'scene',
     provider: 'Three.js',
+    engine: 'three',
     description:
-      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Primitive. ' +
+      'A three.js script that builds part of the scene: wire Object into a Marker Anchor\'s Children, like a Mesh. ' +
       'Define onInit({ THREE, group, inputs }) to create meshes, materials and lights in group (marker space: mm, +Z up), ' +
       'onFrame({ THREE, group, time, delta, inputs }) to animate, and onDispose() to release what onInit made. The header ' +
       'declares value inputs (in name socket d=…) and dropdowns (enum), as Script\'s does; it has no out lines. Needs the ' +
@@ -1017,6 +1341,7 @@ export const CORE_NODES: NodeDefinition[] = [
     label: 'three.js Render Script',
     category: 'output',
     provider: 'Three.js',
+    engine: 'three',
     description:
       'A three.js script that renders on its own, in place of Scene, Renderer, AR Camera, Anchor and AR View for its content: ' +
       'wire the tracker side (Video, Pose, Found, Projection, Marker info). The node makes a WebGLRenderer on its own canvas over ' +
@@ -1210,7 +1535,7 @@ export const CORE_NODES: NodeDefinition[] = [
     category: 'action',
     provider: 'core',
     description:
-      'Shows or hides a model or a primitive. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
+      'Shows or hides a model or a mesh. Not for a Marker Anchor, which sets its own visibility every frame (use its Visible input), or for a light. ' +
       'In one frame, Hide wins over Show, and Show over Toggle.',
     inputs: {
       target: { type: 'sceneObject', label: 'Target' },
@@ -1316,6 +1641,25 @@ export const CORE_NODES: NodeDefinition[] = [
     },
   },
 ];
+
+/**
+ * A macro node (#140): its ports and its promoted params come from its definition in the document's `macros`, per
+ * instance (src/core/macros.ts, through effectiveDefinition()). The graph is flattened before it runs, so no factory
+ * implements this type, and the palette does not list it: a macro is made from a selection.
+ */
+export const MACRO_NODE: NodeDefinition = {
+  type: 'macro',
+  label: 'Macro',
+  category: 'macro',
+  provider: 'core',
+  description:
+    'A group of nodes folded into one, defined in the graph’s macros: its ports are the inner ports its definition exposes, its params the ' +
+    'inner params it promotes. An edit inside the definition changes every macro node that uses it.',
+  inputs: {},
+  outputs: {},
+  params: { definition: { kind: 'string', label: 'Definition', default: '' } },
+};
+CORE_NODES.push(MACRO_NODE);
 
 /** Every node type of this page: the core nodes, then those of the loaded plugins. */
 export const NODE_CATALOG: Record<string, NodeDefinition> = Object.fromEntries(CORE_NODES.map((d) => [d.type, d]));

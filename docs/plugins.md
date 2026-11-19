@@ -58,6 +58,13 @@ A node that runs code its graph holds sets `runsCode: true` in its definition (t
 trust prompt, the player's `?graph=` refusal and the MCP server's refusal cover it, by that flag and never by
 its name. A plugin node that runs code it was given must set it.
 
+A node that needs one engine sets `engine: 'three'` or `engine: 'babylon'` in its definition (types package 1.9.0,
+#138), as the built-in `three.*` and `babylon.*` nodes do, and a renderer node declares the engine it is. `validateGraph()`
+then refuses the node, by name, in a scene whose renderer is the other engine: through its own `scene` input, or
+through the scene objects, materials, textures and geometries it feeds. Plain data (numbers, vectors, colours) carries
+no engine. A plugin renderer that declares no engine leaves its scenes unconcerned. `validatePlugin()` refuses any other
+value. An unfinished graph (an autosave, an import still being built) is not checked, so the user can change the renderer.
+
 ## Registering it
 
 List the plugin in [`webarkit-studio.config.ts`](../webarkit-studio.config.ts), under its id,
@@ -94,6 +101,24 @@ Older documents upgrade when they are loaded (`src/core/migrations.ts`), but tho
 studio's format. **A plugin cannot declare a migration yet:** a plugin that renames its own node,
 port or param has no path for the graphs that use the old name, and they fail validation.
 
+### A plugin's nodes inside a macro
+
+A plugin's nodes can be folded into a macro (#140) like the studio's own:
+
+- **The graph still lists the plugin.** `plugins` counts the nodes inside the document's macro
+  definitions too, and a missing plugin is reported by name for a node inside a macro as for one
+  outside.
+- **Its sockets cross the macro's border as they are.** An exposed port has the socket type of the
+  inner port it maps to, a plugin's socket type included (`acme.thing`), so it connects only to the
+  same type outside. A promoted param keeps the kind of the inner param.
+- **A factory sees the flat graph.** Every macro node is replaced by its inner nodes before the graph
+  runs, so a factory runs as it does outside a macro, with a node id `<macro node>/<inner node>`
+  (`m1/acme_node`): do not parse a node id, or assume it has no `/`. Its reports and errors show on
+  the macro node, prefixed with the inner node's label, and in full on the inner node when the macro
+  is entered.
+- **An edit inside the macro changes every instance:** a live param reaches the plugin's node in
+  each instance through `onParamChange`, as a promoted param set on one instance reaches that one.
+
 A string param may set `syntax: 'expression'` only for a `math.expression`-style formula: the
 editor checks it against that node's variables (a–d, t).
 
@@ -110,13 +135,18 @@ Vectors and rotations are plain arrays of numbers: `vector2` is `[x, y]`, `vecto
 `quaternion` is `[x, y, z, w]` (a unit quaternion), and `matrix4` holds 16 numbers, column-major. The
 Inspector shows each as a list (a `matrix4` as four rows).
 
+An input of the same name as a param overrides it while wired, and the editor shows the param disabled. An input
+that sets other params aside while wired names them in its `overrides` (plugin API types 1.7.0, #133), for example
+`overrides: ['color']`; `validatePlugin()` refuses a name that is not one of the node's params, and `overrides` on
+an output.
+
 A pure node (its outputs depend only on its inputs and params) is computed only when an input or a live
 param changes: inputs are compared by `Object.is`, so a node that outputs an array must return a new
 array when its values change, and keep the old one when they do not. The core's math, colour and logic
 nodes do so; a plugin's node that feeds them should too. The helper that does this (`src/runtime/computed.ts`)
 is the studio's own, not part of the plugin API.
 
-The values of the `renderer`, `scene` and `sceneObject` sockets are studio internals, not part of
+The values of the `renderer`, `rendererInfo`, `scene`, `sceneObject`, `geometry`, `material` and `texture` sockets are studio internals, not part of
 plugin API v1: a plugin may pass them through (wire them from one port to another) but must not
 call methods on them. The plugin API exports no type for them.
 
@@ -235,10 +265,10 @@ It is **not published yet**, because the API is still gaining optional fields. A
 repository installs a tarball:
 
 ```bash
-# In this repository, after npm install: writes webarkit-studio-plugin-api-1.5.0.tgz into the plugin's folder.
+# In this repository, after npm install: writes webarkit-studio-plugin-api-1.9.0.tgz into the plugin's folder.
 npm pack -w @webarkit/studio-plugin-api --pack-destination ../my-plugin
 # In the plugin:
-npm install -D ./webarkit-studio-plugin-api-1.5.0.tgz
+npm install -D ./webarkit-studio-plugin-api-1.9.0.tgz
 ```
 
 `npm pack` generates the types first, so it needs scripts enabled: with `--ignore-scripts` it packs

@@ -274,7 +274,7 @@ test('an undo that brings back a script never allowed does not reach the running
 test('restoring an autosave with a script that was never allowed asks first', async ({ page }) => {
   await openStudio(page);
   const doc = photoWithScript('three', '/*\nout n number\n*/\nn = 7; // someone else\'s\n', []);
-  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE, JSON.stringify({ ...doc, format: 'webarkit-studio/graph', version: 5 })] as const);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [AUTOSAVE, JSON.stringify({ ...doc, format: 'webarkit-studio/graph', version: 6 })] as const);
   await page.reload();
   await expect(trustDialog(page)).toBeVisible(NEXT);
   await trustDialog(page).locator('button[value="no"]').click();
@@ -282,7 +282,7 @@ test('restoring an autosave with a script that was never allowed asks first', as
 
 test('the player refuses a graph with scripts from a link, and says where to open it', async ({ page }) => {
   const doc = photoWithScript('three', '/*\nout n number\n*/\nn = 1;\n', []);
-  const url = `data:application/json,${encodeURIComponent(JSON.stringify({ ...doc, format: 'webarkit-studio/graph', version: 5 }))}`;
+  const url = `data:application/json,${encodeURIComponent(JSON.stringify({ ...doc, format: 'webarkit-studio/graph', version: 6 }))}`;
   await page.goto(`/player.html?graph=${encodeURIComponent(url)}`);
   await page.click('#start');
   await expect(page.locator('#error')).toContainText('the player does not run scripts from a link: open the graph in the studio');

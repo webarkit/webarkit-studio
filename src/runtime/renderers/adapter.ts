@@ -13,7 +13,12 @@
  *  - the camera sits at the origin looking down -Z (OpenGL convention); its
  *    projection comes from the AR Camera node.
  */
+import type { GeometrySpec } from '../../core/geometry';
+import type { MaterialSpec, TextureSpec } from '../../core/material';
+import type { LightSpec, ShadowCatcherSpec } from '../../core/light';
+import type { EnvironmentSpec } from '../../core/environment';
 import { transformMatrix } from '../../core/math';
+import type { RendererContextInfo, RendererFrameStats } from './renderer-info';
 
 export interface SceneObject {
   /** Scene that created the object: objects cannot cross scenes. */
@@ -21,26 +26,45 @@ export interface SceneObject {
   readonly native: unknown;
 }
 
-export interface PrimitiveSpec {
-  shape: 'box' | 'sphere' | 'torusKnot';
-  size: number;
-  color: string;
+/**
+ * A geometry (#132), made in a scene: Babylon.js's belongs to one, Three.js's does not, and the handle makes them alike.
+ * Not a SceneObject: it is never added to the scene, only given to createMesh().
+ */
+export interface GeometryObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'geometry';
 }
-
-export interface LightSpec {
-  kind: 'directional' | 'hemisphere' | 'ambient';
-  color: string;
-  intensity: number;
-}
-
-const LIGHT_KINDS: Record<LightSpec['kind'], true> = { directional: true, hemisphere: true, ambient: true };
 
 /**
- * A light's kind as both adapters read it (#110): one they know, or `directional` (scene.light's default) for
- * anything else, which reaches an adapter only on a path that skips validation. Both engines then build the same light.
+ * A material (#133), made in a scene and shared by every mesh given it (setMeshMaterial). Releasing a mesh never
+ * disposes it, nor its map: the scene's teardown does.
  */
-export const lightKind = (kind: unknown): LightSpec['kind'] =>
-  typeof kind === 'string' && Object.hasOwn(LIGHT_KINDS, kind) ? (kind as LightSpec['kind']) : 'directional';
+export interface MaterialObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'material';
+}
+
+/** A texture (#133), made in a scene, for a material's map. Shared like a material. */
+export interface TextureObject {
+  readonly scene: SceneHandle;
+  readonly native: unknown;
+  readonly kind: 'texture';
+}
+
+/**
+ * What a texture shows: a loaded image (or a canvas), or a playing video. The kind is the node's to say: the `video`
+ * socket can carry an image (source.image), and the adapter does not test element classes, which Node does not have.
+ * The texture never changes the element: a video's source node keeps playing, looping and owning it.
+ */
+export type TextureSource = { kind: 'image'; element: HTMLImageElement | HTMLCanvasElement } | { kind: 'video'; element: HTMLVideoElement };
+
+/** A material's values (normalised by the adapter with normalizeMaterial) and its map, or none. */
+export type MaterialSetup = MaterialSpec & { map: TextureObject | null };
+
+// The light spec and its kinds live in the core (#134): both adapters normalise with normalizeLight().
+export { lightKind, type LightSpec, type ShadowCatcherSpec } from '../../core/light';
 
 /** A glTF 2.0 model, as scene.gltf fetched it. */
 export interface ModelSpec {
@@ -108,14 +132,66 @@ export interface RendererAdapter {
   /** The canvas this renderer draws into (created with the adapter). */
   readonly canvas: HTMLCanvasElement;
   createScene(options: SceneOptions): SceneHandle;
+  /** The drawing buffer's size in device pixels (AR View: the video's size times the capped pixel ratio). */
   setSize(width: number, height: number): void;
+  /**
+   * The cap on devicePixelRatio AR View sizes this renderer's canvas with (#137, the ruling on the issue): 0 is no cap.
+   * The same on both engines; AR View sizes the buffer again when it changes.
+   */
+  readonly maxPixelRatio: number;
+  /**
+   * A live option of this engine (#137), under its renderer node's param name, with the engine's own meaning: the node
+   * calls it from onParamChange. `maxPixelRatio` is one on both. An unknown value gives the option's default; an unknown
+   * key does nothing.
+   */
+  setOption(key: string, value: unknown): void;
+  /** What the WebGL context was granted, read once at creation (#137). */
+  readonly info: RendererContextInfo;
+  /** Draw calls and triangles of this renderer's last render (#137), read without resetting what the engine counts. */
+  lastFrame(): RendererFrameStats;
   dispose(): void;
 }
+
+// Read the same way by the source export (#137).
+export { exposureOf, pixelRatioCap } from '../../core/renderer';
+/** WebGL's powerPreference: an unknown value is the engine's default, never passed to the browser. */
+export const powerPreferenceOf = (value: unknown, fallback: WebGLPowerPreference): WebGLPowerPreference =>
+  value === 'default' || value === 'high-performance' || value === 'low-power' ? value : fallback;
 
 export interface SceneHandle {
   readonly renderer: RendererAdapter;
 
-  createPrimitive(spec: PrimitiveSpec): SceneObject;
+  /**
+   * A geometry of the core's shapes (src/core/geometry.ts), built in marker space with the axes the core fixes, from
+   * normalizeGeometry(spec): the same vertices' bounds on every adapter (docs/proposals/scene-nodes-equivalence.md).
+   */
+  createGeometry(spec: GeometrySpec): GeometryObject;
+  /** Rebuilds a geometry in place (a live param change): every mesh made from it follows, its bounds included. */
+  setGeometry(geometry: GeometryObject, spec: GeometrySpec): void;
+  /**
+   * A mesh of a geometry made in this scene, with the default PBR material (white, metalness 0, roughness 1; colour it
+   * with setColor). Throws for a geometry of another scene, on every adapter.
+   */
+  createMesh(geometry: GeometryObject): SceneObject;
+  /**
+   * A material (#133): Three.js's MeshStandardMaterial (MeshBasicMaterial when unlit) and Babylon.js's PBRMaterial,
+   * with the report's translations, the same on both within the conformance tolerances.
+   */
+  createMaterial(setup: MaterialSetup): MaterialObject;
+  /** Changes a material in place (a live param): every mesh given it follows, unlit included. */
+  setMaterial(material: MaterialObject, setup: MaterialSetup): void;
+  /**
+   * A texture of an image or a video (TextureSource), sRGB, the image the same way up on both engines. Resolves once
+   * it can be drawn.
+   */
+  createTexture(source: TextureSource, spec: TextureSpec): Promise<TextureObject>;
+  /** Changes a texture's wrap and repeat in place (live). */
+  setTexture(texture: TextureObject, spec: TextureSpec): void;
+  /**
+   * Gives a mesh a material made in this scene, or null for its own again. The mesh's own material keeps what
+   * setColor gave it: setColor on a mesh colours that one only, never a material it was given.
+   */
+  setMeshMaterial(mesh: SceneObject, material: MaterialObject | null): void;
   /**
    * A glTF model, already stood up from glTF's Y-up to marker space (Z-up).
    * The returned object's own matrix is free for the node's transform. glTF
@@ -130,7 +206,35 @@ export interface SceneHandle {
    * mixer, which this would not stop.
    */
   release(object: SceneObject): void;
+  /**
+   * A light (src/core/light.ts, normalised by the adapter): directional, hemisphere, ambient, point or spot, with
+   * the report's translations (#131, #134). Point and spot intensities are candela at metres (engineIntensity()).
+   * A directional or spot light that casts shadows uses a shadow camera set for millimetres, the same on both engines.
+   */
   createLight(spec: LightSpec): SceneObject;
+  /**
+   * Changes a light in place (live params): position, target, distance, angle, penumbra, shadows. Its kind stays the
+   * one it was made with; its colour and intensity have setColor and setIntensity.
+   */
+  setLight(light: SceneObject, spec: LightSpec): void;
+  /**
+   * Whether a mesh or a model (every mesh in it) casts shadows from the lights that cast them, and shows the shadows
+   * that fall on it.
+   */
+  setShadowCasting(object: SceneObject, cast: boolean, receive: boolean): void;
+  /** A plane on the marker (XY, facing +Z) that shows only the shadows falling on it, `opacity` dark at full shadow. */
+  createShadowCatcher(spec: ShadowCatcherSpec): SceneObject;
+  setShadowCatcher(catcher: SceneObject, spec: ShadowCatcherSpec): void;
+  /**
+   * The scene's environment (#135; src/core/environment.ts, normalised by the adapter): image-based lighting for every
+   * PBR material, never drawn as a background. `hdr` is an equirectangular `.hdr` file, needed when the source is
+   * `hdr`; the neutral source is made in the page on each engine, with no network. The returned object places it: at
+   * the root, or wired to AR View, in camera space; a child of an anchor, it follows the anchor's world rotation every
+   * frame (environmentRotation()), whether the anchor is visible or not. One per scene: a second is refused.
+   */
+  createEnvironment(spec: EnvironmentSpec, hdr?: ArrayBuffer): Promise<SceneObject>;
+  /** Changes the environment in place: its intensity and rotation, and its source (an `hdr` source needs the file). */
+  setEnvironment(environment: SceneObject, spec: EnvironmentSpec, hdr?: ArrayBuffer): Promise<void>;
   /** Adding an object, here or to the root, leaves it visible or not, as setVisible() last set it. */
   addChild(parent: SceneObject, child: SceneObject): void;
   /** Adds a top-level object (anchor, light…) to the rendered scene. */
@@ -170,7 +274,7 @@ export interface SceneHandle {
 }
 
 /** Throws when an object made in another scene (or engine) is wired in. */
-export function assertOwned(scene: SceneHandle, object: SceneObject): void {
+export function assertOwned(scene: SceneHandle, object: SceneObject | GeometryObject | MaterialObject | TextureObject): void {
   if (object.scene !== scene) {
     const where = object.scene.renderer === scene.renderer ? 'another scene' : `a ${object.scene.renderer.kind} scene`;
     throw new Error(`object created in ${where} cannot be used in this ${scene.renderer.kind} scene`);

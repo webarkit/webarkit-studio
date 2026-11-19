@@ -14,7 +14,7 @@ import { isSocketType } from './sockets';
 export const PLUGIN_API_VERSION = 1;
 
 /** Namespaces of the built-in nodes, and `webarkit` (webarkit/webarkit trackers): no plugin may use them. */
-export const RESERVED_NAMESPACES: readonly string[] = ['source', 'tracking', 'filter', 'three', 'babylon', 'scene', 'output', 'math', 'color', 'logic', 'action', 'page', 'ui', 'debug', 'script', 'webarkit'];
+export const RESERVED_NAMESPACES: readonly string[] = ['source', 'tracking', 'filter', 'three', 'babylon', 'scene', 'geometry', 'output', 'math', 'color', 'logic', 'action', 'page', 'ui', 'debug', 'script', 'macro', 'webarkit'];
 
 /** The parts of a StudioPlugin (src/plugin-api) the checks read. */
 export interface PluginManifest {
@@ -127,9 +127,16 @@ export function validatePlugin(plugin: PluginManifest, env: { installed: readonl
     if (types.has(def.type)) problems.push(`node type "${def.type}" is defined twice`);
     types.add(def.type);
     if (typeof plugin.factories?.[def.type] !== 'function') problems.push(`no factory for "${def.type}"`);
+    // `engine` (#138): the engine the node needs, which the engine rule of validateGraph() reads.
+    if (def.engine !== undefined && def.engine !== 'three' && def.engine !== 'babylon') problems.push(`${def.type}: engine must be "three" or "babylon"`);
     for (const [side, ports] of [['input', def.inputs], ['output', def.outputs]] as const) {
       for (const [key, port] of Object.entries(ports ?? {})) {
         if (!known(port.type)) problems.push(`${def.type}: ${side} "${key}" has unknown socket type "${port.type}"`);
+        // `overrides` (#133) names params of the same node that the input sets aside while wired.
+        for (const param of port.overrides ?? []) {
+          if (side === 'output') problems.push(`${def.type}: output "${key}" has overrides, which only inputs take`);
+          else if (!Object.hasOwn(def.params ?? {}, param)) problems.push(`${def.type}: input "${key}" overrides "${param}", which is not one of its params`);
+        }
       }
     }
   }
