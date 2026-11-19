@@ -8,9 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # The e2e suite alone takes about 29 min on CI with 390 tests (Phase 4's conformance cases, #163; 18 min at #108):
-    # room for it and the steps before it.
-    timeout-minutes: 55
+    # About 2 min: the e2e suite runs in the e2e job, split across runners (#164).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -27,21 +26,51 @@ jobs:
         run: npm test
       - name: Build (studio + standalone player)
         run: npm run build
+
+  e2e:
+    # The e2e suite on four runners, a quarter each (#164): 38.5 min in one job before, 487 tests. Each runner keeps one
+    # worker (playwright.config.ts), so the rule of one test at a time holds per machine; fullyParallel makes --shard
+    # split by test, not by file. The web server builds the app itself (playwright.config.ts).
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run assets
       - run: npx playwright install --with-deps chromium
-      # A step timeout below the job's: a slow suite fails this step, and the report below uploads under failure()
+      # A step timeout below the job's: a slow shard fails this step, and the report below uploads under failure()
       # while the job is still alive. A job timeout cancels the job, which runs only the cancelled() steps, if any.
-      - name: End-to-end tests
-        run: npm run test:e2e
-        timeout-minutes: 45
+      - name: End-to-end tests (shard ${{ matrix.shard }} of 4)
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
+        timeout-minutes: 20
       # On a failure, and on a cancelled run too: what ran is still worth reading.
       - uses: actions/upload-artifact@v6
         if: failure() || cancelled()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+  e2e-done:
+    # One check for branch protection to require, whatever the number of shards: it fails unless every shard passed.
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every e2e shard passed
+        run: test "${{ needs.e2e.result }}" = success
 
   bench:
     # Informational: numbers from shared CI runners are noisy; compare runs, not absolutes.
