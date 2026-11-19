@@ -1,7 +1,7 @@
 /**
  * export_bundle: the studio's "Standalone app (.zip)" export (exportAppBundle),
- * from Node. The exporter fetches the player build and the data files from
- * the studio's URL, so baseDir is served locally while it runs. By default that is the
+ * from Node. The exporter asks for the player build and the data files by URL, as from the studio's page; here
+ * those URLs are read from baseDir on the disk, with no server and no network (base-dir-fetch.ts, #157). By default that is the
  * studio build (dist/, npm run build): the player, the data files and the files plugins
  * add to apps, such as the tracker's worker files, which public/ does not have (#47).
  */
@@ -12,7 +12,7 @@ import { loadGraphDocument, upgradeNote } from '../../core/migrations';
 import { exportAppBundle } from '../../export/app-bundle';
 import { usesUploadedAssets } from '../../export/exporters';
 import { graphInput, readGraphInput } from '../graph-input';
-import { withStaticServer } from '../static-server';
+import { BASE_DIR_URL, baseDirFetch } from '../base-dir-fetch';
 import { defineTool } from '../tool';
 
 export const exportBundle = defineTool({
@@ -34,7 +34,8 @@ export const exportBundle = defineTool({
     if (usesUploadedAssets(doc)) throw new Error('the graph uses uploaded assets (asset://), which only the studio has: export it from the studio');
     const upgraded = upgradeNote(loaded);
     const log: string[] = upgraded ? [upgraded] : [];
-    const result = await withStaticServer(resolve(env.root, input.baseDir), (baseUrl) => exportAppBundle(doc, { baseUrl, log: (m) => log.push(m) })).catch((err: Error) => {
+    const fetch = baseDirFetch(resolve(env.root, input.baseDir));
+    const result = await exportAppBundle(doc, { baseUrl: BASE_DIR_URL, fetch, log: (m) => log.push(m) }).catch((err: Error) => {
       // A file the build writes is missing: say which build baseDir must hold.
       if (/HTTP 404|not built/.test(err.message)) err.message += ` (baseDir ${input.baseDir} must hold the studio build: run "npm run build")`;
       throw err;

@@ -25,6 +25,11 @@ export interface ExportContext {
   assets?: ProjectAssets;
   /** The project's macro library (#141), as writeLibrary() gives it: the project file saves it as library.json. */
   library?: () => unknown;
+  /**
+   * How the export gets a file by URL: the global fetch when absent (the studio). The MCP server's export_bundle
+   * reads its baseDir from the disk instead, with no network (#157).
+   */
+  fetch?: (url: string) => Promise<Response>;
 }
 
 /** True if any param of the graph references an uploaded asset. */
