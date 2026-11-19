@@ -9,7 +9,10 @@
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 
-/** The URL baseDir is read under. `.localhost` is never a host on the network, and nothing here resolves it. */
+/**
+ * The URL baseDir is read under: a URL of this origin is read from the disk, never resolved. Another origin, even
+ * this host on another port, goes to fetch, as any URL in a graph does.
+ */
 export const BASE_DIR_URL = 'http://base-dir.localhost/';
 
 const TYPES: Record<string, string> = {

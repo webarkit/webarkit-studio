@@ -102,8 +102,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - The MCP server's `export_bundle` reads `baseDir` from the disk, with no local server (#157): on a busy machine its
   export could fail after 10 s with "fetch failed".
 - When the standalone app export cannot fetch a file, its error names the file and why the fetch failed, not only
-  "fetch failed" (#157); a failed fetch of the player's manifest or of a dataset's file is no longer reported as a
-  player that is not built or a dataset that is not there.
+  "fetch failed" (#157): a failed fetch of the player's manifest is no longer reported as a player that is not built,
+  and a dataset that cannot be found says why its fetches failed.
 - A shadow-casting directional light reaches ±250 mm from its axis on Babylon.js, as on Three.js (#169): it reached
   ±300 mm, so an object between 250 and 300 mm from the light's axis cast a shadow on Babylon.js only.
 - Two half-transparent objects that overlap let as much of the camera through on Babylon.js as on Three.js (#155):

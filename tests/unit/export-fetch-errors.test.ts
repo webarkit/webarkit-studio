@@ -1,5 +1,6 @@
 // A fetch that fails in the app export (the browser path, #157): the error names the file and keeps fetch's cause,
-// rather than "fetch failed" alone, and a network failure is not taken for a missing build or a missing file.
+// rather than "fetch failed" alone, and a network failure is not taken for a missing build. A dataset's file is
+// probed: a failed fetch falls back to its packed file, and the error says why if neither comes back.
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GraphDocument } from '../../src/core/graph';
@@ -45,10 +46,16 @@ describe('a fetch that fails in the app export (#157)', () => {
     expect(error?.message).not.toMatch(/not built/);
   });
 
-  it("does not take a failed fetch of a dataset's file for a missing dataset", async () => {
+  it("falls back to a dataset's packed file when fetching one of its files fails, as when a 404 lacks CORS headers", async () => {
+    // A browser sees a missing file on a host that sends no CORS headers with its 404 as a network error.
     stubHost(/\.fset3$/);
+    const { files } = await buildAppFiles(demo(), ctx);
+    expect(Object.keys(files).filter((f) => /pinball\.(iset|fset|fset3|zft)$/.test(f))).toEqual([expect.stringMatching(/pinball\.zft$/)]);
+  });
+
+  it('says why when no file of a dataset comes back, and the fetches failed', async () => {
+    stubHost(/\.(iset|fset|fset3|zft)$/);
     const error = await buildAppFiles(demo(), ctx).then(() => null, (e: Error) => e);
-    expect(error?.message).toMatch(/\.fset3 → fetch failed: UND_ERR_CONNECT_TIMEOUT/);
-    expect(error?.message).not.toMatch(/not found at/);
+    expect(error?.message).toMatch(/NFT dataset not found at .*\.\{iset,fset,fset3\|zft\} \(4 fetches failed: .*\.(iset|fset|fset3) → fetch failed: UND_ERR_CONNECT_TIMEOUT/);
   });
 });

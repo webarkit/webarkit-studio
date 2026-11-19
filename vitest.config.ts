@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config';
 import { CODEGEN_PACKAGES, packageVersions } from './scripts/package-versions.mjs';
 
 /**
- * The slow project (#157). A file belongs here when one of its tests starts a subprocess (node, npm, git), builds
- * an export or a project, or took over 10 s in a full `npm test` run beside a full e2e run (measured on #157: the
- * slowest took 12.6 to 16.7 s there, against 30 s for every test). These run after the rest, fewer at once, so they
+ * The slow project (#157). A file belongs here when one of its tests starts a subprocess (node, npm, git), runs
+ * export_bundle against a baseDir on the disk, or took over 10 s in a full `npm test` run beside a full e2e run (an
+ * export whose fetch is stubbed is fast, and stays out). Measured on #157: the
+ * slowest took 12.6 to 16.7 s there, against 30 s for every test. These run after the rest, fewer at once, so they
  * do not compete with the other files for the CPU (the slowest of them then took 7.6 s under the same load), and each
  * test and hook gets 60 s: several times the slowest, and a hang still fails within a minute. A file on this list must
  * exist (tests/unit/vitest-projects.test.ts).

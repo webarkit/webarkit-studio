@@ -73,7 +73,12 @@ export function needsIsolation(doc: GraphDocument, plugins: Iterable<StudioPlugi
 
 class ExportError extends Error {}
 /** No response at all: the network failed, not the file. Neither a missing build nor a missing file (#157). */
-class FetchError extends ExportError {}
+class FetchError extends ExportError {
+  /** The URL and why its fetch failed, without the name of what was fetched. */
+  constructor(what: string, readonly detail: string) {
+    super(`${what}: ${detail}`);
+  }
+}
 
 type Fetch = NonNullable<ExportContext['fetch']>;
 /** The global fetch, read at each call. */
@@ -92,7 +97,7 @@ async function fetchBytes(url: string, what: string, get: Fetch = globalFetch): 
   try {
     res = await get(url);
   } catch (err) {
-    throw new FetchError(`${what}: ${url} → ${fetchFailure(err)}`);
+    throw new FetchError(what, `${url} → ${fetchFailure(err)}`);
   }
   if (!res.ok) throw new ExportError(`${what}: ${url} → HTTP ${res.status}`);
   // A dev server / host with an SPA fallback answers 200 + index.html for missing files.
@@ -102,12 +107,16 @@ async function fetchBytes(url: string, what: string, get: Fetch = globalFetch): 
   return new Uint8Array(await res.arrayBuffer());
 }
 
-/** The file, or null when the host has none; a network failure is thrown, not taken for a missing file. */
-async function tryFetch(url: string, what: string, get: Fetch): Promise<Uint8Array | null> {
+/**
+ * The file, or null when the host does not give it. A failed fetch is null too, since a browser sees a missing file on
+ * a host that sends no CORS headers with its 404 as a network error, but its detail goes into `failures`, for the
+ * error to say why if no file comes back at all (#157).
+ */
+async function tryFetch(url: string, what: string, get: Fetch, failures: string[]): Promise<Uint8Array | null> {
   try {
     return await fetchBytes(url, what, get);
   } catch (err) {
-    if (err instanceof FetchError) throw err;
+    if (err instanceof FetchError) failures.push(err.detail);
     return null;
   }
 }
@@ -320,15 +329,17 @@ export async function collectAssets(doc: GraphDocument, base: URL, ctx: ExportCo
         // A prefix: each of the kind's files, or the one file that can stand in for them.
         const what = `${node.id}.${key}`;
         const get = ctx.fetch ?? globalFetch;
-        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext), what, get)));
+        const failures: string[] = [];
+        const parts = await Promise.all(multi.extensions.map((ext) => tryFetch(withExtension(url, ext), what, get, failures)));
         if (parts.every(Boolean)) {
           multi.extensions.forEach((ext, i) => (files[`${path}.${ext}`] = parts[i]!));
         } else {
           const { alternative } = multi;
-          const packed = alternative ? await tryFetch(withExtension(url, alternative), what, get) : null;
+          const packed = alternative ? await tryFetch(withExtension(url, alternative), what, get, failures) : null;
           if (!packed) {
             const where = `${url.href}.{${multi.extensions.join(',')}${alternative ? `|${alternative}` : ''}}`;
-            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}`);
+            const why = failures.length ? ` (${failures.length === 1 ? 'a fetch' : `${failures.length} fetches`} failed: ${failures[0]})` : '';
+            throw new ExportError(`${node.id}.${key}: ${assetKindLabel(multi.id)} not found at ${where}${why}`);
           }
           files[`${path}.${alternative}`] = packed;
         }
