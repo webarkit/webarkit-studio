@@ -32,7 +32,11 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   timeout: 90_000,
   expect: { timeout: 20_000 },
-  fullyParallel: false,
+  // One test at a time on each machine (workers: 1): concurrent runs starve it and time out. fullyParallel only lets
+  // --shard split by test instead of by file, as CI does on four runners (#164): by file, conformance.spec.ts kept one
+  // shard at 16 min while another got nothing. No spec depends on another test or on test order; a file with a
+  // beforeAll is cut into at most one chunk per shard, each running its hook. Without --shard, nothing changes.
+  fullyParallel: true,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
