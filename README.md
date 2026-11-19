@@ -656,7 +656,10 @@ plane with +Z out of it, column-major 4x4 matrices, camera at the origin
 looking down −Z with the AR Camera projection. Babylon.js runs in
 right-handed mode so ARToolKit poses apply unchanged. Objects remember the
 scene that created them: wiring an object into a node of another scene (or
-engine) fails at init with a clear error.
+engine) fails at init with a clear error. A graph that puts a node of one
+engine in a scene of the other (a `babylon.*` node in a Three.js scene, a
+`three.*` node in a Babylon.js scene, directly or through what it feeds) is
+refused before it runs, naming the node; a work in progress still opens.
 
 ### Lights and spaces
 
@@ -948,9 +951,9 @@ The source of truth for the roadmap is
 - [x] Threaded JsartoolkitNFT build, and cross-origin isolation in the export ([#63](https://github.com/webarkit/webarkit-studio/issues/63))
 - [x] Export: readable source code (Three.js first) ([#64](https://github.com/webarkit/webarkit-studio/issues/64))
 
-**Phase 4 — Scene and editor (v0.4.0)**
-- [ ] Node selection and macros in the editor
-- [ ] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
+**Phase 4 — Scene and editor (released in [v0.4.0](https://github.com/webarkit/webarkit-studio/releases/tag/v0.4.0); [#142](https://github.com/webarkit/webarkit-studio/issues/142) has the full list)**
+- [x] Node selection and macros in the editor
+- [x] Scene nodes on both engines (geometry, mesh, materials, lights, shadows, environment), with a conformance suite
 
 **Phase 5 — Authoring tools and interaction (v0.5.0)**
 - [ ] Near / far on AR Camera, a preview camera, scene helpers, fog, custom geometry
