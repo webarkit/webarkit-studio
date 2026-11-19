@@ -1516,9 +1516,8 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
       // the ±250 mm directional shadow camera (the light 45° from +X, through the catcher's centre: y is square to it).
       // Under a group scaled 2, the extents stay ±250 mm, so the cube casts nothing on either engine; a scale that
       // reached them (±500 mm) would shadow the catcher left of the cube (region S, px 55..59 by 15..19).
-      // Babylon.js widens even explicit ortho extents by shadowOrthoScale (0.1 a side, directionalLight.pure.js:233-238):
-      // its camera is ±300 mm, so the cube, at y 280..320, half casts there (alpha 153), with or without a group. Pinned;
-      // a scale that reached Babylon.js's extents would still show, as a full shadow (204) instead of 153.
+      // Babylon.js widens even explicit ortho extents by shadowOrthoScale (0.1 a side, directionalLight.pure.js:233-238),
+      // to ±300 mm, where the cube half cast (alpha 153): the adapter sets it to 0 (#169).
       name: 'a casting directional light under a scaled group: its shadow extents do not scale, on both (#136)',
       ops: [
         ...LIT_OPS,
@@ -1531,13 +1530,7 @@ test.describe('conformance: SceneHandle (the adapters as the studio drives them)
         { op: 'addChild', parent: 'g', child: 'l' },
       ],
       regions: { C: [62, 9, 3, 3], S: [55, 15, 4, 4] },
-      rules: [{ region: 'C', is: 'drawn' }, { region: 'C', is: 'same' }],
-      known: {
-        issue: '#169',
-        why: "Babylon.js's directional camera is ±300 mm, not the adapter's ±250 mm: shadowOrthoScale 0.1 widens explicit extents",
-        rules: [{ region: 'S', is: 'empty' }],
-        pinned: { three: { C: [124, 124, 124, 255], S: [0, 0, 0, 0] }, babylon: { C: [124, 124, 124, 255], S: [0, 0, 0, 153] } },
-      },
+      rules: [{ region: 'C', is: 'drawn' }, { region: 'C', is: 'same' }, { region: 'S', is: 'empty' }],
     },
     {
       // A tilted marker, the usual AR pose: its +Z towards the viewer, turned 30 deg about the view's X; the environment

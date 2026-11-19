@@ -99,6 +99,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ### Fixed
 
+- A shadow-casting directional light reaches ±250 mm from its axis on Babylon.js, as on Three.js (#169): it reached
+  ±300 mm, so an object between 250 and 300 mm from the light's axis cast a shadow on Babylon.js only.
 - Two half-transparent objects that overlap let as much of the camera through on Babylon.js as on Three.js (#155):
   where they overlapped, Babylon.js hid the camera completely (two objects at 0.5 showed none of it, against a
   quarter on Three.js). This holds for meshes and for glTF models.
