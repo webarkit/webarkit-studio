@@ -6,6 +6,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-19
+
 ### Added
 
 - Macro nodes in the graph format (#140, first part): a graph may hold macro definitions, and a `macro` node's ports
@@ -26,12 +28,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   graph already uses for another content asks whether to replace it or keep both. The library is kept beside the
   autosave and in project files (`library.json`). Presets ship with it: Box, Sphere, Cylinder, Plane, Torus, Torus knot
   and Capsule, each a geometry node wired into a Mesh, added expanded, so a cube is one palette entry away again.
-
 - Selection in the editor (#139): Shift+drag on the canvas draws a box that selects the nodes it touches (with Ctrl,
   adds them); Ctrl+A selects every node; Shift+click adds or removes a node, and Ctrl+click now removes a selected
   one too; Escape clears. Delete or Backspace removes the selection and its wires, Delete in a selected node's menu
   too, and Ctrl+X cuts it, each as one undo step. Keys typed in a field, a select or the log stay theirs.
-
 - Geometry nodes and the Mesh node (#132): Box, Sphere, Cylinder (a cone with a top radius of 0), Plane, Torus,
   Torus Knot and Capsule, each with its own sizes in mm, every one live, in a new Geometry category; and Mesh, which
   shows a geometry on the marker with its position, rotation, scale per axis, colour, spin and Rest on the marker
@@ -77,6 +77,7 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - Plugin API: the Renderer info socket is a studio internal (plugin API types package 1.8.0).
 - Plugin API: a node's input can name the params it sets aside while wired (`overrides` on `PortSpec`), which the
   editor shows disabled; the Material and Texture sockets are studio internals (plugin API types package 1.7.0).
+- Plugin API: the Geometry socket is a studio internal (plugin API types package 1.6.0).
 
 ### Changed
 
