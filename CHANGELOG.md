@@ -6,6 +6,11 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Fixed
+
+- Babylon.js: a texture or an environment that fails to load is freed at once. A live change of the environment to an
+  .hdr file that does not parse kept the failed texture in the scene until Stop, one more for each try (#185).
+
 ## [0.4.0] - 2026-11-19
 
 ### Added
