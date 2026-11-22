@@ -373,13 +373,25 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
     new Promise<HDRCubeTexture>((resolve, reject) => {
       if (spec.source === 'hdr' && !hdr) throw new Error('the environment source is HDR, but no .hdr file was given');
       const url = URL.createObjectURL(new Blob([spec.source === 'hdr' ? hdr! : (neutralRoomHdr() as BlobPart)]));
-      const done = () => URL.revokeObjectURL(url);
+      let revoked = false;
+      const done = () => {
+        if (!revoked) URL.revokeObjectURL(url);
+        revoked = true;
+      };
       const texture: HDRCubeTexture = new HDRCubeTexture(
         url, scene, 256, false, true, false, true,
         () => (done(), resolve(texture)),
-        (message) => (done(), reject(new Error(`could not read the environment's .hdr: ${message ?? 'unknown error'}`))),
+        (message) => {
+          done();
+          // Reject first, then free the texture that failed (#185): a scene keeps every texture it was given, so one
+          // that never loaded stays in `scene.textures` until it is disposed. The dispose handler below then rejects a
+          // promise already settled, which does nothing, so the read error is the one reported.
+          reject(new Error(`could not read the environment's .hdr: ${message ?? 'unknown error'}`));
+          texture.dispose();
+        },
       );
-      // Torn down before it loaded (a Stop): the promise settles, as createTexture's does.
+      // Disposed before it loaded (a Stop) or after it failed to (above): the promise settles, as createTexture's does,
+      // and a settled one ignores this.
       texture.onDisposeObservable.addOnce(() => (done(), reject(new Error('the scene was torn down while the environment loaded'))));
     });
   /** A texture that loaded after the scene was torn down is freed, and the load refused, as when it is disposed first. */
