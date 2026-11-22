@@ -597,19 +597,42 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
       return new Promise<TextureObject>((resolve, reject) => {
         // useSRGBBuffer: decoded to linear by the GPU before filtering, as Three.js's SRGBColorSpace texture is (an
         // SRGB8_ALPHA8 upload); filtered as sRGB values, a minified texture differed by up to 27 levels (measured, #133).
-        const texture: Texture = new Texture(url, scene, {
+        let texture: Texture | undefined;
+        const options = {
           noMipmap: false,
           invertY: true,
           samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
           useSRGBBuffer: true,
           onLoad: () => {
-            applyTexture(texture, spec);
+            const loaded = texture!;
+            applyTexture(loaded, spec);
             // Its alpha is read by a transparent material only (writeMaterial sets each material's transparency mode).
-            texture.hasAlpha = true;
-            resolve({ scene: handle, native: texture, kind: 'texture' });
+            loaded.hasAlpha = true;
+            resolve({ scene: handle, native: loaded, kind: 'texture' });
           },
-          onError: (message) => reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`)),
-        });
+          onError: (message?: string) => {
+            reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`));
+            // A texture that failed to load stays in scene.textures until disposed (#185). Not assigned yet when the
+            // constructor fails at once: caught below.
+            texture?.dispose();
+          },
+        };
+        // The constructor calls onError and then rethrows (texture.pure.js), so it never returns for a texture that
+        // fails at once, and the half-built texture is already in scene.textures: caught as the scene adds it (the first
+        // texture the scene adds is this one: its own constructor adds it before anything else).
+        let made: Texture | undefined;
+        const added = scene.onNewTextureAddedObservable.addOnce((t) => (made = t as Texture));
+        try {
+          texture = new Texture(url, scene, options);
+        } catch (err) {
+          made?.dispose();
+          // onError has already rejected with the real error, and this does nothing; a throw that did not go through it
+          // still rejects, as it did before.
+          reject(err);
+          return;
+        } finally {
+          scene.onNewTextureAddedObservable.remove(added);
+        }
         // Disposed before it loaded (the scene torn down by a Stop): dispose() clears the load callbacks, so the
         // promise would never settle and the node's init would wait forever. A settled promise ignores this.
         texture.onDisposeObservable.addOnce(() => reject(new Error('the scene was torn down while the texture loaded')));

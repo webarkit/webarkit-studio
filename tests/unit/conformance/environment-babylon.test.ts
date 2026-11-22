@@ -1,11 +1,13 @@
 // scene.environment on the Babylon.js adapter (#135), on NullEngine with a fake HDRCubeTexture (prefiltering needs
 // WebGL): what it loads, one per scene, live source changes, release, a teardown during a load, and the reflection
-// matrix it writes (the inverse of environmentRotation, then the report's quarter turn about Y).
+// matrix it writes (the inverse of environmentRotation, then the report's quarter turn about Y). It also covers an
+// image texture that fails to load (#185): it must leave no texture in the scene.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Matrix } from '@babylonjs/core/Maths/math.vector';
+import type { NullEngine as NullEngineType } from '@babylonjs/core/Engines/nullEngine';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
-import type { SceneHandle } from '../../../src/runtime/renderers/adapter';
+import type { SceneHandle, TextureSource } from '../../../src/runtime/renderers/adapter';
 import { environmentRotation, makeHdr, neutralRoomHdr, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../../src/core/environment';
 import { transformMatrix } from '../../../src/core/math';
 
@@ -50,7 +52,22 @@ type FakeHDRCubeInstance = InstanceType<typeof FakeHDRCube>;
 vi.mock('@babylonjs/core/Materials/Textures/hdrCubeTexture', () => ({ HDRCubeTexture: FakeHDRCube }));
 vi.mock('@babylonjs/core/Engines/engine', async () => {
   const { NullEngine } = await import('@babylonjs/core/Engines/nullEngine');
-  return { Engine: class extends NullEngine {} };
+  // A URL with `broken` fails on a later task, as a real request does; one with `throws` makes the engine throw at once.
+  // The NullEngine loads nothing, so it is the only way to see these paths.
+  return {
+    Engine: class extends NullEngine {
+      createTexture(...args: Parameters<NullEngineType['createTexture']>) {
+        const [url, noMipmap, invertY, scene, samplingMode, onLoad, onError, ...rest] = args;
+        if (url?.includes('throws')) throw new Error('engine refused');
+        if (url?.includes('broken')) {
+          const texture = super.createTexture(url, noMipmap, invertY, scene, samplingMode, null, null, ...rest);
+          setTimeout(() => onError?.('not found', undefined), 0);
+          return texture;
+        }
+        return super.createTexture(url, noMipmap, invertY, scene, samplingMode, onLoad, onError, ...rest);
+      }
+    },
+  };
 });
 
 const g = globalThis as Record<string, unknown>;
@@ -219,5 +236,38 @@ describe('babylon: scene.environment (#135)', () => {
     const made = adapter.createScene({ defaultLights: false }).createEnvironment(NEUTRAL);
     adapter.dispose();
     await expect(made).rejects.toThrow(/torn down/);
+  });
+});
+
+describe('babylon: a texture that fails to load (#185)', () => {
+  const imageAt = (src: string): TextureSource => ({ kind: 'image', element: { src, width: 1, height: 1, naturalWidth: 1, naturalHeight: 1, complete: true } as unknown as HTMLImageElement });
+  const SPEC = { wrap: 'repeat', repeatU: 1, repeatV: 1 } as const;
+  // A 1×1 PNG, as materials.test.ts has it.
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  test('an image that fails to load rejects with its message and leaves no texture', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      await expect(scene.createTexture(imageAt('broken.png'), SPEC)).rejects.toThrow('could not make a texture of broken.png: not found');
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
+  test('an engine that throws while the texture is made: the same rejection, no texture, no ReferenceError', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      const made = scene.createTexture(imageAt('throws.png'), SPEC);
+      await expect(made).rejects.toThrow(/could not make a texture of throws\.png/);
+      await expect(made).rejects.not.toBeInstanceOf(ReferenceError);
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
+  test('control: an image that loads stays in the scene', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      await scene.createTexture(imageAt(PNG), SPEC);
+      expect(native.textures).toHaveLength(before + 1);
+    });
   });
 });
