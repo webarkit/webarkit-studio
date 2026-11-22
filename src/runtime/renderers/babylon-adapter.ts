@@ -613,7 +613,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
           onError: (message?: string) => {
             reject(new Error(`could not make a texture of ${url.slice(0, 80)}: ${message ?? 'unknown error'}`));
             // A texture that failed to load stays in scene.textures until disposed (#185). Not assigned yet when the
-            // constructor fails at once: caught below.
+            // engine throws at once: caught below. (Babylon.js also calls this at once, without throwing, where there is
+            // no HTMLImageElement: never in a browser.)
             texture?.dispose();
           },
         };
