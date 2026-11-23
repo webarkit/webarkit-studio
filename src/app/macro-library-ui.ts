@@ -72,7 +72,8 @@ function askClash(dialog: HTMLDialogElement, name: string, id: string, existing:
   });
 }
 
-export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, initial: MacroLibrary = emptyLibrary()): MacroLibraryUi {
+/** Fills `group`, the palette's Macros `<details>` (#180), after its `<summary>`. */
+export function mountMacroLibrary(group: HTMLDetailsElement, host: MacroLibraryHost, initial: MacroLibrary = emptyLibrary()): MacroLibraryUi {
   const { studio, log } = host;
   let library = initial;
   let query = '';
@@ -87,8 +88,6 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   };
 
   // ------------------------------------------------------------ the section
-  const heading = document.createElement('h3');
-  heading.textContent = 'Macros';
   const importButton = document.createElement('button');
   importButton.className = 'macro-import';
   importButton.textContent = 'Import macro…';
@@ -121,7 +120,10 @@ export function mountMacroLibrary(group: HTMLElement, host: MacroLibraryHost, in
   });
   const list = document.createElement('div');
   list.className = 'macro-library';
-  group.replaceChildren(heading, importButton, fileInput, ...presets.map((p) => p.btn), list);
+  // The group is the palette's (#180): its summary, with the "Macros" heading, stays first.
+  const summary = group.querySelector(':scope > summary');
+  if (!summary) throw new Error('mountMacroLibrary: the Macros group has no <summary>');
+  group.replaceChildren(summary, importButton, fileInput, ...presets.map((p) => p.btn), list);
 
   function render() {
     list.replaceChildren(
