@@ -13,7 +13,7 @@ export interface Demo {
 export const DEMOS: readonly Demo[] = [
   { id: 'pinball-three', title: 'Pinball · Three.js', description: 'The pinball marker, drawn with Three.js' },
   { id: 'pinball-babylon', title: 'Pinball · Babylon.js', description: 'The pinball marker, drawn with Babylon.js' },
-  { id: 'multi-three', title: 'Multi NFT', description: 'pinball + kuva' },
+  { id: 'multi-three', title: 'Two markers', description: 'pinball + kuva' },
   { id: 'pinball-image', title: 'Image, no camera', description: 'pinball tracked in a still image' },
   { id: 'pinball-shadow', title: 'Shadow', description: 'a model standing on the poster, with its shadow' },
   { id: 'pinball-material', title: 'Materials', description: 'a textured poster and a chrome knot' },
