@@ -2,6 +2,7 @@
  * The palette (#180): one `<details>` per category, in `CATEGORY_ORDER`, after the Macros group the macro library
  * fills. Which groups are open is remembered in this browser; only a user's click changes it. A search opens the
  * groups with a match and hides the others for the view only, and clearing it gives the remembered state back.
+ * The category bar above the list jumps to a group.
  */
 import type { NodeDefinition } from '../nodes/catalog';
 import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
@@ -48,10 +49,12 @@ export interface PaletteUi {
   macroGroup: HTMLDetailsElement;
   /** The macro library's filter, run on each search before the groups' open state is applied. */
   attachMacros(filter: (query: string) => void): void;
+  /** Disables the bar buttons of hidden groups: the macro library hides its group on its own, after an import too. */
+  refresh(): void;
 }
 
 export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNode: (type: string) => void): PaletteUi {
-  const { search, list } = els;
+  const { search, bar, list } = els;
   let state = new Map<string, boolean>();
   try {
     state = readGroupState(localStorage.getItem(PALETTE_GROUPS_KEY));
@@ -69,6 +72,7 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
   const searching = () => search.value.trim() !== '';
 
   const groups = new Map<string, HTMLDetailsElement>();
+  const barButtons = new Map<string, HTMLButtonElement>();
   const makeGroup = (key: string, title: string, count?: number) => {
     const details = document.createElement('details');
     details.className = 'palette-group';
@@ -93,6 +97,21 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     });
     groups.set(key, details);
     list.append(details);
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.textContent = title;
+    jump.dataset.group = key;
+    jump.onclick = () => {
+      details.open = true;
+      if (!searching()) {
+        state.set(key, true);
+        save();
+      }
+      // Not scrollIntoView: the sticky summary of a group above the view sits at the bottom of its <details>.
+      list.scrollTop += details.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    };
+    barButtons.set(key, jump);
+    bar.append(jump);
     return details;
   };
 
@@ -113,6 +132,15 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     }
   }
 
+  // Room after the last group, so that its heading too can be scrolled to the top (layoutTail()).
+  const tail = document.createElement('div');
+  tail.className = 'palette-tail';
+  list.append(tail);
+
+  const refresh = () => {
+    for (const [key, jump] of barButtons) jump.disabled = Boolean(groups.get(key)!.hidden);
+  };
+
   let macroFilter: ((query: string) => void) | undefined;
   // Filter: same ranking as the context menu search; groups with no match are hidden.
   search.oninput = () => {
@@ -125,12 +153,35 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     const query = searching();
     // The Macros group stays open during a search: the library hides or shows it on its own, after an import too.
     for (const [key, details] of groups) details.open = query ? key === 'macros' || !details.hidden : remembered(key);
+    refresh();
   };
+
+  // Wrapped up to three lines; beyond that, one row that scrolls. Measured, since plugins and the column's width change it.
+  const layoutBar = () => {
+    bar.classList.remove('scroll');
+    const lines = new Set([...barButtons.values()].map((b) => b.offsetTop)).size;
+    bar.classList.toggle('scroll', lines > 3);
+  };
+  // The palette's height minus one heading: enough for any heading to reach the top, sized from the palette itself.
+  const layoutTail = () => {
+    const heading = Math.max(0, ...[...groups.values()].map((d) => d.querySelector<HTMLElement>(':scope > summary')!.offsetHeight));
+    tail.style.height = `${Math.max(0, list.clientHeight - heading)}px`;
+  };
+  const layout = () => {
+    layoutBar();
+    layoutTail();
+  };
+  layout();
+  // The column (a narrower layout) and the list itself (the assets panel below it grows) change the sizes.
+  const resized = new ResizeObserver(layout);
+  resized.observe(list.parentElement ?? list);
+  resized.observe(list);
 
   return {
     macroGroup,
     attachMacros(filter) {
       macroFilter = filter;
     },
+    refresh,
   };
 }

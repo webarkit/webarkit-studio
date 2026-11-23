@@ -43,6 +43,8 @@ applying every param change; params marked ⚡ apply live without it.
 Editing:
 
 - **Add a node:** right-click the canvas and type to search (name, category or library), or filter the palette.
+  Its groups open and close, and keep their state across reloads (math starts closed); the bar under the search
+  field jumps to a group.
 - **Undo / redo:** ↶ / ↷, or Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y). Param edits are undone too.
 - **Select:** click a node; Ctrl+click or Shift+click adds it, or removes it if it is selected; Shift+drag on the
   canvas draws a box that selects the nodes it touches (with Ctrl, adds them); Ctrl+A selects every node; Escape

@@ -37,6 +37,8 @@ export interface MacroLibraryHost {
   dialogs: { clash: HTMLDialogElement; exportMacro: HTMLDialogElement };
   /** Counts the graphs loaded into the editor (a load, Import, a project, New): one that changes meanwhile cancels. */
   loadGeneration: () => number;
+  /** Called after each filter(): the group may have been hidden or shown (an import or a removal re-filters). */
+  onFilter?: () => void;
 }
 
 export interface MacroLibraryUi {
@@ -168,6 +170,7 @@ export function mountMacroLibrary(group: HTMLDetailsElement, host: MacroLibraryH
     }
     importButton.hidden = Boolean(words);
     group.hidden = Boolean(words) && !group.querySelector('.macro-preset:not([hidden]), .macro-entry:not([hidden])');
+    host.onFilter?.();
   }
 
   /** The graph's own name for definition `id`, if the graph uses one under it. */

@@ -166,3 +166,130 @@ test.describe('palette groups (#180)', () => {
     await expect(page.locator('.macro-entry[data-macro="zebra"] .macro-add')).toBeVisible();
   });
 });
+
+const barButton = (page: Page, key: string) => page.locator(`#palette-bar button[data-group="${key}"]`);
+/** How far a group's heading sits below the top of `#palette`, in px. */
+const headingOffset = (page: Page, key: string) =>
+  group(page, key)
+    .locator(':scope > summary')
+    .evaluate((el) => el.getBoundingClientRect().top - document.getElementById('palette')!.getBoundingClientRect().top);
+const ZEBRA_MACRO = {
+  format: 'webarkit-macro',
+  version: 1,
+  graphVersion: 6,
+  id: 'zebra',
+  name: 'Zebrafoo',
+  description: '',
+  plugins: [],
+  definition: {
+    name: 'Zebrafoo',
+    nodes: [{ id: 'n', type: 'math.negate', params: { x: 1 }, position: { x: 0, y: 0 } }],
+    edges: [],
+    outputs: { value: { node: 'n', port: 'value' } },
+  },
+};
+
+test.describe('palette category bar (#180)', () => {
+  test('the bar has one button per group, in palette order (#180)', async ({ page }) => {
+    await openStudio(page);
+    const groups = await page.locator('#palette details[data-group]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.group));
+    const buttons = await page.locator('#palette-bar button').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.group));
+    expect(buttons).toEqual(groups);
+    await expect(barButton(page, 'macros')).toHaveText('Macros');
+    await expect(barButton(page, 'logic')).toHaveText('logic');
+  });
+
+  test('a click on logic in the category bar brings its heading to the top of the palette (#180)', async ({ page }) => {
+    await openStudio(page);
+    // Control: logic does not start at the top.
+    expect(await headingOffset(page, 'logic')).toBeGreaterThan(1);
+    await barButton(page, 'logic').click();
+    await expect.poll(() => headingOffset(page, 'logic').then(Math.abs)).toBeLessThanOrEqual(1);
+  });
+
+  test('a click on a closed group opens it, scrolls to it and remembers it (#180)', async ({ page }) => {
+    await openStudio(page);
+    expect(await isOpen(page, 'math')).toBe(false);
+    await barButton(page, 'math').click();
+    expect(await isOpen(page, 'math')).toBe(true);
+    await expect.poll(() => headingOffset(page, 'math').then(Math.abs)).toBeLessThanOrEqual(1);
+    await page.reload();
+    await startupDone(page);
+    expect(await isOpen(page, 'math')).toBe(true);
+  });
+
+  test('the last group heading can reach the top too (#180)', async ({ page }) => {
+    await openStudio(page);
+    const last = (await page.locator('#palette-bar button').last().getAttribute('data-group'))!;
+    expect(await headingOffset(page, last)).toBeGreaterThan(1);
+    await barButton(page, last).click();
+    await expect.poll(() => headingOffset(page, last).then(Math.abs)).toBeLessThanOrEqual(1);
+  });
+
+  test('during a search the bar buttons of hidden groups are disabled (#180)', async ({ page }) => {
+    await openStudio(page);
+    await page.fill('#palette-search', 'lerp');
+    await expect(barButton(page, 'logic')).toBeDisabled();
+    await expect(barButton(page, 'math')).toBeEnabled();
+    await page.fill('#palette-search', '');
+    for (const button of await page.locator('#palette-bar button').all()) await expect(button).toBeEnabled();
+  });
+
+  test('after a matching macro is imported during a search, the Macros bar button is enabled (#180)', async ({ page }) => {
+    await openStudio(page);
+    await page.fill('#palette-search', 'zebrafoo');
+    // Control: nothing matches yet, so the Macros group is hidden and its bar button disabled.
+    await expect(group(page, 'macros')).toBeHidden();
+    await expect(barButton(page, 'macros')).toBeDisabled();
+    await page.setInputFiles('#macro-file-import', { name: 'zebra.wmacro', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(ZEBRA_MACRO)) });
+    await expect(group(page, 'macros')).toBeVisible();
+    await expect(barButton(page, 'macros')).toBeEnabled();
+  });
+
+  test('the bar wraps up to three lines, beyond that one row that scrolls (#180)', async ({ page }) => {
+    await openStudio(page);
+    await expect(page.locator('#palette-bar button').first()).toBeVisible();
+    const m = await page.locator('#palette-bar').evaluate((bar) => {
+      const tops = () => new Set([...bar.querySelectorAll('button')].map((b) => b.offsetTop)).size;
+      const had = bar.classList.contains('scroll');
+      bar.classList.remove('scroll');
+      const wrapped = tops();
+      bar.classList.toggle('scroll', had);
+      const style = getComputedStyle(bar);
+      const button = bar.querySelector('button')!;
+      return {
+        wrapped,
+        had,
+        rows: tops(),
+        scrollWidth: bar.scrollWidth,
+        clientWidth: bar.clientWidth,
+        height: bar.getBoundingClientRect().height,
+        oneRow: button.getBoundingClientRect().height + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth),
+      };
+    });
+    expect(m.had).toBe(m.wrapped > 3);
+    if (m.had) {
+      expect(m.rows).toBe(1);
+      expect(m.scrollWidth).toBeGreaterThan(m.clientWidth);
+      // A horizontal scrollbar, if the platform draws one inside the box, may add to it.
+      expect(m.height).toBeGreaterThanOrEqual(m.oneRow - 1);
+      expect(m.height).toBeLessThanOrEqual(m.oneRow + 20);
+    } else {
+      expect(m.rows).toBeLessThanOrEqual(3);
+    }
+  });
+
+  test('the bar and the search field stay in place while the palette scrolls (#180)', async ({ page }) => {
+    await openStudio(page);
+    const tops = () =>
+      page.evaluate(() => ['palette-bar', 'palette-search'].map((id) => document.getElementById(id)!.getBoundingClientRect().top));
+    const before = await tops();
+    const scrolled = await page.locator('#palette').evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollTop;
+    });
+    // Control: the palette really scrolled.
+    expect(scrolled).toBeGreaterThan(0);
+    expect(await tops()).toEqual(before);
+  });
+});

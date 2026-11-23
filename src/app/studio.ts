@@ -270,6 +270,7 @@ const macroLibrary = mountMacroLibrary(
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
     loadGeneration: () => graphLoads,
+    onFilter: () => palette.refresh(),
   },
   loadSavedLibrary(log),
 );
