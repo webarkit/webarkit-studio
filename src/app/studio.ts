@@ -27,6 +27,7 @@ import { createScriptPanel } from './script-panel';
 import { askToRunScripts, createScriptTrust } from './script-trust';
 import { loadSavedLibrary, mountMacroLibrary } from './macro-library-ui';
 import { readLibrary } from '../core/macro-library';
+import { DEMOS } from './demos';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -330,7 +331,7 @@ async function load(doc: unknown, ticket = loads.begin(), check = loadGraphDocum
   }
 }
 
-async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
+async function loadDemo(ticket = loads.begin(), name: string = DEMOS[0].id) {
   let doc: unknown;
   try {
     const res = await fetch(`graphs/${name}.json`);
@@ -345,8 +346,22 @@ async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
   if (ticket.current()) await load(doc, ticket);
 }
 
-const demoSelect = $<HTMLSelectElement>('demo-select');
-$('btn-demo').onclick = () => void loadDemo();
+const demosMenu = $<HTMLDetailsElement>('demos-menu');
+const demosItems = $('demos-items');
+for (const demo of DEMOS) {
+  const item = document.createElement('button');
+  const title = document.createElement('strong');
+  title.textContent = demo.title;
+  const description = document.createElement('small');
+  description.textContent = demo.description;
+  item.append(title, description);
+  item.dataset.demo = demo.id;
+  item.onclick = () => {
+    demosMenu.open = false;
+    void loadDemo(loads.begin(), demo.id);
+  };
+  demosItems.appendChild(item);
+}
 $('btn-new').onclick = () => {
   // An empty graph is not runnable, so it is loaded without validation.
   void loads.run(loads.begin(), () => loadIntoEditor(emptyGraph()));
@@ -380,9 +395,22 @@ for (const exporter of EXPORTERS) {
   };
   exportItems.appendChild(item);
 }
+// A click outside a menu closes it, so opening one closes the other.
 document.addEventListener('click', (e) => {
-  if (!exportMenu.contains(e.target as Node)) exportMenu.open = false;
+  for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+    if (!menu.contains(e.target as Node)) menu.open = false;
+  }
 });
+// A menu opens toward the right; one that would leave the window opens toward the left (#179).
+for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+  menu.addEventListener('toggle', () => {
+    if (!menu.open) return;
+    const items = menu.querySelector<HTMLElement>('.menu-items');
+    if (!items) return;
+    items.classList.remove('end');
+    if (items.getBoundingClientRect().right > window.innerWidth) items.classList.add('end');
+  });
+}
 const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {

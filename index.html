@@ -15,23 +15,10 @@
       <button id="btn-reload" title="Stop and run again (applies every param change)" disabled>⟳ Reload</button>
       <button id="btn-stop" disabled>■ Stop</button>
       <span class="sep"></span>
-      <select id="demo-select" title="Demo graph">
-        <option value="pinball-three">Demo: pinball · Three.js</option>
-        <option value="pinball-babylon">Demo: pinball · Babylon.js</option>
-        <option value="multi-three">Demo: multi NFT (pinball + kuva)</option>
-        <option value="pinball-image">Demo: pinball · image, no camera</option>
-        <option value="pinball-shadow">Demo: pinball · a model standing on the poster, with its shadow</option>
-        <option value="pinball-material">Demo: pinball · a textured poster and a chrome knot (materials)</option>
-        <option value="pinball-math">Demo: pinball · math and colour nodes (bobbing, fading cube)</option>
-        <option value="pinball-expression">Demo: pinball · one formula (Expression node)</option>
-        <option value="pinball-animated">Demo: pinball · animated model (plays on found, pauses on lost)</option>
-        <option value="pinball-math-model">Demo: pinball · math on a model (bobbing, turning cube)</option>
-        <option value="pinball-group">Demo: pinball · a group of shapes turning on the marker</option>
-        <option value="pinball-script">Demo: pinball · one script (the math demo in a Script node)</option>
-        <option value="pinball-three-script">Demo: pinball · a three.js script builds the scene</option>
-        <option value="pinball-render-script">Demo: pinball · one three.js script renders it all</option>
-      </select>
-      <button id="btn-demo">Load demo</button>
+      <details id="demos-menu" class="menu">
+        <summary>Demos ▾</summary>
+        <div class="menu-items" id="demos-items"></div>
+      </details>
       <button id="btn-new">New</button>
       <span class="sep"></span>
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
