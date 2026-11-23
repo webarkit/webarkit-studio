@@ -26,17 +26,17 @@ npm run assets      # camera_para.dat, pinball + kuva NFT datasets, test photo
 npm run dev         # studio at http://localhost:5173/, player at /player.html
 ```
 
-Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
-**▶ Run** and point the camera at the printed markers. No camera? The
-"pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
+Pick a demo from the **Demos ▾** menu ("Pinball · Three.js", "Pinball · Babylon.js", or "Two markers"
+with pinball + kuva), click **▶ Run** and point the camera at the printed markers. No camera? The
+"Image, no camera" demo tracks a photo of the marker (`source.image`;
 `source.videoFile` plays a recorded video the same way; if you fetched the
 assets before this demo existed, run `npm run assets` again for the photo).
-"pinball · math and colour nodes" animates a cube with `math.time`, `math.sin` and
+"Math and colour" animates a cube with `math.time`, `math.sin` and
 `math.vector3` wired into the Mesh's Position, and fades it with `color.rgba` on its Color;
-"pinball · one formula" moves it the same way with a single `math.expression`
-(`40 + 30 * sin(t * 180)`); "pinball · animated model" plays a model's clip on
-`onFound` and pauses it on `onLost`; "pinball · math on a model" bobs and turns a glTF model
-with math nodes wired into its Position and Rotation; "pinball · one script" is the math demo in one
+"Expression" moves it the same way with a single `math.expression`
+(`40 + 30 * sin(t * 180)`); "Animated model" plays a model's clip on
+`onFound` and pauses it on `onLost`; "Math on a model" bobs and turns a glTF model
+with math nodes wired into its Position and Rotation; "Script" is the math demo in one
 Script node (see "Scripts"). **⟳ Reload** restarts the preview (Stop + Run),
 applying every param change; params marked ⚡ apply live without it.
 
@@ -347,7 +347,7 @@ has when the graph starts is the first value, and fires nothing.
 ## Scripts
 
 **Script** (`script.lite`) runs JavaScript whose header comment declares the
-node's interface, after Sverchok's Script Node Lite. "pinball · one script" is
+node's interface, after Sverchok's Script Node Lite. The "Script" demo is
 the math demo written that way:
 
 ```js
@@ -415,8 +415,8 @@ marks it (`runsCode`), never by its name.
 **three.js Script** (`three.script`) builds part of the scene with three.js.
 Wire its *Object* into a Marker Anchor's *Children*, like a Mesh: the
 studio keeps the camera, the marker pose, found / lost visibility and the
-export, and the script only creates and animates content. "pinball · a three.js
-script builds the scene" is a knot and a ring of spheres made that way.
+export, and the script only creates and animates content. The "three.js script"
+demo is a knot and a ring of spheres made that way.
 
 ```js
 /*
@@ -454,7 +454,7 @@ Scene, Renderer, AR Camera, Marker Anchor and AR View: wire the camera's
 and *Marker info*. The node makes a `WebGLRenderer` on its own canvas, laid
 over the video as AR View's is, a scene and a camera at the origin looking down
 −Z; each frame it puts the tracker's projection on the camera, runs `onFrame`
-and renders. "pinball · one three.js script renders it all" is its demo.
+and renders. "Render script" is its demo.
 
 - `onInit({ THREE, canvas, renderer, scene, camera, helpers, inputs })` builds
   the scene; `onFrame({ THREE, renderer, scene, camera, pose, found,
@@ -489,7 +489,7 @@ uses), and on nothing of the studio:
   `scripts/copy-jsartoolkit-nft.mjs`, which copies the tracker's worker file from `node_modules`
   before `dev` and `build`.
 
-The first version writes the nodes of "pinball · Three.js" (camera, the jsartoolkitNFT camera
+The first version writes the nodes of "Pinball · Three.js" (camera, the jsartoolkitNFT camera
 parameters, dataset, settings and controller, the One Euro filter, Select Marker, Three.js renderer,
 scene, AR camera, light, mesh and geometry, anchor, AR view, Inspector and Tracking stats) and glTF models. A
 graph with any other node (math, logic, actions, scripts, `page.*`, `ui.*`, Babylon.js…) is refused,

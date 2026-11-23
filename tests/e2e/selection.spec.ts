@@ -283,7 +283,7 @@ test.describe('where the selection shortcuts do not apply (#139)', () => {
     await expect(selected(page)).toHaveCount(3);
   });
 
-  test("Delete or Backspace with a select focused, in a node or in the page's header, does nothing to the graph", async ({ page }) => {
+  test("Delete or Backspace with a select in a node or the header's Demos menu focused does nothing to the graph", async ({ page }) => {
     // A Compare, whose Operator is a select inside the editor, far right of the row.
     const doc: Doc = { ...ROW, nodes: [...ROW.nodes, { id: 'cmp', type: 'logic.compare', params: {}, position: { x: 960, y: 520 } }] };
     await openStudio(page);
@@ -292,18 +292,18 @@ test.describe('where the selection shortcuts do not apply (#139)', () => {
     const { from, to } = await rowBox(page);
     await drag(page, from, to, ['Shift']);
     await expect(selected(page)).toHaveCount(3);
-    for (const select of [titled(page, 'Compare').locator('select').first(), page.locator('#demo-select')]) {
-      await select.focus();
+    for (const control of [titled(page, 'Compare').locator('select').first(), page.locator('#demos-menu > summary')]) {
+      await control.focus();
       await page.keyboard.press('Delete');
       await page.keyboard.press('Backspace');
       await expect(nodes(page)).toHaveCount(5);
     }
   });
 
-  test("Ctrl+X with the header's demo select or a header button focused leaves the graph as it is (Qodo on #172)", async ({ page, context }) => {
+  test("Ctrl+X with the header's Demos menu or a header button focused leaves the graph as it is (Qodo on #172)", async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await selectRow(page);
-    for (const control of [page.locator('#demo-select'), page.locator('#btn-demo')]) {
+    for (const control of [page.locator('#demos-menu > summary'), page.locator('#btn-new')]) {
       await control.focus();
       await page.keyboard.press('Control+x');
       await expect(nodes(page)).toHaveCount(4);
