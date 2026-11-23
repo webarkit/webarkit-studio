@@ -6,8 +6,15 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+### Changed
+
+- The demos are in a Demos ▾ menu, built like Export, with a short title and a line on each; the demo select and its
+  Load demo button are gone (#179).
+
 ### Fixed
 
+- The toolbar's buttons stay on one line inside the bar: in a narrower window their labels wrapped and stuck out of
+  it (#179).
 - Babylon.js: a texture or an environment that fails to load is freed at once. A live change of the environment to an
   .hdr file that does not parse kept the failed texture in the scene until Stop, one more for each try (#185).
 

@@ -26,7 +26,7 @@ npm run assets      # camera_para.dat, pinball + kuva NFT datasets, test photo
 npm run dev         # studio at http://localhost:5173/, player at /player.html
 ```
 
-Pick a demo (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
+Pick a demo from the **Demos ▾** menu (Three.js, Babylon.js, or multi NFT with pinball + kuva), click
 **▶ Run** and point the camera at the printed markers. No camera? The
 "pinball · image, no camera" demo tracks a photo of the marker (`source.image`;
 `source.videoFile` plays a recorded video the same way; if you fetched the
