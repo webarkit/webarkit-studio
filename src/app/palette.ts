@@ -33,6 +33,9 @@ export function writeGroupState(state: Map<string, boolean>, keep?: ReadonlySet<
   return JSON.stringify(Object.fromEntries([...state].filter(([key]) => !keep || keep.has(key))));
 }
 
+/** The category bar wraps up to this many lines, then becomes one row that scrolls. */
+const BAR_MAX_LINES = 5;
+
 /** Math is the longest group: it starts closed. */
 export function groupOpenByDefault(key: string): boolean {
   return key !== 'math';
@@ -156,11 +159,12 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     refresh();
   };
 
-  // Wrapped up to three lines; beyond that, one row that scrolls. Measured, since plugins and the column's width change it.
+  // Wrapped up to five lines, so today's groups are all in view; beyond that (plugins add groups), one row that
+  // scrolls. Measured, since plugins and the column's width change it.
   const layoutBar = () => {
     bar.classList.remove('scroll');
     const lines = new Set([...barButtons.values()].map((b) => b.offsetTop)).size;
-    bar.classList.toggle('scroll', lines > 3);
+    bar.classList.toggle('scroll', lines > BAR_MAX_LINES);
   };
   // The palette's height minus one heading: enough for any heading to reach the top, sized from the palette itself.
   const layoutTail = () => {
@@ -172,10 +176,12 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     layoutTail();
   };
   layout();
-  // The column (a narrower layout) and the list itself (the assets panel below it grows) change the sizes.
+  // The column (a narrower layout), the list itself (the assets panel below it grows) and the bar change the sizes.
+  // Observing the bar does not loop: layoutBar() ends in the same size whenever the width is the same.
   const resized = new ResizeObserver(layout);
   resized.observe(list.parentElement ?? list);
   resized.observe(list);
+  resized.observe(bar);
 
   return {
     macroGroup,

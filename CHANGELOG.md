@@ -11,7 +11,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 - The demos are in a Demos ▾ menu, like the Export menu, with a short title and a line on each; the demo select and
   its Load demo button are gone (#179).
 - The palette's groups open and close, and keep their state across reloads (math starts closed); a group's heading
-  stays in view while its nodes scroll, and a bar under the search field jumps to any group (#180).
+  stays in view while its nodes scroll, a bar under the search field jumps to any group, and the node buttons are
+  more compact (#180).
 
 ### Fixed
 

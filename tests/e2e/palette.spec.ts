@@ -246,10 +246,26 @@ test.describe('palette category bar (#180)', () => {
     await expect(barButton(page, 'macros')).toBeEnabled();
   });
 
-  test('the bar wraps up to three lines, beyond that one row that scrolls (#180)', async ({ page }) => {
+  test('from the top of the palette, the logic and color buttons are in view without scrolling the bar (#180)', async ({ page }) => {
     await openStudio(page);
-    await expect(page.locator('#palette-bar button').first()).toBeVisible();
+    await expect(barButton(page, 'color')).toBeVisible();
+    // Boxes, not a click: Playwright scrolls an element into view before it clicks it.
     const m = await page.locator('#palette-bar').evaluate((bar) => {
+      const box = bar.getBoundingClientRect();
+      const inside = (key: string) => {
+        const b = bar.querySelector(`button[data-group="${key}"]`)!.getBoundingClientRect();
+        return b.left >= box.left - 0.5 && b.right <= box.right + 0.5 && b.top >= box.top - 0.5 && b.bottom <= box.bottom + 0.5;
+      };
+      return { scrollLeft: bar.scrollLeft, logic: inside('logic'), color: inside('color') };
+    });
+    expect(m.scrollLeft).toBe(0);
+    expect(m.logic).toBe(true);
+    expect(m.color).toBe(true);
+  });
+
+  // Measures the bar as it is, and as it would wrap without the scroll class.
+  const measureBar = (page: Page) =>
+    page.locator('#palette-bar').evaluate((bar) => {
       const tops = () => new Set([...bar.querySelectorAll('button')].map((b) => b.offsetTop)).size;
       const had = bar.classList.contains('scroll');
       bar.classList.remove('scroll');
@@ -259,7 +275,7 @@ test.describe('palette category bar (#180)', () => {
       const button = bar.querySelector('button')!;
       return {
         wrapped,
-        had,
+        scroll: had,
         rows: tops(),
         scrollWidth: bar.scrollWidth,
         clientWidth: bar.clientWidth,
@@ -267,16 +283,39 @@ test.describe('palette category bar (#180)', () => {
         oneRow: button.getBoundingClientRect().height + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth),
       };
     });
-    expect(m.had).toBe(m.wrapped > 3);
-    if (m.had) {
-      expect(m.rows).toBe(1);
-      expect(m.scrollWidth).toBeGreaterThan(m.clientWidth);
-      // A horizontal scrollbar, if the platform draws one inside the box, may add to it.
-      expect(m.height).toBeGreaterThanOrEqual(m.oneRow - 1);
-      expect(m.height).toBeLessThanOrEqual(m.oneRow + 20);
-    } else {
-      expect(m.rows).toBeLessThanOrEqual(3);
-    }
+
+  test('the bar wraps when it fits in five lines (#180)', async ({ page }) => {
+    await openStudio(page);
+    await expect(page.locator('#palette-bar button').first()).toBeVisible();
+    const m = await measureBar(page);
+    // Control: today's groups do not fit on one line, so the bar really wraps.
+    expect(m.wrapped).toBeGreaterThan(1);
+    expect(m.wrapped).toBeLessThanOrEqual(5);
+    expect(m.scroll).toBe(false);
+    expect(m.rows).toBe(m.wrapped);
+    expect(m.scrollWidth).toBeLessThanOrEqual(m.clientWidth);
+  });
+
+  test('beyond five lines the bar becomes one row that scrolls, measured again when the bar narrows (#180)', async ({ page }) => {
+    await openStudio(page);
+    await expect(page.locator('#palette-bar button').first()).toBeVisible();
+    expect((await measureBar(page)).scroll).toBe(false);
+    // Only the bar narrows, not its column: the bar's own size must be observed.
+    await page.locator('#palette-bar').evaluate((bar) => {
+      bar.style.width = '70px';
+    });
+    await expect(page.locator('#palette-bar')).toHaveClass(/\bscroll\b/);
+    const m = await measureBar(page);
+    expect(m.wrapped).toBeGreaterThan(5);
+    expect(m.rows).toBe(1);
+    expect(m.scrollWidth).toBeGreaterThan(m.clientWidth);
+    // A horizontal scrollbar, if the platform draws one inside the box, may add to it.
+    expect(m.height).toBeGreaterThanOrEqual(m.oneRow - 1);
+    expect(m.height).toBeLessThanOrEqual(m.oneRow + 20);
+    await page.locator('#palette-bar').evaluate((bar) => {
+      bar.style.width = '';
+    });
+    await expect(page.locator('#palette-bar')).not.toHaveClass(/\bscroll\b/);
   });
 
   test('the bar and the search field stay in place while the palette scrolls (#180)', async ({ page }) => {
