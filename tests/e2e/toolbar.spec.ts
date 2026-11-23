@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import { openStudio } from './helpers';
@@ -5,9 +6,24 @@ import { openStudio } from './helpers';
 // #179: the toolbar's controls stay on one line inside the bar, and the demos live in a Demos menu.
 // Layout checks measure the elements: no constant depends on a font (tests/e2e/AGENTS.md).
 
-async function insideWindow(page: Page, menu: string) {
+const DEMO_FILES = readdirSync('public/graphs').filter((file) => file.endsWith('.json')).length;
+
+/** Opens a menu and checks it lies inside the window and opens toward the side the measures call for. Returns whether it opened toward the left (`end`). */
+async function insideWindow(page: Page, menu: string): Promise<boolean> {
   await page.click(`${menu} > summary`);
   await expect(page.locator(menu)).toHaveAttribute('open', '');
+  // The toggle handler measured the side again: `end` is set exactly when the items, laid from the summary's left edge, would pass the window.
+  await expect
+    .poll(() =>
+      page.evaluate((sel) => {
+        const root = document.querySelector(sel)!;
+        const items = root.querySelector('.menu-items')!;
+        const left = root.querySelector('summary')!.getBoundingClientRect().left;
+        // The items' own width does not depend on the class.
+        return items.classList.contains('end') === left + items.getBoundingClientRect().width > window.innerWidth;
+      }, menu),
+    )
+    .toBe(true);
   // The side it opens toward is set by the toggle event, which runs after `open` appears: poll the box.
   await expect
     .poll(async () => {
@@ -22,6 +38,7 @@ async function insideWindow(page: Page, menu: string) {
       return out.join(', ');
     })
     .toBe('');
+  return page.locator(`${menu} .menu-items`).evaluate((el) => el.classList.contains('end'));
 }
 
 for (const viewport of [
@@ -63,7 +80,7 @@ for (const viewport of [
 
     test('the Demos menu lists every demo, loads one and closes', async ({ page }) => {
       await page.click('#demos-menu > summary');
-      await expect(page.locator('#demos-menu [data-demo]')).toHaveCount(14);
+      await expect(page.locator('#demos-menu [data-demo]')).toHaveCount(DEMO_FILES);
       await expect(page.locator('#demos-menu [data-demo]').first()).toHaveAttribute('data-demo', 'pinball-three');
       const doc = JSON.parse(await readFile('public/graphs/pinball-math.json', 'utf8')) as { name: string };
       await page.click('[data-demo="pinball-math"]');
@@ -104,10 +121,12 @@ test.describe('toolbar after the window widens', () => {
 
   test('a menu reopened after the window widens drops the left-opening class', async ({ page }) => {
     await openStudio(page);
-    await page.click('#export-menu > summary');
+    // Precondition: at 1280 the Export items would pass the window, so they open toward the left.
+    expect(await insideWindow(page, '#export-menu')).toBe(true);
+    await expect(page.locator('#export-items')).toHaveClass(/\bend\b/);
     await page.click('#log');
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await insideWindow(page, '#export-menu');
+    expect(await insideWindow(page, '#export-menu')).toBe(false);
     await expect(page.locator('#export-items')).not.toHaveClass(/\bend\b/);
   });
 });
@@ -117,9 +136,22 @@ test.describe('toolbar after a resize', () => {
 
   test('a menu reopened after the window narrows still fits', async ({ page }) => {
     await openStudio(page);
-    await page.click('#export-menu > summary');
+    // Precondition: at 1920 the items fit toward the right.
+    expect(await insideWindow(page, '#export-menu')).toBe(false);
     await page.click('#log');
     await page.setViewportSize({ width: 1280, height: 720 });
-    await insideWindow(page, '#export-menu');
+    expect(await insideWindow(page, '#export-menu')).toBe(true);
+  });
+});
+
+test.describe('toolbar short of room', () => {
+  test.use({ viewport: { width: 1100, height: 720 } });
+
+  test('buttons and menus stay one line high when the row runs short of room (#179)', async ({ page }) => {
+    await openStudio(page);
+    const runHeight = (await page.locator('#btn-run').boundingBox())!.height;
+    const heights = await page.locator('.toolbar > button, .toolbar .menu > summary').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    expect(heights.length).toBeGreaterThan(8);
+    for (const h of heights) expect(Math.abs(h - runHeight)).toBeLessThanOrEqual(1);
   });
 });
