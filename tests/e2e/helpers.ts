@@ -35,15 +35,24 @@ export async function openStudio(page: Page) {
 }
 
 /**
- * Picks a demo and waits for that load to have applied (the studio counts them on the body: the demo
- * may be the one already shown), then until every node and wire is drawn. Several demos have the same
- * counts, so it also checks the graph's name, as the studio saves it.
+ * Clicks a demo's item in the Demos menu (#179), opening the menu first if it is closed. It does not wait
+ * for the load: tests of load order use it; `pickDemo` waits.
+ */
+export async function clickDemo(page: Page, demo: string) {
+  const menu = page.locator('#demos-menu');
+  if (!(await menu.evaluate((el) => (el as HTMLDetailsElement).open))) await page.click('#demos-menu > summary');
+  await page.click(`[data-demo="${demo}"]`);
+}
+
+/**
+ * Picks a demo through the Demos menu (#179) and waits for that load to have applied (the studio counts
+ * them on the body: the demo may be the one already shown), then until every node and wire is drawn.
+ * Several demos have the same counts, so it also checks the graph's name, as the studio saves it.
  */
 export async function pickDemo(page: Page, demo: string) {
   const doc = JSON.parse(await readFile(`public/graphs/${demo}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
   const loads = Number(await page.locator('body').getAttribute('data-loads'));
-  await page.selectOption('#demo-select', demo);
-  await page.click('#btn-demo');
+  await clickDemo(page, demo);
   await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
   await expect(page.locator('.studio-node')).toHaveCount(doc.nodes.length);

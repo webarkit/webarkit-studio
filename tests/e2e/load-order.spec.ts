@@ -2,7 +2,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
-import { openStudio, pickDemo, startupDone } from './helpers';
+import { clickDemo, openStudio, pickDemo, startupDone } from './helpers';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 const demo = (name: string) => JSON.parse(readFileSync(`public/graphs/${name}.json`, 'utf8')) as { name: string; nodes: unknown[]; edges: unknown[] };
@@ -39,17 +39,12 @@ async function expectShown(page: Page, name: string) {
   await expect(page.locator('svg.connection path')).toHaveCount(edges.length);
 }
 
-const pick = async (page: Page, name: string) => {
-  await page.selectOption('#demo-select', name);
-  await page.click('#btn-demo');
-};
-
 test('a demo picked during startup stays when the startup demo arrives late', async ({ page }) => {
   const { requested, installed } = delayed(page, 'pinball-three');
   await installed;
   await page.goto('/index.html');
   await requested;
-  await pick(page, 'pinball-math');
+  await clickDemo(page, 'pinball-math');
   await startupDone(page);
   await expectShown(page, 'pinball-math');
 });
@@ -77,7 +72,7 @@ test('a demo picked during startup stays when an autosave was refused, and the f
   await installed;
   await page.goto('/index.html');
   await requested;
-  await pick(page, 'pinball-math');
+  await clickDemo(page, 'pinball-math');
   await startupDone(page);
   await expectShown(page, 'pinball-math');
   expect(await page.evaluate(() => localStorage.getItem('webarkit-studio:autosave-set-aside'))).toBe(refused);
@@ -87,21 +82,17 @@ test('the demo picked last wins, whichever arrives last', async ({ page }) => {
   await openStudio(page);
   const { requested, installed } = delayed(page, 'pinball-babylon');
   await installed;
-  await pick(page, 'pinball-babylon');
+  await clickDemo(page, 'pinball-babylon');
   await requested;
-  await pick(page, 'pinball-math');
+  await clickDemo(page, 'pinball-math');
   await expectShown(page, 'pinball-math');
 });
 
 test('two demos picked at once: the second is shown', async ({ page }) => {
   await openStudio(page);
-  await page.selectOption('#demo-select', 'pinball-math');
   await page.evaluate(() => {
-    const select = document.querySelector<HTMLSelectElement>('#demo-select')!;
-    const button = document.querySelector<HTMLButtonElement>('#btn-demo')!;
-    button.click();
-    select.value = 'multi-three';
-    button.click();
+    document.querySelector<HTMLButtonElement>('[data-demo="pinball-math"]')!.click();
+    document.querySelector<HTMLButtonElement>('[data-demo="multi-three"]')!.click();
   });
   await expectShown(page, 'multi-three');
 });
@@ -133,8 +124,7 @@ test('a project overtaken while its assets are being written still arrives whole
     IDBObjectStore.prototype.clear = function (this: IDBObjectStore) {
       IDBObjectStore.prototype.clear = clear;
       setTimeout(() => {
-        document.querySelector<HTMLSelectElement>('#demo-select')!.value = 'pinball-math';
-        document.querySelector<HTMLButtonElement>('#btn-demo')!.click();
+        document.querySelector<HTMLButtonElement>('[data-demo="pinball-math"]')!.click();
       });
       return clear.call(this);
     };
@@ -152,8 +142,7 @@ test('a project overtaken before it applies touches nothing', async ({ page }) =
     const arrayBuffer = File.prototype.arrayBuffer;
     File.prototype.arrayBuffer = function (this: File) {
       File.prototype.arrayBuffer = arrayBuffer;
-      document.querySelector<HTMLSelectElement>('#demo-select')!.value = 'pinball-math';
-      document.querySelector<HTMLButtonElement>('#btn-demo')!.click();
+      document.querySelector<HTMLButtonElement>('[data-demo="pinball-math"]')!.click();
       return arrayBuffer.call(this);
     };
   });
@@ -170,7 +159,7 @@ test('a demo that cannot be fetched says so, at startup and when picked', async 
   await expect(page.locator('#log')).toContainText('✗ demo pinball-three');
 
   await page.route('**/graphs/pinball-math.json', (route) => route.fulfill({ status: 404, body: 'not found' }));
-  await pick(page, 'pinball-math');
+  await clickDemo(page, 'pinball-math');
   await expect(page.locator('#log')).toContainText('✗ demo pinball-math');
 });
 
@@ -189,7 +178,7 @@ test('New, pressed while a demo is arriving, stays empty', async ({ page }) => {
   await openStudio(page);
   const { requested, installed } = delayed(page, 'pinball-math');
   await installed;
-  await pick(page, 'pinball-math');
+  await clickDemo(page, 'pinball-math');
   await requested;
   await page.click('#btn-new');
   await page.waitForTimeout(2500);
