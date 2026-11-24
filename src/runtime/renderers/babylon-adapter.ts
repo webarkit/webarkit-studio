@@ -394,7 +394,8 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
        * Where it prefilters, the scene waits from here, before the texture is made, until the prefiltering ends, as
        * Babylon.js's own block made it (its token was added before the raw load). The raw load stops waiting just
        * before onLoad, so a token added only then would leave a gap where the scene reports it has loaded (#188).
-       * Removed after the prefiltering, on a read error and on a Stop; removing it twice does nothing.
+       * Removed after the prefiltering, on a read error, on a Stop and when the texture cannot be made; removing it
+       * twice does nothing.
        */
       const waiting = canPrefilter() ? {} : null;
       if (waiting) scene.addPendingData(waiting);

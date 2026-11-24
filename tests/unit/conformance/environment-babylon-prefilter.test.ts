@@ -118,7 +118,7 @@ describe('babylon: an environment that is prefiltered (#188)', () => {
       const prefilter = rejecting(spyPrefilter());
       const made = scene.createEnvironment(NEUTRAL);
       const state = await settles(made);
-      // It reached Babylon's prefiltering block, rather than failing sooner.
+      // It reached the prefiltering (Babylon.js's block before #188, the adapter's own since), rather than failing sooner.
       expect(prefilter).toHaveBeenCalledTimes(1);
       expect(state).toBe('rejected');
       await expect(made).rejects.toThrow(/could not prefilter the environment: GPU lost/);
@@ -236,6 +236,8 @@ describe('babylon: an environment that is prefiltered (#188)', () => {
     expect(native.getWaitingItemsCount()).toBe(1);
     adapter.dispose();
     await expect(made).rejects.toThrow(/torn down/);
+    // At once, before the prefiltering settles: on a real GPU a prefiltering on a disposed engine might never settle.
+    expect(native.getWaitingItemsCount()).toBe(0);
     d.resolve();
     await settles(made, 50);
     expect(native.getWaitingItemsCount()).toBe(0);
