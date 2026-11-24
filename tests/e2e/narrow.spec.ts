@@ -60,6 +60,31 @@ const markNodes = (page: Page) =>
     return nodes.length;
   });
 
+/** Scrolls a menu's summary into view inside the toolbar, opens the menu, and checks that its last item is what a user meets there. */
+async function openToLastItem(page: Page, menu: string) {
+  const summary = page.locator(`${menu} > summary`);
+  await summary.scrollIntoViewIfNeeded();
+  await summary.click();
+  await expect(page.locator(menu)).toHaveAttribute('open', '');
+  const last = page.locator(`${menu} .menu-items > button`).last();
+  // A list taller than the window scrolls inside itself (#179): bring its end into view, without scrolling the toolbar.
+  await page.locator(`${menu} .menu-items`).evaluate((el) => (el.scrollTop = el.scrollHeight));
+  // Not clipped: at the centre of the last item, the page has that item (or something inside it).
+  await expect
+    .poll(() =>
+      last.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return at ? el.contains(at) : false;
+      }),
+    )
+    .toBe(true);
+  const list = await box(page.locator(`${menu} .menu-items`));
+  const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
+  expect(inside(list, view), `the list ${JSON.stringify(list)} lies inside the window`).toBe(true);
+  return last;
+}
+
 test.describe('narrow layout at 390 × 844 (#182)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -222,29 +247,6 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     expect(sizes.overflowX).toBe('auto');
   });
 
-  /** Scrolls a menu's summary into view inside the toolbar, opens the menu, and checks that its last item is what a user meets there. */
-  async function openToLastItem(page: Page, menu: string) {
-    const summary = page.locator(`${menu} > summary`);
-    await summary.scrollIntoViewIfNeeded();
-    await summary.click();
-    await expect(page.locator(menu)).toHaveAttribute('open', '');
-    const last = page.locator(`${menu} .menu-items > button`).last();
-    // Not clipped: at the centre of the last item, the page has that item (or something inside it).
-    await expect
-      .poll(() =>
-        last.evaluate((el) => {
-          const r = el.getBoundingClientRect();
-          const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-          return at ? el.contains(at) : false;
-        }),
-      )
-      .toBe(true);
-    const list = await box(page.locator(`${menu} .menu-items`));
-    const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
-    expect(inside(list, view), `the list ${JSON.stringify(list)} lies inside the window`).toBe(true);
-    return last;
-  }
-
   test('the Demos menu opens inside the window and its last item loads (#182)', async ({ page }) => {
     const id = DEMOS[DEMOS.length - 1].id;
     const doc = JSON.parse(await readFile(`public/graphs/${id}.json`, 'utf8')) as { name: string };
@@ -338,6 +340,25 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
     expect(b.width).toBeGreaterThan(0);
     expect(inside(b, view), `the code panel ${JSON.stringify(b)} lies inside the window`).toBe(true);
+  });
+});
+
+test.describe('narrow layout at 320 × 640, narrower than a menu (#182)', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test('each toolbar menu is no wider than the window, with 4 px on both sides (#182)', async ({ page }) => {
+    await openStudio(page);
+    for (const menu of ['#demos-menu', '#export-menu']) {
+      await openToLastItem(page, menu);
+      const sides = await page.locator(`${menu} .menu-items`).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, innerWidth };
+      });
+      expect(sides.left, `${menu}: ${JSON.stringify(sides)}`).toBeGreaterThanOrEqual(4 - 0.5);
+      expect(sides.right, `${menu}: ${JSON.stringify(sides)}`).toBeLessThanOrEqual(sides.innerWidth - 4 + 0.5);
+      await page.locator(menu).evaluate((el) => ((el as HTMLDetailsElement).open = false));
+      await expect(page.locator(menu)).not.toHaveAttribute('open', '');
+    }
   });
 });
 
