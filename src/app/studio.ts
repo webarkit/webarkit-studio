@@ -255,17 +255,50 @@ $('btn-arrange').onclick = () => void studio.arrange();
 // Where an asset is used: the graph, and the usable macros of the library (#141), asked before removing it.
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) => ({ graph: usesAsset(studio.toDocument(), id), library: macroLibrary.usesAsset(id) }));
 
+// ---------------------------------------------------------------- tabs (#182)
+// Below 900 px one panel is shown at a time (studio.css); on the desktop nothing reads the tab. Not saved.
+type Tab = 'nodes' | 'graph' | 'properties' | 'preview';
+const TABS: ReadonlySet<string> = new Set<Tab>(['nodes', 'graph', 'properties', 'preview']);
+const layout = document.querySelector<HTMLElement>('main.layout')!;
+const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('nav.tabs [role=tab]')];
+function showTab(tab: string): void {
+  if (!TABS.has(tab)) return;
+  layout.dataset.tab = tab;
+  for (const button of tabButtons) button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+}
+for (const button of tabButtons) button.onclick = () => showTab(button.dataset.tab ?? '');
+
 // ---------------------------------------------------------------- palette
 // Groups that open and close, remembered in this browser (#180); the Macros group (#141) comes first.
 const palette = mountPalette(
   { search: $<HTMLInputElement>('palette-search'), bar: $('palette-bar'), list: $('palette') },
   Object.values(NODE_CATALOG),
-  (type) => void studio.addNode(type),
+  // What was added is in the graph: show it (#182).
+  (type) => {
+    void studio.addNode(type);
+    showTab('graph');
+  },
 );
 const macroLibrary = mountMacroLibrary(
   palette.macroGroup,
   {
-    studio,
+    // A preset or a macro added from the Macros group shows the graph too (#182), once it is in: after a clash
+    // question has been answered.
+    studio: {
+      macroClash: (...args) => studio.macroClash(...args),
+      replaceMacro: (...args) => studio.replaceMacro(...args),
+      toDocument: () => studio.toDocument(),
+      insertFragment: async (nodes, edges) => {
+        await studio.insertFragment(nodes, edges);
+        showTab('graph');
+      },
+      addMacro: async (...args) => {
+        const added = await studio.addMacro(...args);
+        // False: nothing was added, and the reason is in the log.
+        if (added) showTab('graph');
+        return added;
+      },
+    },
     log,
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
@@ -376,16 +409,38 @@ document.addEventListener('click', (e) => {
     if (!menu.contains(e.target as Node)) menu.open = false;
   }
 });
-// A menu opens toward the right; one that would leave the window opens toward the left (#179).
+// A menu's list is fixed (#182), placed under its summary when it opens. It opens toward the right; one that would
+// leave the window opens toward the left (#179), aligned to the summary's right edge. Either way it keeps 4 px from
+// both edges of the window, even when the summary is cut by one (a toolbar scrolled sideways), and from the left one
+// first when it is wider than the window.
+const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
+/** The toolbar's scroll when each open menu was placed: a scroll since then moves the summary away from its list. */
+const placedAt = new Map<HTMLDetailsElement, number>();
 for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
   menu.addEventListener('toggle', () => {
+    placedAt.delete(menu);
     if (!menu.open) return;
     const items = menu.querySelector<HTMLElement>('.menu-items');
-    if (!items) return;
-    items.classList.remove('end');
-    if (items.getBoundingClientRect().right > window.innerWidth) items.classList.add('end');
+    const summary = menu.querySelector('summary');
+    if (!items || !summary) return;
+    const at = summary.getBoundingClientRect();
+    const width = items.getBoundingClientRect().width;
+    const end = at.left + width > window.innerWidth;
+    items.classList.toggle('end', end);
+    items.style.setProperty('--menu-top', `${at.bottom + 4}px`);
+    const far = window.innerWidth - width - 4; // the most either side may be from its edge, for 4 px on the other
+    if (end) items.style.setProperty('--menu-right', `${Math.min(Math.max(4, window.innerWidth - at.right), far)}px`);
+    else items.style.setProperty('--menu-left', `${Math.max(4, Math.min(at.left, far))}px`);
+    placedAt.set(menu, toolbar.scrollLeft);
   });
 }
+// A list does not follow its summary: a scroll of the toolbar or a resize of the window closes it. The scroll that
+// brought a summary into view, delivered a frame later, finds the menu placed after it, at the same scroll.
+const closeMenus = (moved: (menu: HTMLDetailsElement, at: number) => boolean) => {
+  for (const [menu, at] of placedAt) if (moved(menu, at)) menu.open = false;
+};
+toolbar.addEventListener('scroll', () => closeMenus((_, at) => toolbar.scrollLeft !== at), { passive: true });
+window.addEventListener('resize', () => closeMenus(() => true));
 const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {

@@ -22,6 +22,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   than the window scrolls (#179).
 - Babylon.js: a texture or an environment that fails to load is freed at once. A live change of the environment to an
   .hdr file that does not parse kept the failed texture in the scene until Stop, one more for each try (#185).
+- On a narrow screen (below 900 px) the graph editor had no width: the panels are now tabs, Nodes, Graph, Properties
+  and Preview, the toolbar scrolls sideways and the code panel fits the window (#182).
 
 ## [0.4.0] - 2026-11-19
 

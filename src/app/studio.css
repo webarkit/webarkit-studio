@@ -31,6 +31,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .toolbar > button, .toolbar > strong, .toolbar .menu > summary { white-space: nowrap; flex-shrink: 0; }
 .toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
 .layout { display: grid; grid-template-columns: 180px 1fr 380px; height: calc(100% - 44px); }
+/* The tab bar of a narrow window (#182): shown only by the narrow block at the end of this file. */
+.tabs { display: none; }
 
 .palette { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
 /* Node buttons scroll; the assets panel stays visible at the bottom of the column. */
@@ -127,11 +129,15 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .menu > summary { list-style: none; background: var(--node); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 .menu > summary::-webkit-details-marker { display: none; }
 .menu[open] > summary { border-color: var(--muted); }
-/* Under the 44 px bar, with a margin: a menu taller than the window scrolls (#179). */
-.menu-items { position: absolute; top: calc(100% + 4px); left: 0; z-index: 10; width: 320px; max-height: calc(100vh - 56px); overflow-y: auto;
+/*
+ * Fixed, so a toolbar that scrolls sideways (#182) does not clip it: studio.ts places it under its summary when it
+ * opens (`--menu-top`, and `--menu-left`, or `--menu-right` with `end`). A menu taller than the window scrolls (#179).
+ * It is never wider than the window, less 4 px each side: for a fixed box, 100% is the window without its scrollbar.
+ */
+.menu-items { position: fixed; top: var(--menu-top, 48px); left: var(--menu-left, 4px); z-index: 10; width: min(320px, calc(100% - 8px)); max-height: calc(100vh - var(--menu-top, 48px) - 8px); overflow-y: auto;
   padding: 4px; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.4); }
-.menu-items.end { left: auto; right: 0; }
+.menu-items.end { left: auto; right: var(--menu-right, 4px); }
 .menu-items button { text-align: left; border: none; background: transparent; padding: 8px 10px; }
 .menu-items button:hover:not(:disabled) { background: var(--node); }
 .menu-items button strong { display: block; font-weight: 600; }
@@ -213,3 +219,43 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
 .palette .macro-entry .macro-remove { width: auto; margin: 0 0 4px 4px; padding: 0 6px; border: none; background: transparent; color: var(--muted); font-size: 16px; }
 .palette .macro-entry .macro-remove:hover { color: var(--accent); }
 .palette .macro-preset, .palette .macro-add { --c: var(--accent); }
+
+/* ---------- narrow window (#182): one panel at a time, behind the tab bar ---------- */
+/*
+ * Every panel sits in the same grid cell, and only the tab shown (`data-tab` on .layout, set by studio.ts) is visible.
+ * The others are `visibility: hidden`, not `display: none`, so they keep their size: a node added from Nodes lands at
+ * the editor's centre, a graph loaded on another tab is fitted to the editor, the UI panels lay out from the stage,
+ * and the palette's bar measures itself. No panel content may set `visibility: visible`: it would show through its
+ * hidden panel.
+ */
+@media (max-width: 899px) {
+  /* The controls stay on one line and scroll sideways; the menus' lists are fixed, so the bar does not clip them. */
+  .toolbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+  .tabs { display: flex; height: 36px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .tabs > button { flex: 1 1 0; min-width: 0; border: none; border-radius: 0; background: transparent; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs > button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
+
+  .layout { grid-template-columns: 100%; grid-template-rows: auto 1fr; height: calc(100% - 44px - 36px); }
+  .preview { display: contents; }
+  .palette, .editor-pane, #inspector { grid-column: 1; grid-row: 1 / span 2; min-height: 0; }
+  #stage { grid-column: 1; grid-row: 1; }
+  /*
+   * The AR frame is as wide as the stage, at the video's aspect: in landscape that is taller than the layout, which
+   * the page would scroll and the frame cover the tab bar. It keeps a few lines of the log below it and narrows,
+   * centred, to fit (ar-frame.ts gives its aspect as --ar-frame-aspect). In portrait the bound is wider than the
+   * window and changes nothing. svh: the window with the browser's bars shown, so a phone never scrolls.
+   */
+  #stage .ar-view { max-width: calc((100svh - 44px - 36px - 4.5em) * var(--ar-frame-aspect, 1000)); }
+  #log { grid-column: 1; grid-row: 2; min-height: 0; background: var(--panel); }
+  .palette { border-right: none; }
+  #inspector { max-height: none; border-bottom: none; background: var(--panel); }
+
+  .layout:not([data-tab='nodes']) .palette,
+  .layout:not([data-tab='graph']) .editor-pane,
+  .layout:not([data-tab='properties']) #inspector,
+  .layout:not([data-tab='preview']) #stage,
+  .layout:not([data-tab='preview']) #log { visibility: hidden; }
+
+  /* The code panel covers the whole window, with a margin: there are no columns beside it. */
+  .script-panel { inset: 8px; }
+}

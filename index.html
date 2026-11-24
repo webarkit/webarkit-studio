@@ -33,13 +33,19 @@
       <button id="btn-player">Open in player</button>
       <input id="file-import" type="file" accept=".json,application/json,.zip,application/zip" hidden />
     </header>
-    <main class="layout">
-      <aside class="palette">
+    <nav class="tabs" role="tablist" aria-label="Panels">
+      <button type="button" role="tab" data-tab="nodes" aria-selected="false" aria-controls="panel-nodes">Nodes</button>
+      <button type="button" role="tab" data-tab="graph" aria-selected="true" aria-controls="panel-graph">Graph</button>
+      <button type="button" role="tab" data-tab="properties" aria-selected="false" aria-controls="inspector">Properties</button>
+      <button type="button" role="tab" data-tab="preview" aria-selected="false" aria-controls="stage log">Preview</button>
+    </nav>
+    <main class="layout" data-tab="graph">
+      <aside id="panel-nodes" class="palette" role="tabpanel">
         <input id="palette-search" type="search" placeholder="Search nodes…" title="Filter the palette. Right-click the canvas to add a node where you click." aria-label="Search nodes" />
         <nav id="palette-bar" aria-label="Palette groups"></nav>
         <div id="palette"></div><section id="assets-panel"></section>
       </aside>
-      <section class="editor-pane">
+      <section id="panel-graph" class="editor-pane" role="tabpanel">
         <nav id="macro-path" class="macro-path" aria-label="Macro" hidden>
           <button id="btn-leave-macro" title="Back to the graph: the edits made inside are one undo step there">← Graph</button>
           <span aria-hidden="true">›</span>
@@ -49,8 +55,8 @@
         <section id="editor" class="editor"></section>
       </section>
       <aside class="preview">
-        <div id="stage" class="stage"><p class="hint">Press ▶ Run to preview the graph.</p></div>
-        <section id="inspector" class="inspector" aria-label="Properties"></section>
+        <div id="stage" class="stage" role="tabpanel"><p class="hint">Press ▶ Run to preview the graph.</p></div>
+        <section id="inspector" class="inspector" role="tabpanel" aria-label="Properties"></section>
         <pre id="log" class="log"></pre>
       </aside>
     </main>
