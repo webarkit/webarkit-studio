@@ -238,6 +238,13 @@ svg.connection path.pseudo { stroke-dasharray: 6 4; }
   .preview { display: contents; }
   .palette, .editor-pane, #inspector { grid-column: 1; grid-row: 1 / span 2; min-height: 0; }
   #stage { grid-column: 1; grid-row: 1; }
+  /*
+   * The AR frame is as wide as the stage, at the video's aspect: in landscape that is taller than the layout, which
+   * the page would scroll and the frame cover the tab bar. It keeps a few lines of the log below it and narrows,
+   * centred, to fit (ar-frame.ts gives its aspect as --ar-frame-aspect). In portrait the bound is wider than the
+   * window and changes nothing. svh: the window with the browser's bars shown, so a phone never scrolls.
+   */
+  #stage .ar-view { max-width: calc((100svh - 44px - 36px - 4.5em) * var(--ar-frame-aspect, 1000)); }
   #log { grid-column: 1; grid-row: 2; min-height: 0; background: var(--panel); }
   .palette { border-right: none; }
   #inspector { max-height: none; border-bottom: none; background: var(--panel); }

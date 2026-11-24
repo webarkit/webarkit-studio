@@ -296,6 +296,39 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     expect(open.open).toBe(true);
   });
 
+  test('a menu whose summary the right edge cuts opens inside the window (#182)', async ({ page }) => {
+    const opened = await page.evaluate(async () => {
+      const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
+      const menu = document.querySelector<HTMLDetailsElement>('#export-menu')!;
+      const summary = menu.querySelector('summary')!;
+      const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const edges = () => {
+        const r = summary.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      };
+      toolbar.scrollLeft = 0;
+      await frames();
+      // The summary's middle at the window's right edge.
+      const at = edges();
+      toolbar.scrollLeft += (at.left + at.right) / 2 - innerWidth;
+      await frames();
+      const before = edges();
+      // A click from script: Playwright's would scroll the summary into view first.
+      summary.click();
+      await frames();
+      const list = menu.querySelector('.menu-items')!.getBoundingClientRect();
+      return { innerWidth, before, after: edges(), open: menu.open, list: { left: list.left, right: list.right } };
+    });
+    // The control: the right edge cuts the summary, before the click and still once the menu is open.
+    for (const at of [opened.before, opened.after]) {
+      expect(at.left, JSON.stringify(opened)).toBeLessThan(opened.innerWidth);
+      expect(at.right, JSON.stringify(opened)).toBeGreaterThan(opened.innerWidth);
+    }
+    expect(opened.open).toBe(true);
+    expect(opened.list.left, JSON.stringify(opened)).toBeGreaterThanOrEqual(4 - 0.5);
+    expect(opened.list.right, JSON.stringify(opened)).toBeLessThanOrEqual(opened.innerWidth - 4 + 0.5);
+  });
+
   test('the code panel lies inside the window (#182)', async ({ page }) => {
     await pickDemo(page, 'pinball-script'); // its script ships with the studio: no question asked
     await page.locator('.studio-node .script-edit').first().click();
@@ -305,6 +338,53 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
     expect(b.width).toBeGreaterThan(0);
     expect(inside(b, view), `the code panel ${JSON.stringify(b)} lies inside the window`).toBe(true);
+  });
+});
+
+test.describe('narrow layout in landscape, at 844 × 390 (#182)', () => {
+  test.use({ viewport: { width: 844, height: 390 } });
+
+  test('a running preview fits the layout, and every tab lies inside the window (#182)', async ({ page }) => {
+    await openStudio(page);
+    await run(page);
+    const canvas = page.locator('#stage canvas').first();
+    await expect(canvas).toBeAttached();
+    await tab(page, 'preview').click();
+    const sizes = await page.evaluate(() => {
+      const c = document.querySelector<HTMLCanvasElement>('#stage canvas')!;
+      return { buffer: { width: c.width, height: c.height }, stageWidth: document.querySelector('#stage')!.clientWidth, layout: document.querySelector('.layout')!.clientHeight };
+    });
+    // The control: the frame, at the stage's full width and the video's aspect, is taller than the whole layout.
+    expect(sizes.stageWidth * (sizes.buffer.height / sizes.buffer.width)).toBeGreaterThan(sizes.layout);
+    const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
+    const scroll = () => page.evaluate(() => ({ scrollY, over: document.documentElement.scrollHeight - innerHeight }));
+    // Preview, shown above, then every other tab and back.
+    for (const [i, name] of (['preview', 'graph', 'nodes', 'properties', 'preview'] as Tab[]).entries()) {
+      if (i > 0) await tab(page, name).click();
+      await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true');
+      for (const sel of PANELS[name]) {
+        const b = await box(page.locator(sel));
+        expect(inside(b, view), `on ${name}, ${sel} ${JSON.stringify(b)} lies inside the window`).toBe(true);
+      }
+      expect(await scroll(), `on ${name}, the page does not scroll`).toEqual({ scrollY: 0, over: 0 });
+      // What a user meets at the centre of each tab is the tab: nothing from the panels lies over the bar.
+      const covered = await page.locator('nav.tabs [role=tab]').evaluateAll((els) =>
+        els.filter((el) => {
+          const r = el.getBoundingClientRect();
+          const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return !(at && el.contains(at));
+        }).map((el) => (el as HTMLElement).dataset.tab),
+      );
+      expect(covered, `on ${name}, no tab is covered`).toEqual([]);
+    }
+    // Preview: the whole frame is shown, at the video's aspect, inside the stage; the log keeps some room.
+    const shown = await box(canvas);
+    const stage = await box(page.locator('#stage'));
+    expect(shown.width).toBeGreaterThan(0);
+    expect(shown.height).toBeGreaterThan(0);
+    expect(inside(shown, stage), `the canvas ${JSON.stringify(shown)} lies inside the stage ${JSON.stringify(stage)}`).toBe(true);
+    expect(Math.abs(shown.width / shown.height - sizes.buffer.width / sizes.buffer.height), 'the canvas keeps the video aspect').toBeLessThanOrEqual(0.02);
+    expect((await box(page.locator('#log'))).height).toBeGreaterThan(0);
   });
 });
 

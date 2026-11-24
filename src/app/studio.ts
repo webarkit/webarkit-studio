@@ -410,7 +410,9 @@ document.addEventListener('click', (e) => {
   }
 });
 // A menu's list is fixed (#182), placed under its summary when it opens. It opens toward the right; one that would
-// leave the window opens toward the left (#179). Either way it keeps 4 px from the window's left edge.
+// leave the window opens toward the left (#179), aligned to the summary's right edge. Either way it keeps 4 px from
+// both edges of the window, even when the summary is cut by one (a toolbar scrolled sideways), and from the left one
+// first when it is wider than the window.
 const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
 /** The toolbar's scroll when each open menu was placed: a scroll since then moves the summary away from its list. */
 const placedAt = new Map<HTMLDetailsElement, number>();
@@ -426,8 +428,9 @@ for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')
     const end = at.left + width > window.innerWidth;
     items.classList.toggle('end', end);
     items.style.setProperty('--menu-top', `${at.bottom + 4}px`);
-    if (end) items.style.setProperty('--menu-right', `${Math.min(window.innerWidth - at.right, window.innerWidth - width - 4)}px`);
-    else items.style.setProperty('--menu-left', `${Math.max(4, at.left)}px`);
+    const far = window.innerWidth - width - 4; // the most either side may be from its edge, for 4 px on the other
+    if (end) items.style.setProperty('--menu-right', `${Math.min(Math.max(4, window.innerWidth - at.right), far)}px`);
+    else items.style.setProperty('--menu-left', `${Math.max(4, Math.min(at.left, far))}px`);
     placedAt.set(menu, toolbar.scrollLeft);
   });
 }
