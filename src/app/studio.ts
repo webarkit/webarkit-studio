@@ -255,17 +255,50 @@ $('btn-arrange').onclick = () => void studio.arrange();
 // Where an asset is used: the graph, and the usable macros of the library (#141), asked before removing it.
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) => ({ graph: usesAsset(studio.toDocument(), id), library: macroLibrary.usesAsset(id) }));
 
+// ---------------------------------------------------------------- tabs (#182)
+// Below 900 px one panel is shown at a time (studio.css); on the desktop nothing reads the tab. Not saved.
+type Tab = 'nodes' | 'graph' | 'properties' | 'preview';
+const TABS: ReadonlySet<string> = new Set<Tab>(['nodes', 'graph', 'properties', 'preview']);
+const layout = document.querySelector<HTMLElement>('main.layout')!;
+const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('nav.tabs [role=tab]')];
+function showTab(tab: string): void {
+  if (!TABS.has(tab)) return;
+  layout.dataset.tab = tab;
+  for (const button of tabButtons) button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+}
+for (const button of tabButtons) button.onclick = () => showTab(button.dataset.tab ?? '');
+
 // ---------------------------------------------------------------- palette
 // Groups that open and close, remembered in this browser (#180); the Macros group (#141) comes first.
 const palette = mountPalette(
   { search: $<HTMLInputElement>('palette-search'), bar: $('palette-bar'), list: $('palette') },
   Object.values(NODE_CATALOG),
-  (type) => void studio.addNode(type),
+  // What was added is in the graph: show it (#182).
+  (type) => {
+    void studio.addNode(type);
+    showTab('graph');
+  },
 );
 const macroLibrary = mountMacroLibrary(
   palette.macroGroup,
   {
-    studio,
+    // A preset or a macro added from the Macros group shows the graph too (#182), once it is in: after a clash
+    // question has been answered.
+    studio: {
+      macroClash: (...args) => studio.macroClash(...args),
+      replaceMacro: (...args) => studio.replaceMacro(...args),
+      toDocument: () => studio.toDocument(),
+      insertFragment: async (nodes, edges) => {
+        await studio.insertFragment(nodes, edges);
+        showTab('graph');
+      },
+      addMacro: async (...args) => {
+        const added = await studio.addMacro(...args);
+        // False: nothing was added, and the reason is in the log.
+        if (added) showTab('graph');
+        return added;
+      },
+    },
     log,
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },

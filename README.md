@@ -243,6 +243,9 @@ SIMD. The threaded build is experimental upstream.
 Camera access requires a secure context: `localhost` works; on a phone use
 HTTPS or `adb reverse tcp:5173 tcp:5173`.
 
+Below 900 px the studio shows one panel at a time, behind the Nodes, Graph,
+Properties and Preview tabs.
+
 ### GitHub Pages
 
 The GitHub Pages project publishes the app with no credential: the export
