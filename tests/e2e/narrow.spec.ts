@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { DEMOS } from '../../src/app/demos';
 import { openStudio, pickDemo, run } from './helpers';
 
 // #182: below 900 px the studio shows one panel at a time, behind the Nodes, Graph, Properties and Preview tabs.
@@ -157,12 +159,11 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
       };
       return { scrollX, page: document.documentElement.scrollWidth - innerWidth, toolbar: over('.toolbar'), tabs: over('.tabs'), layout: over('.layout') };
     });
-    // The tabs and the panels fit the window: only the toolbar is wider than it.
+    // The tabs and the panels fit the window, and reaching Demos scrolled the toolbar, not the page.
     expect(overflow.tabs).toBeLessThanOrEqual(0);
     expect(overflow.layout).toBeLessThanOrEqual(0);
-    // Reaching Demos scrolled the page sideways, as the toolbar sticks out of the window. TODO(#182, Task 2): the
-    // toolbar scrolls inside itself; then delete this line.
-    await page.evaluate(() => scrollTo(0, 0));
+    expect(overflow.page).toBeLessThanOrEqual(0);
+    expect(overflow.scrollX).toBe(0);
     await tab(page, 'graph').click();
     await expectShown(page, 'graph');
     const editor = await box(page.locator('#editor'));
@@ -188,6 +189,111 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     expect(inspector.y).toBeGreaterThanOrEqual(stage.y + stage.height - 0.5);
     await page.setViewportSize({ width: 390, height: 844 });
     await expectShown(page, 'properties');
+  });
+
+  test('the toolbar is one line that scrolls sideways (#182)', async ({ page }) => {
+    const toolbar = page.locator('.toolbar');
+    const bar = await box(toolbar);
+    const runHeight = (await box(page.locator('#btn-run'))).height;
+    // Every control is one line high, and lies inside the bar's height (a scrollbar does not cut it).
+    const controls = await page.locator('.toolbar > button, .toolbar .menu > summary').evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { label: el.id || (el.textContent ?? '').trim(), top: r.top, bottom: r.bottom, height: r.height };
+      }),
+    );
+    const inner = await toolbar.evaluate((el) => el.getBoundingClientRect().top + el.clientTop + el.clientHeight);
+    expect(controls.length).toBeGreaterThan(8);
+    for (const c of controls) {
+      expect(Math.abs(c.height - runHeight), `${c.label} is one line high`).toBeLessThanOrEqual(1);
+      expect(c.top, `${c.label} top`).toBeGreaterThanOrEqual(bar.y - 0.5);
+      expect(c.bottom, `${c.label} bottom`).toBeLessThanOrEqual(inner + 0.5);
+    }
+    const sizes = await toolbar.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      page: document.documentElement.scrollWidth - innerWidth,
+      overflowX: getComputedStyle(el).overflowX,
+    }));
+    // The control: the controls are wider than the window, today too.
+    expect(sizes.scrollWidth).toBeGreaterThan(sizes.clientWidth);
+    // The bar scrolls, not the page.
+    expect(sizes.page).toBeLessThanOrEqual(0);
+    expect(sizes.overflowX).toBe('auto');
+  });
+
+  /** Scrolls a menu's summary into view inside the toolbar, opens the menu, and checks that its last item is what a user meets there. */
+  async function openToLastItem(page: Page, menu: string) {
+    const summary = page.locator(`${menu} > summary`);
+    await summary.scrollIntoViewIfNeeded();
+    await summary.click();
+    await expect(page.locator(menu)).toHaveAttribute('open', '');
+    const last = page.locator(`${menu} .menu-items > button`).last();
+    // Not clipped: at the centre of the last item, the page has that item (or something inside it).
+    await expect
+      .poll(() =>
+        last.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return at ? el.contains(at) : false;
+        }),
+      )
+      .toBe(true);
+    const list = await box(page.locator(`${menu} .menu-items`));
+    const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
+    expect(inside(list, view), `the list ${JSON.stringify(list)} lies inside the window`).toBe(true);
+    return last;
+  }
+
+  test('the Demos menu opens inside the window and its last item loads (#182)', async ({ page }) => {
+    const id = DEMOS[DEMOS.length - 1].id;
+    const doc = JSON.parse(await readFile(`public/graphs/${id}.json`, 'utf8')) as { name: string };
+    const loads = Number(await page.locator('body').getAttribute('data-loads'));
+    const last = await openToLastItem(page, '#demos-menu');
+    await expect(last).toHaveAttribute('data-demo', id);
+    await last.click();
+    await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
+    await expect(page.locator('#graph-name')).toHaveValue(doc.name);
+  });
+
+  test('the Export menu opens inside the window and its last item downloads (#182)', async ({ page }) => {
+    const last = await openToLastItem(page, '#export-menu');
+    await expect(last).toHaveAttribute('data-exporter', 'source-code');
+    const [download] = await Promise.all([page.waitForEvent('download'), last.click()]);
+    expect(download.suggestedFilename()).toMatch(/\.zip$/);
+  });
+
+  test('scrolling the toolbar closes an open menu (#182)', async ({ page }) => {
+    const summary = page.locator('#demos-menu > summary');
+    await summary.scrollIntoViewIfNeeded();
+    await summary.click();
+    await expect(page.locator('#demos-menu')).toHaveAttribute('open', '');
+    const moved = await page.locator('.toolbar').evaluate((el) => {
+      const before = el.scrollLeft;
+      el.scrollLeft = before > 0 ? before - 50 : before + 50;
+      return { before, after: el.scrollLeft };
+    });
+    // The control: the toolbar did scroll.
+    expect(moved.after).not.toBe(moved.before);
+    await expect(page.locator('#demos-menu')).not.toHaveAttribute('open', '');
+  });
+
+  test('the scroll that brings a summary into view does not close its menu (#182)', async ({ page }) => {
+    // The scroll event comes a frame after the scroll, after the click that opened the menu.
+    const open = await page.evaluate(async () => {
+      const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
+      const menu = document.querySelector<HTMLDetailsElement>('#export-menu')!;
+      toolbar.scrollLeft = 0;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      menu.querySelector('summary')!.scrollIntoView({ inline: 'center' });
+      const scrolled = toolbar.scrollLeft;
+      menu.querySelector('summary')!.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return { scrolled, open: menu.open };
+    });
+    // The control: bringing the summary into view scrolled the toolbar.
+    expect(open.scrolled).toBeGreaterThan(0);
+    expect(open.open).toBe(true);
   });
 
   test('the code panel lies inside the window (#182)', async ({ page }) => {

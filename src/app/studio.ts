@@ -409,16 +409,35 @@ document.addEventListener('click', (e) => {
     if (!menu.contains(e.target as Node)) menu.open = false;
   }
 });
-// A menu opens toward the right; one that would leave the window opens toward the left (#179).
+// A menu's list is fixed (#182), placed under its summary when it opens. It opens toward the right; one that would
+// leave the window opens toward the left (#179). Either way it keeps 4 px from the window's left edge.
+const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
+/** The toolbar's scroll when each open menu was placed: a scroll since then moves the summary away from its list. */
+const placedAt = new Map<HTMLDetailsElement, number>();
 for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
   menu.addEventListener('toggle', () => {
+    placedAt.delete(menu);
     if (!menu.open) return;
     const items = menu.querySelector<HTMLElement>('.menu-items');
-    if (!items) return;
-    items.classList.remove('end');
-    if (items.getBoundingClientRect().right > window.innerWidth) items.classList.add('end');
+    const summary = menu.querySelector('summary');
+    if (!items || !summary) return;
+    const at = summary.getBoundingClientRect();
+    const width = items.getBoundingClientRect().width;
+    const end = at.left + width > window.innerWidth;
+    items.classList.toggle('end', end);
+    items.style.setProperty('--menu-top', `${at.bottom + 4}px`);
+    if (end) items.style.setProperty('--menu-right', `${Math.min(window.innerWidth - at.right, window.innerWidth - width - 4)}px`);
+    else items.style.setProperty('--menu-left', `${Math.max(4, at.left)}px`);
+    placedAt.set(menu, toolbar.scrollLeft);
   });
 }
+// A list does not follow its summary: a scroll of the toolbar or a resize of the window closes it. The scroll that
+// brought a summary into view, delivered a frame later, finds the menu placed after it, at the same scroll.
+const closeMenus = (moved: (menu: HTMLDetailsElement, at: number) => boolean) => {
+  for (const [menu, at] of placedAt) if (moved(menu, at)) menu.open = false;
+};
+toolbar.addEventListener('scroll', () => closeMenus((_, at) => toolbar.scrollLeft !== at), { passive: true });
+window.addEventListener('resize', () => closeMenus(() => true));
 const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {
