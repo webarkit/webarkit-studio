@@ -66,6 +66,7 @@ import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTextur
 // HDRCubeTexture uploads its faces with createRawCubeTextureFromUrl, which exists only once this extension is imported
 // (#135; without it the texture never loads).
 import '@babylonjs/core/Engines/Extensions/engine.rawTexture';
+import { HDRFiltering } from '@babylonjs/core/Materials/Textures/Filtering/hdrFiltering';
 import { environmentRotation, neutralRoomHdr, normalizeEnvironment, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../core/environment';
 import { VideoTexture } from '@babylonjs/core/Materials/Textures/videoTexture';
 // VideoTexture calls engine methods its extensions add: imported for their side effects (AGENTS.md).
@@ -365,9 +366,18 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
   /** Babylon.js's equirectangular mapping is a quarter turn about Y from Three.js's (the report, "Around the vertical"). */
   const QUARTER_TURN = Matrix.RotationY(Math.PI / 2);
   /**
+   * Whether this engine prefilters an environment. The adapter reads Babylon.js's own check: envCubeTexture.pure.js
+   * gates its prefiltering block on it, and HDRFiltering.prefilter() throws when it is false, so the adapter prefilters
+   * exactly where Babylon.js did. The field is internal (marked `@internal` in abstractEngine.pure.d.ts) but declared,
+   * so a rename breaks the typecheck.
+   */
+  const canPrefilter = () => engine._features.allowTexturePrefiltering === true;
+  /**
    * The source as a prefiltered cube: the uploaded .hdr, or the neutral room the studio writes itself (never
    * createDefaultEnvironment, which fetches from assets.babylonjs.com: the ruling on #135). From a blob URL, as the
-   * report's tests load theirs.
+   * report's tests load theirs. The adapter prefilters, not the texture (prefilterOnLoad false, #188): Babylon.js's own
+   * prefiltering lets a failure escape, and its texture then never calls onLoad or onError, so the load never settled.
+   * So the texture's onLoadObservable now fires before the prefiltering: wait on this promise, never on that observable.
    */
   const environmentTexture = (spec: EnvironmentSpec, hdr: ArrayBuffer | undefined) =>
     new Promise<HDRCubeTexture>((resolve, reject) => {
@@ -378,21 +388,73 @@ function createBabylonScene(adapter: RendererAdapter, engine: Engine, defaultLig
         if (!revoked) URL.revokeObjectURL(url);
         revoked = true;
       };
-      const texture: HDRCubeTexture = new HDRCubeTexture(
-        url, scene, 256, false, true, false, true,
-        () => (done(), resolve(texture)),
-        (message) => {
-          done();
-          // Reject first, then free the texture that failed (#185): a scene keeps every texture it was given, so one
-          // that never loaded stays in `scene.textures` until it is disposed. The dispose handler below then rejects a
-          // promise already settled, which does nothing, so the read error is the one reported.
-          reject(new Error(`could not read the environment's .hdr: ${message ?? 'unknown error'}`));
-          texture.dispose();
-        },
-      );
+      /** Set once the texture is disposed (a Stop, or a failure below): its promise is settled, and nothing more is done. */
+      let disposed = false;
+      /**
+       * Where it prefilters, the scene waits from here, before the texture is made, until the prefiltering ends, as
+       * Babylon.js's own block made it (its token was added before the raw load). The raw load stops waiting just
+       * before onLoad, so a token added only then would leave a gap where the scene reports it has loaded (#188).
+       * Removed after the prefiltering, on a read error, on a Stop and when the texture cannot be made; removing it
+       * twice does nothing.
+       */
+      const waiting = canPrefilter() ? {} : null;
+      if (waiting) scene.addPendingData(waiting);
+      const stopWaiting = () => {
+        if (waiting) scene.removePendingData(waiting);
+      };
+      /**
+       * Loaded: prefilter it where Babylon.js would, then resolve. A prefiltering that fails rejects and frees the
+       * texture, as a read error does. Nothing throws out of this block, and after a Stop (the dispose handler already
+       * rejected) it neither resolves nor disposes again. A prefiltering that throws keeps its effect until the engine is
+       * disposed (HDRFiltering.prefilter() frees it only on success), as it did when Babylon.js prefiltered.
+       */
+      const prefilterThenResolve = async () => {
+        try {
+          if (disposed) return;
+          if (waiting) await new HDRFiltering(engine).prefilter(texture);
+          if (!disposed) resolve(texture);
+        } catch (error) {
+          if (disposed) return;
+          reject(new Error(`could not prefilter the environment: ${error instanceof Error ? error.message : String(error)}`));
+          try {
+            texture.dispose();
+          } catch {
+            // The rejection above is the error reported.
+          }
+        } finally {
+          stopWaiting();
+        }
+      };
+      let texture: HDRCubeTexture;
+      try {
+        texture = new HDRCubeTexture(
+          url, scene, 256, false, true, false, /* prefilterOnLoad */ false,
+          () => (done(), void prefilterThenResolve()),
+          (message) => {
+            done();
+            stopWaiting();
+            // Reject first, then free the texture that failed (#185): a scene keeps every texture it was given, so one
+            // that never loaded stays in `scene.textures` until it is disposed. The dispose handler below then rejects a
+            // promise already settled, which does nothing, so the read error is the one reported. Without
+            // prefilterOnLoad, Babylon.js passes its message; 'unknown error' stays as a guard.
+            reject(new Error(`could not read the environment's .hdr: ${message ?? 'unknown error'}`));
+            texture.dispose();
+          },
+        );
+      } catch (error) {
+        // A texture that could not be made: the scene must not wait on it forever. The promise rejects with the error.
+        stopWaiting();
+        done();
+        throw error;
+      }
       // Disposed before it loaded (a Stop) or after it failed to (above): the promise settles, as createTexture's does,
       // and a settled one ignores this.
-      texture.onDisposeObservable.addOnce(() => (done(), reject(new Error('the scene was torn down while the environment loaded'))));
+      texture.onDisposeObservable.addOnce(() => {
+        disposed = true;
+        done();
+        stopWaiting();
+        reject(new Error('the scene was torn down while the environment loaded'));
+      });
     });
   /** A texture that loaded after the scene was torn down is freed, and the load refused, as when it is disposed first. */
   const afterTeardown = (texture: HDRCubeTexture) => {

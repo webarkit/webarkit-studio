@@ -16,8 +16,7 @@ const { FakeHDRCube } = vi.hoisted(() => ({
     static made: FakeHDRCubeInstance[] = [];
     /**
      * While set, a new texture fails to load with this message instead of loading (its error callback, on a later task).
-     * The message is the fake's: with prefilterOnLoad, a real HDRCubeTexture calls the callback with none, which the
-     * adapter reports as "unknown error".
+     * The message is the fake's: a real one calls it with Babylon's message.
      */
     static failWith: string | null = null;
     disposed = false;
