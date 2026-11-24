@@ -48,6 +48,18 @@ button:disabled { opacity: 0.4; cursor: default; }
 .palette input[type='search'] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font: inherit; }
 .palette button[hidden], .palette-group[hidden] { display: none; }
 .palette button { display: block; width: 100%; text-align: left; margin-bottom: 4px; border-left: 3px solid var(--c, var(--border)); }
+/* The palette's groups (#180): a heading that opens and closes its group and stays at the top while its buttons scroll under it. */
+.palette-group > summary { position: sticky; top: 0; z-index: 1; background: var(--panel); display: flex; align-items: baseline; gap: 6px; list-style: none; cursor: pointer; padding: 10px 0 4px; }
+.palette-group > summary::-webkit-details-marker { display: none; }
+.palette-group > summary::before { content: '▸'; font-size: 10px; color: var(--muted); }
+.palette-group[open] > summary::before { content: '▾'; }
+.palette-group h3 { margin: 0; }
+.palette-count { font-size: 10px; color: var(--muted); }
+.palette-group button { padding: 3px 8px; margin-bottom: 2px; }
+/* The category bar (#180): it stays above the scrolling list; past five lines it becomes one row that scrolls. */
+#palette-bar { flex: none; display: flex; flex-wrap: wrap; gap: 3px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+#palette-bar.scroll { flex-wrap: nowrap; overflow-x: auto; }
+#palette-bar button { display: inline-block; width: auto; margin: 0; padding: 1px 6px; font-size: 10px; border-left-width: 1px; white-space: nowrap; flex: none; }
 
 /* The editor, under the bar shown while a macro's inside is (#140). */
 .editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

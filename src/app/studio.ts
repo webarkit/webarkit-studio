@@ -5,7 +5,6 @@ import { createStudioEditor, type EditorView } from '../editor/editor';
 import { commitPendingEdit, renderInspector } from '../editor/inspector';
 import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
@@ -26,6 +25,7 @@ import type { ScriptHandlers } from '../editor/script-ui';
 import { createScriptPanel } from './script-panel';
 import { askToRunScripts, createScriptTrust } from './script-trust';
 import { loadSavedLibrary, mountMacroLibrary } from './macro-library-ui';
+import { mountPalette } from './palette';
 import { readLibrary } from '../core/macro-library';
 import { DEMOS } from './demos';
 
@@ -256,50 +256,25 @@ $('btn-arrange').onclick = () => void studio.arrange();
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) => ({ graph: usesAsset(studio.toDocument(), id), library: macroLibrary.usesAsset(id) }));
 
 // ---------------------------------------------------------------- palette
-const palette = $('palette');
-const paletteButtons = new Map<string, HTMLButtonElement>();
-for (const category of CATEGORY_ORDER) {
-  const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category && addable(d));
-  if (!defs.length) continue;
-  const group = document.createElement('div');
-  group.className = 'palette-group';
-  group.innerHTML = `<h3>${category}</h3>`;
-  for (const def of defs) {
-    const btn = document.createElement('button');
-    btn.innerHTML = `${def.label}${def.provider !== 'core' ? `<small>${def.provider}</small>` : ''}`;
-    btn.title = def.description;
-    btn.className = `cat-${category}`;
-    btn.onclick = () => void studio.addNode(def.type);
-    group.appendChild(btn);
-    paletteButtons.set(def.type, btn);
-  }
-  palette.appendChild(group);
-}
-// The Macros section (#141): the presets, the project's macro library, Import macro…; first in the palette.
-const macroGroup = document.createElement('div');
-macroGroup.className = 'palette-group palette-macros';
-palette.prepend(macroGroup);
+// Groups that open and close, remembered in this browser (#180); the Macros group (#141) comes first.
+const palette = mountPalette(
+  { search: $<HTMLInputElement>('palette-search'), bar: $('palette-bar'), list: $('palette') },
+  Object.values(NODE_CATALOG),
+  (type) => void studio.addNode(type),
+);
 const macroLibrary = mountMacroLibrary(
-  macroGroup,
+  palette.macroGroup,
   {
     studio,
     log,
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
     loadGeneration: () => graphLoads,
+    onFilter: () => palette.refresh(),
   },
   loadSavedLibrary(log),
 );
-// Filter: same ranking as the context menu search; empty groups are hidden.
-const paletteSearch = $<HTMLInputElement>('palette-search');
-paletteSearch.oninput = () => {
-  const shown = new Set(searchNodes(paletteSearch.value, Object.values(NODE_CATALOG)).map((d) => d.type));
-  for (const [type, btn] of paletteButtons) btn.hidden = !shown.has(type);
-  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group:not(.palette-macros)')) {
-    group.hidden = !group.querySelector('button:not([hidden])');
-  }
-  macroLibrary.filter(paletteSearch.value);
-};
+palette.attachMacros((query) => macroLibrary.filter(query));
 
 // ----------------------------------------------------------- graph I/O
 const loads = createLoadQueue();
