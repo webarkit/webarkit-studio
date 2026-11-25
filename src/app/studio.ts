@@ -28,6 +28,7 @@ import { loadSavedLibrary, mountMacroLibrary } from './macro-library-ui';
 import { mountPalette } from './palette';
 import { readLibrary } from '../core/macro-library';
 import { DEMOS } from './demos';
+import { rovingIndex } from './keys';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -366,6 +367,8 @@ for (const demo of DEMOS) {
   item.dataset.demo = demo.id;
   item.onclick = () => {
     demosMenu.open = false;
+    // The item is hidden with the list: the focus goes back to the summary rather than to the page (#190).
+    menuSummary(demosMenu).focus();
     void loadDemo(loads.begin(), demo.id);
   };
   demosItems.appendChild(item);
@@ -383,25 +386,37 @@ for (const exporter of EXPORTERS) {
   item.dataset.exporter = exporter.id;
   item.onclick = async () => {
     exportMenu.open = false;
-    const doc = studio.toDocument();
-    // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
-    if (!(await scriptsAllowed(doc, 'export'))) return;
-    log(`⇩ export: ${exporter.label}`);
-    // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
-    try {
-      // What the exporter would refuse is refused here, before the dialog creates the chosen file.
-      exporter.precheck?.(doc);
-      const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
-      const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore, library: () => macroLibrary.data() }), accept);
-      if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
-      else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
-    } catch (err) {
-      const { message, picked } = err as SaveFailed;
-      // Chromium creates (or empties) the chosen file as soon as it is picked, before the export runs.
-      log(`✗ export failed: ${message}${picked ? `; ${picked} was left empty where you chose to save it` : ''}`);
-    }
+    // The export starts first, synchronously, within this click's user activation (the save dialog needs it, #118);
+    // then the focus goes back to the summary, as the item is hidden with the list (#190).
+    const done = runExport(exporter);
+    menuSummary(exportMenu).focus();
+    await done;
   };
   exportItems.appendChild(item);
+}
+/** Exports the graph shown with `exporter`: what it refuses, where it is saved, and what happened go to the log. */
+async function runExport(exporter: (typeof EXPORTERS)[number]) {
+  const doc = studio.toDocument();
+  // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
+  if (!(await scriptsAllowed(doc, 'export'))) return;
+  log(`⇩ export: ${exporter.label}`);
+  // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
+  try {
+    // What the exporter would refuse is refused here, before the dialog creates the chosen file.
+    exporter.precheck?.(doc);
+    const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
+    const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore, library: () => macroLibrary.data() }), accept);
+    if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
+    else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
+  } catch (err) {
+    const { message, picked } = err as SaveFailed;
+    // Chromium creates (or empties) the chosen file as soon as it is picked, before the export runs.
+    log(`✗ export failed: ${message}${picked ? `; ${picked} was left empty where you chose to save it` : ''}`);
+  }
+}
+/** A menu's summary, where the focus goes back when the menu closes from a pick or Escape (#190). */
+function menuSummary(menu: HTMLDetailsElement): HTMLElement {
+  return menu.querySelector('summary')!;
 }
 // A click outside a menu closes it, so opening one closes the other.
 document.addEventListener('click', (e) => {
@@ -409,6 +424,26 @@ document.addEventListener('click', (e) => {
     if (!menu.contains(e.target as Node)) menu.open = false;
   }
 });
+// Escape closes the open menu and puts the focus on its summary; with no menu open it does nothing (#190).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const menu = document.querySelector<HTMLDetailsElement>('details.menu[open]');
+  if (!menu) return;
+  menu.open = false;
+  menuSummary(menu).focus();
+  e.preventDefault();
+});
+// Up and Down move between an open menu's items, Home and End to its ends; the items stay tab stops (#190).
+for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+  menu.addEventListener('keydown', (e) => {
+    if (!menu.open || e.altKey || e.ctrlKey || e.metaKey) return;
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('.menu-items > button')];
+    const next = rovingIndex(items.indexOf(document.activeElement as HTMLButtonElement), e.key, items.length, 'vertical');
+    if (next === null) return;
+    items[next].focus();
+    e.preventDefault();
+  });
+}
 // A menu's list is fixed (#182), placed under its summary when it opens. It opens toward the right; one that would
 // leave the window opens toward the left (#179), aligned to the summary's right edge. Either way it keeps 4 px from
 // both edges of the window, even when the summary is cut by one (a toolbar scrolled sideways), and from the left one
