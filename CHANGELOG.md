@@ -26,6 +26,9 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   and Preview, the toolbar scrolls sideways and the code panel fits the window (#182).
 - On Babylon.js, an environment whose prefiltering fails now reports the error and leaves no texture behind, instead
   of never finishing; an `.hdr` that cannot be read says why rather than "unknown error" (#188).
+- Escape closes the Demos and Export menus, and after a pick or Escape the focus returns to the menu's button; the
+  arrow keys move through an open menu and, below 900 px, between the panel tabs, of which only the selected one is a
+  tab stop; screen readers name each palette group after its heading (#190).
 
 ## [0.4.0] - 2026-11-19
 

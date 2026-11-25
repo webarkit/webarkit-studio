@@ -85,6 +85,28 @@ async function openToLastItem(page: Page, menu: string) {
   return last;
 }
 
+const MENUS = ['#demos-menu', '#export-menu'];
+
+/** Opens a menu from the keyboard (#190), from the toolbar scrolled as the #182 tests do: the summary brought into view, the focus on it, then Enter. */
+async function openByKeyboard(page: Page, menu: string) {
+  const summary = page.locator(`${menu} > summary`);
+  await summary.scrollIntoViewIfNeeded();
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator(menu)).toHaveAttribute('open', '');
+}
+
+/** Names the element that has the focus: `<menu> > summary` for a menu's summary, else its tag, id and data. */
+const active = (page: Page) =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el || el === document.body) return 'body';
+    const menu = el.closest('details.menu');
+    if (menu && el.tagName === 'SUMMARY') return `#${menu.id} > summary`;
+    const data = Object.entries((el as HTMLElement).dataset).map(([k, v]) => `[data-${k}="${v}"]`).join('');
+    return `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${data}`;
+  });
+
 test.describe('narrow layout at 390 × 844 (#182)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -340,6 +362,109 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     const view = await page.evaluate(() => ({ x: 0, y: 0, width: innerWidth, height: innerHeight }));
     expect(b.width).toBeGreaterThan(0);
     expect(inside(b, view), `the code panel ${JSON.stringify(b)} lies inside the window`).toBe(true);
+  });
+
+  test('Escape closes each menu and puts the focus on its summary (#190)', async ({ page }) => {
+    for (const menu of MENUS) {
+      await openByKeyboard(page, menu);
+      await page.keyboard.press('Escape');
+      await expect(page.locator(menu)).not.toHaveAttribute('open', '');
+      await expect.poll(() => active(page)).toBe(`${menu} > summary`);
+      // Again, with the focus on an item.
+      await openByKeyboard(page, menu);
+      await page.locator(`${menu} .menu-items > button`).first().focus();
+      await page.keyboard.press('Escape');
+      await expect(page.locator(menu)).not.toHaveAttribute('open', '');
+      await expect.poll(() => active(page)).toBe(`${menu} > summary`);
+    }
+  });
+
+  test('after a pick, the focus is on the menu\'s summary (#190)', async ({ page }) => {
+    // Demos: an item that is not the graph shown at startup (the first demo).
+    const id = DEMOS[1].id;
+    const doc = JSON.parse(await readFile(`public/graphs/${id}.json`, 'utf8')) as { name: string };
+    const loads = Number(await page.locator('body').getAttribute('data-loads'));
+    await openByKeyboard(page, '#demos-menu');
+    await page.locator(`[data-demo="${id}"]`).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#demos-menu')).not.toHaveAttribute('open', '');
+    await expect(page.locator(`body[data-loads="${loads + 1}"]`)).toBeAttached({ timeout: 30_000 });
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('webarkit-studio:autosave') ?? '{}').name)).toBe(doc.name);
+    await expect.poll(() => active(page)).toBe('#demos-menu > summary');
+    // Export: the .json exporter downloads, and the focus is on the summary.
+    await openByKeyboard(page, '#export-menu');
+    await page.locator('[data-exporter="graph-json"]').focus();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
+    expect(download.suggestedFilename()).toMatch(/\.json$/);
+    await expect(page.locator('#export-menu')).not.toHaveAttribute('open', '');
+    await expect.poll(() => active(page)).toBe('#export-menu > summary');
+  });
+
+  test('Up and Down move between a menu\'s items, Home and End to its ends (#190)', async ({ page }) => {
+    const first = `[data-demo="${DEMOS[0].id}"]`;
+    const second = `[data-demo="${DEMOS[1].id}"]`;
+    const last = `[data-demo="${DEMOS[DEMOS.length - 1].id}"]`;
+    await openByKeyboard(page, '#demos-menu');
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => active(page)).toBe(`button${first}`);
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => active(page)).toBe(`button${second}`);
+    await page.keyboard.press('ArrowUp');
+    await expect.poll(() => active(page)).toBe(`button${first}`);
+    await page.keyboard.press('ArrowUp');
+    await expect.poll(() => active(page)).toBe(`button${last}`);
+    await page.keyboard.press('Home');
+    await expect.poll(() => active(page)).toBe(`button${first}`);
+    await page.keyboard.press('End');
+    await expect.poll(() => active(page)).toBe(`button${last}`);
+    // Focusing an item of the fixed list did not scroll the toolbar, which would close the menu (#182).
+    await expect(page.locator('#demos-menu')).toHaveAttribute('open', '');
+  });
+
+  test('Escape with no menu open changes nothing (#190)', async ({ page }) => {
+    await page.locator('#btn-run').focus();
+    await page.keyboard.press('Escape');
+    await expect.poll(() => active(page)).toBe('button#btn-run');
+    for (const menu of MENUS) await expect(page.locator(menu)).not.toHaveAttribute('open', '');
+  });
+
+  test('the tab bar moves with Left / Right and Home / End, and shows each tab\'s panel (#190)', async ({ page }) => {
+    const press = async (key: string, expected: Tab) => {
+      await page.keyboard.press(key);
+      await expect(tab(page, expected)).toBeFocused();
+      await expect(tab(page, expected)).toHaveAttribute('aria-selected', 'true');
+      await expectShown(page, expected);
+    };
+    await tab(page, 'graph').focus();
+    await press('ArrowRight', 'properties');
+    await press('ArrowLeft', 'graph');
+    await press('ArrowLeft', 'nodes');
+    await press('ArrowLeft', 'preview');
+    await press('Home', 'nodes');
+    await press('End', 'preview');
+  });
+
+  test('only the selected tab is in the tab order (#190)', async ({ page }) => {
+    const stops = () =>
+      page.locator('nav.tabs [role=tab]').evaluateAll((els) => els.map((el) => `${(el as HTMLElement).dataset.tab}:${el.getAttribute('tabindex')}`));
+    const only = (name: Tab) => (['nodes', 'graph', 'properties', 'preview'] as Tab[]).map((t) => `${t}:${t === name ? '0' : '-1'}`);
+    await expect.poll(stops).toEqual(only('graph'));
+    await tab(page, 'nodes').click();
+    await expect.poll(stops).toEqual(only('nodes'));
+    await page.locator('#palette details[data-group="scene"][open] > button').first().click();
+    await expectShown(page, 'graph');
+    await expect.poll(stops).toEqual(only('graph'));
+    await tab(page, 'graph').focus();
+    await page.keyboard.press('Tab');
+    await expect.poll(() => page.evaluate(() => !document.activeElement?.closest('nav.tabs'))).toBe(true);
+  });
+
+  test('Alt+Left on a tab is left to the browser (#190)', async ({ page }) => {
+    await tab(page, 'graph').focus();
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect(tab(page, 'graph')).toBeFocused();
+    await expect(tab(page, 'graph')).toHaveAttribute('aria-selected', 'true');
+    await expectShown(page, 'graph');
   });
 });
 

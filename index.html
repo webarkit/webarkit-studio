@@ -34,10 +34,10 @@
       <input id="file-import" type="file" accept=".json,application/json,.zip,application/zip" hidden />
     </header>
     <nav class="tabs" role="tablist" aria-label="Panels">
-      <button type="button" role="tab" data-tab="nodes" aria-selected="false" aria-controls="panel-nodes">Nodes</button>
-      <button type="button" role="tab" data-tab="graph" aria-selected="true" aria-controls="panel-graph">Graph</button>
-      <button type="button" role="tab" data-tab="properties" aria-selected="false" aria-controls="inspector">Properties</button>
-      <button type="button" role="tab" data-tab="preview" aria-selected="false" aria-controls="stage log">Preview</button>
+      <button type="button" role="tab" data-tab="nodes" aria-selected="false" tabindex="-1" aria-controls="panel-nodes">Nodes</button>
+      <button type="button" role="tab" data-tab="graph" aria-selected="true" tabindex="0" aria-controls="panel-graph">Graph</button>
+      <button type="button" role="tab" data-tab="properties" aria-selected="false" tabindex="-1" aria-controls="inspector">Properties</button>
+      <button type="button" role="tab" data-tab="preview" aria-selected="false" tabindex="-1" aria-controls="stage log">Preview</button>
     </nav>
     <main class="layout" data-tab="graph">
       <aside id="panel-nodes" class="palette" role="tabpanel">
