@@ -7,6 +7,7 @@ import { parseAssetRef } from '../core/assets';
 import { everyNode } from '../core/macros';
 import type { AssetLookup, StoredAsset } from '../assets/asset';
 import { checkSourceCode } from './codegen/check';
+import { SOURCE_EXPORT_DEMO } from './codegen';
 import { slugify } from './names';
 
 export { graphTitle, slugify } from './names';
@@ -134,8 +135,7 @@ const sourceCode: Exporter = {
   mime: 'application/zip',
   extension: '.zip',
   label: 'Source code (.zip)',
-  description:
-    'A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "pinball · Three.js" demo, and refuses others by name.',
+  description: `A small Vite project with the graph as readable code (Three.js): npm install, then npm run dev. The first version writes the nodes of the "${SOURCE_EXPORT_DEMO}" demo, and refuses others by name.`,
   precheck(doc) {
     checkSourceCode(doc);
   },
