@@ -265,9 +265,23 @@ const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('nav.tabs [r
 function showTab(tab: string): void {
   if (!TABS.has(tab)) return;
   layout.dataset.tab = tab;
-  for (const button of tabButtons) button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+  for (const button of tabButtons) {
+    const selected = button.dataset.tab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1; // only the selected tab is a tab stop; arrows move between them (#190)
+  }
 }
 for (const button of tabButtons) button.onclick = () => showTab(button.dataset.tab ?? '');
+showTab(layout.dataset.tab ?? 'graph'); // sets the tab stops for the tab shown at startup
+// Left / Right, Home / End move to a tab and show it (automatic activation); Alt, Ctrl and Meta are the browser's.
+document.querySelector<HTMLElement>('nav.tabs')!.addEventListener('keydown', (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const next = rovingIndex(tabButtons.indexOf(document.activeElement as HTMLButtonElement), e.key, tabButtons.length, 'horizontal');
+  if (next === null) return;
+  e.preventDefault();
+  showTab(tabButtons[next]!.dataset.tab ?? '');
+  tabButtons[next]!.focus();
+});
 
 // ---------------------------------------------------------------- palette
 // Groups that open and close, remembered in this browser (#180); the Macros group (#141) comes first.

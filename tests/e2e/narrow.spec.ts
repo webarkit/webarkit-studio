@@ -427,6 +427,45 @@ test.describe('narrow layout at 390 × 844 (#182)', () => {
     await expect.poll(() => active(page)).toBe('button#btn-run');
     for (const menu of MENUS) await expect(page.locator(menu)).not.toHaveAttribute('open', '');
   });
+
+  test('the tab bar moves with Left / Right and Home / End, and shows each tab\'s panel (#190)', async ({ page }) => {
+    const press = async (key: string, expected: Tab) => {
+      await page.keyboard.press(key);
+      await expect(tab(page, expected)).toBeFocused();
+      await expect(tab(page, expected)).toHaveAttribute('aria-selected', 'true');
+      await expectShown(page, expected);
+    };
+    await tab(page, 'graph').focus();
+    await press('ArrowRight', 'properties');
+    await press('ArrowLeft', 'graph');
+    await press('ArrowLeft', 'nodes');
+    await press('ArrowLeft', 'preview');
+    await press('Home', 'nodes');
+    await press('End', 'preview');
+  });
+
+  test('only the selected tab is in the tab order (#190)', async ({ page }) => {
+    const stops = () =>
+      page.locator('nav.tabs [role=tab]').evaluateAll((els) => els.map((el) => `${(el as HTMLElement).dataset.tab}:${el.getAttribute('tabindex')}`));
+    const only = (name: Tab) => (['nodes', 'graph', 'properties', 'preview'] as Tab[]).map((t) => `${t}:${t === name ? '0' : '-1'}`);
+    await expect.poll(stops).toEqual(only('graph'));
+    await tab(page, 'nodes').click();
+    await expect.poll(stops).toEqual(only('nodes'));
+    await page.locator('#palette details[data-group="scene"][open] > button').first().click();
+    await expectShown(page, 'graph');
+    await expect.poll(stops).toEqual(only('graph'));
+    await tab(page, 'graph').focus();
+    await page.keyboard.press('Tab');
+    await expect.poll(() => page.evaluate(() => !document.activeElement?.closest('nav.tabs'))).toBe(true);
+  });
+
+  test('Alt+Left on a tab is left to the browser (#190)', async ({ page }) => {
+    await tab(page, 'graph').focus();
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect(tab(page, 'graph')).toBeFocused();
+    await expect(tab(page, 'graph')).toHaveAttribute('aria-selected', 'true');
+    await expectShown(page, 'graph');
+  });
 });
 
 test.describe('narrow layout at 320 × 640, narrower than a menu (#182)', () => {
