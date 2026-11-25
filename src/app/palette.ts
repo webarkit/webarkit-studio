@@ -83,6 +83,9 @@ export function mountPalette(els: PaletteElements, defs: NodeDefinition[], addNo
     const summary = document.createElement('summary');
     const heading = document.createElement('h3');
     heading.textContent = title;
+    // The keys are the category names and `macros`: safe in an id. The heading names the group (#190).
+    heading.id = `palette-heading-${key}`;
+    details.setAttribute('aria-labelledby', heading.id);
     summary.append(heading);
     if (count !== undefined) {
       const small = document.createElement('span');

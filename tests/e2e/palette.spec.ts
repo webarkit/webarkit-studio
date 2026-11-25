@@ -23,6 +23,30 @@ test.describe('palette groups (#180)', () => {
     await expect(group(page, 'macros').locator('.palette-count')).toHaveCount(0);
   });
 
+  test('each palette group is named by its heading (#190)', async ({ page }) => {
+    await openStudio(page);
+    // The names are the text each h3 holds ('math', 'Macros', 'color').
+    for (const name of ['math', 'Macros', 'color']) {
+      await expect(page.getByRole('group', { name, exact: true })).toBeVisible();
+    }
+    const refs = await page.locator('#palette details.palette-group').evaluateAll((els) =>
+      els.map((el) => {
+        const id = el.getAttribute('aria-labelledby');
+        const target = id ? document.getElementById(id) : null;
+        return {
+          group: (el as HTMLElement).dataset.group,
+          id,
+          tag: target?.tagName,
+          inOwnSummary: !!target && target.parentElement === el.querySelector(':scope > summary'),
+        };
+      }),
+    );
+    expect(refs.length).toBeGreaterThan(2);
+    for (const ref of refs) {
+      expect(ref, `group ${ref.group}`).toMatchObject({ tag: 'H3', inOwnSummary: true });
+    }
+  });
+
   test('closing and opening a group survives a reload (#180)', async ({ page }) => {
     await openStudio(page);
     await group(page, 'color').locator(':scope > summary').click();
