@@ -197,6 +197,18 @@ for (const viewport of [
       await expect.poll(() => active(page)).toBe('button#btn-run');
       for (const menu of MENUS) await expect(page.locator(menu)).not.toHaveAttribute('open', '');
     });
+
+    test('Escape typed outside an open menu is left to where the focus is (#190)', async ({ page }) => {
+      for (const menu of MENUS) {
+        await openByKeyboard(page, menu);
+        // The focus leaves the menu without closing it (Tab past its last item does the same).
+        await page.locator('#palette-search').focus();
+        await page.keyboard.press('Escape');
+        await expect.poll(() => active(page)).toBe('input#palette-search');
+        await expect(page.locator(menu)).toHaveAttribute('open', '');
+        await page.click('#log');
+      }
+    });
   });
 }
 

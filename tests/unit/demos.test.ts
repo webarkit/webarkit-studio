@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEMOS } from '../../src/app/demos';
+import { SOURCE_EXPORT_DEMO } from '../../src/export/codegen';
 
 describe('the demo list (#179)', () => {
   it('every entry has its graph in public/graphs/', () => {
@@ -24,6 +25,11 @@ describe('the demo list (#179)', () => {
       expect(demo.title.trim(), demo.id).not.toBe('');
       expect(demo.description.trim(), demo.id).not.toBe('');
     }
+  });
+
+  it('the source export names its demo by the title the Demos menu shows (#190)', () => {
+    expect(DEMOS.some((demo) => demo.id === 'pinball-three')).toBe(true);
+    expect(SOURCE_EXPORT_DEMO).toBe(DEMOS.find((demo) => demo.id === 'pinball-three')!.title);
   });
 
   it('the first entry is the one the studio opens with no autosave', () => {

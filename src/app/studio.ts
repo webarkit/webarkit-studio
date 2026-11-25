@@ -400,8 +400,8 @@ for (const exporter of EXPORTERS) {
   item.dataset.exporter = exporter.id;
   item.onclick = async () => {
     exportMenu.open = false;
-    // The export starts first, synchronously, within this click's user activation (the save dialog needs it, #118);
-    // then the focus goes back to the summary, as the item is hidden with the list (#190).
+    // The focus goes back to the summary, as the item is hidden with the list (#190). The export starts first so that
+    // nothing awaits before it: the save dialog needs this click's user activation (#118).
     const done = runExport(exporter);
     menuSummary(exportMenu).focus();
     await done;
@@ -438,11 +438,13 @@ document.addEventListener('click', (e) => {
     if (!menu.contains(e.target as Node)) menu.open = false;
   }
 });
-// Escape closes the open menu and puts the focus on its summary; with no menu open it does nothing (#190).
+// Escape closes the open menu and puts the focus on its summary, when the focus is in that menu or nowhere; with no
+// menu open, or the focus elsewhere (a field, the graph, after Tab past the last item), it is left alone (#190).
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const menu = document.querySelector<HTMLDetailsElement>('details.menu[open]');
-  if (!menu) return;
+  const focus = document.activeElement;
+  if (!menu || (focus && focus !== document.body && !menu.contains(focus))) return;
   menu.open = false;
   menuSummary(menu).focus();
   e.preventDefault();
