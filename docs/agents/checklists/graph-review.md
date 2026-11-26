@@ -108,8 +108,9 @@ key by key; a renamed key looks like one removal plus one addition.
   case in the conformance suite on both engines (`tests/e2e/conformance.spec.ts`, `tests/unit/conformance/`; #130). A
   difference between the engines is translated by the adapters, or makes the node `three.*` / `babylon.*`, or, until
   the issue that translates it is fixed, is a `known` case marked `test.fail` with that issue.
-- A new demo graph in `public/graphs/` is valid: `tests/unit/graph.test.ts` reads every file in that folder
-  and validates it against the real catalog and `GRAPH_VERSION` (#110).
+- A new demo graph in `public/graphs/` has its entry in `src/app/demos.ts` (`tests/unit/demos.test.ts`) and is
+  valid: `tests/unit/graph.test.ts` reads every file in that folder and validates it against the real catalog and
+  `GRAPH_VERSION` (#110).
 - The Inspector (`formatValue`, `src/runtime/nodes/debug.ts`) shows a value a new socket carries as plain text, never
   as `JSON.stringify` of an engine handle, which is circular on Babylon.js (#132), with a test on both adapters' values.
 - The README node table lists new nodes; ⚡ marks live params.

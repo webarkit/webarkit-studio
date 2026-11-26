@@ -1,28 +1,41 @@
 // scene.environment on the Babylon.js adapter (#135), on NullEngine with a fake HDRCubeTexture (prefiltering needs
 // WebGL): what it loads, one per scene, live source changes, release, a teardown during a load, and the reflection
-// matrix it writes (the inverse of environmentRotation, then the report's quarter turn about Y).
+// matrix it writes (the inverse of environmentRotation, then the report's quarter turn about Y). It also covers an
+// image texture that fails to load (#185): it must leave no texture in the scene.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Matrix } from '@babylonjs/core/Maths/math.vector';
+import type { NullEngine as NullEngineType } from '@babylonjs/core/Engines/nullEngine';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { createBabylonAdapter } from '../../../src/runtime/renderers/babylon-adapter';
-import type { SceneHandle } from '../../../src/runtime/renderers/adapter';
+import type { SceneHandle, TextureSource } from '../../../src/runtime/renderers/adapter';
 import { environmentRotation, makeHdr, neutralRoomHdr, ONE_ENVIRONMENT, type EnvironmentSpec } from '../../../src/core/environment';
 import { transformMatrix } from '../../../src/core/math';
 
 const { FakeHDRCube } = vi.hoisted(() => ({
   FakeHDRCube: class {
     static made: FakeHDRCubeInstance[] = [];
+    /**
+     * While set, a new texture fails to load with this message instead of loading (its error callback, on a later task).
+     * The message is the fake's: a real one calls it with Babylon's message.
+     */
+    static failWith: string | null = null;
     disposed = false;
     matrix: number[] | null = null;
     bytes: Promise<Uint8Array>;
     private onDispose: Array<() => void> = [];
     onDisposeObservable = { addOnce: (f: () => void) => void this.onDispose.push(f) };
-    constructor(public url: string, _scene: unknown, public size: number, ...rest: unknown[]) {
+    private scene: { addTexture(t: unknown): void; textures: unknown[] };
+    constructor(public url: string, scene: unknown, public size: number, ...rest: unknown[]) {
       const onLoad = rest[4] as () => void; // after noMipmap, generateHarmonics, gammaSpace, prefilterOnLoad
+      const onError = rest[5] as (message?: string) => void;
+      // A BaseTexture registers itself in its scene, and leaves it when disposed.
+      this.scene = scene as never;
+      this.scene.addTexture(this);
       this.bytes = fetch(url).then(async (r) => new Uint8Array(await r.arrayBuffer()));
       FakeHDRCube.made.push(this as never);
       // Loads on a later task, as a real one does.
-      setTimeout(() => !this.disposed && onLoad(), 0);
+      const failure = FakeHDRCube.failWith;
+      setTimeout(() => !this.disposed && (failure === null ? onLoad() : onError(failure)), 0);
     }
     setReflectionTextureMatrix(m: { m: ArrayLike<number> }) {
       this.matrix = Array.from(m.m);
@@ -32,6 +45,8 @@ const { FakeHDRCube } = vi.hoisted(() => ({
     }
     dispose() {
       this.disposed = true;
+      const at = this.scene.textures.indexOf(this);
+      if (at >= 0) this.scene.textures.splice(at, 1);
       this.onDispose.splice(0).forEach((f) => f());
     }
   },
@@ -40,7 +55,22 @@ type FakeHDRCubeInstance = InstanceType<typeof FakeHDRCube>;
 vi.mock('@babylonjs/core/Materials/Textures/hdrCubeTexture', () => ({ HDRCubeTexture: FakeHDRCube }));
 vi.mock('@babylonjs/core/Engines/engine', async () => {
   const { NullEngine } = await import('@babylonjs/core/Engines/nullEngine');
-  return { Engine: class extends NullEngine {} };
+  // A URL with `broken` fails on a later task, as a real request does; one with `throws` makes the engine throw at once.
+  // The NullEngine loads nothing, so it is the only way to see these paths.
+  return {
+    Engine: class extends NullEngine {
+      createTexture(...args: Parameters<NullEngineType['createTexture']>) {
+        const [url, noMipmap, invertY, scene, samplingMode, onLoad, onError, ...rest] = args;
+        if (url?.includes('throws')) throw new Error('engine refused');
+        if (url?.includes('broken')) {
+          const texture = super.createTexture(url, noMipmap, invertY, scene, samplingMode, null, null, ...rest);
+          setTimeout(() => onError?.('not found', undefined), 0);
+          return texture;
+        }
+        return super.createTexture(url, noMipmap, invertY, scene, samplingMode, onLoad, onError, ...rest);
+      }
+    },
+  };
 });
 
 const g = globalThis as Record<string, unknown>;
@@ -48,16 +78,18 @@ beforeEach(() => {
   g.document = { createElement: () => ({ style: {}, getContext: () => null }), addEventListener() {}, removeEventListener() {} };
   g.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
   FakeHDRCube.made = [];
+  FakeHDRCube.failWith = null;
 });
 afterEach(() => {
   delete g.document;
   delete g.window;
+  vi.restoreAllMocks();
 });
 
 const NEUTRAL: EnvironmentSpec = { source: 'neutral', intensity: 1, rotation: 0 };
 const HDR = makeHdr(16, 8, () => [1, 1, 1]).buffer as ArrayBuffer;
 
-type BabylonScene = { environmentTexture: unknown; environmentIntensity: number };
+type BabylonScene = { environmentTexture: unknown; environmentIntensity: number; textures: unknown[] };
 async function withScene(run: (scene: SceneHandle, native: BabylonScene) => Promise<void>) {
   const adapter = createBabylonAdapter({ antialias: false });
   try {
@@ -148,6 +180,49 @@ describe('babylon: scene.environment (#135)', () => {
     });
   });
 
+  test('a live change to an .hdr that does not parse rejects, keeps the texture shown, and leaves no texture behind (#185)', async () => {
+    await withScene(async (scene, native) => {
+      const env = await scene.createEnvironment(NEUTRAL);
+      const shown = native.environmentTexture;
+      const before = native.textures.length;
+      const revoke = vi.spyOn(URL, 'revokeObjectURL');
+      FakeHDRCube.failWith = 'bad header';
+      await expect(scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr', intensity: 2 }, HDR)).rejects.toThrow("could not read the environment's .hdr: bad header");
+      const failed = FakeHDRCube.made.at(-1)!;
+      expect(failed.disposed).toBe(true);
+      expect(revoke.mock.calls.filter(([u]) => u === failed.url)).toHaveLength(1);
+      expect([native.environmentTexture, native.environmentIntensity]).toEqual([shown, 2]);
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
+  test('repeated failed changes add no texture (#185)', async () => {
+    await withScene(async (scene, native) => {
+      const env = await scene.createEnvironment(NEUTRAL);
+      const before = native.textures.length;
+      FakeHDRCube.failWith = 'bad header';
+      for (let i = 0; i < 3; i++) {
+        const made = FakeHDRCube.made.length;
+        // A new buffer each time, so each change is a new source.
+        const hdr = makeHdr(16, 8, () => [1, 1, 1]).buffer as ArrayBuffer;
+        await expect(scene.setEnvironment(env, { ...NEUTRAL, source: 'hdr' }, hdr)).rejects.toThrow(/could not read the environment's \.hdr/);
+        expect(FakeHDRCube.made).toHaveLength(made + 1);
+        expect(native.textures).toHaveLength(before);
+      }
+    });
+  });
+
+  test('an environment that fails at creation rejects with the read error and leaves no texture (#185)', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      FakeHDRCube.failWith = 'bad header';
+      await expect(scene.createEnvironment(NEUTRAL)).rejects.toThrow(/could not read the environment's \.hdr/);
+      expect(FakeHDRCube.made).toHaveLength(1);
+      expect(FakeHDRCube.made[0].disposed).toBe(true);
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
   test('released, it leaves the scene, and another can be made', async () => {
     await withScene(async (scene, native) => {
       const env = await scene.createEnvironment(NEUTRAL);
@@ -164,5 +239,38 @@ describe('babylon: scene.environment (#135)', () => {
     const made = adapter.createScene({ defaultLights: false }).createEnvironment(NEUTRAL);
     adapter.dispose();
     await expect(made).rejects.toThrow(/torn down/);
+  });
+});
+
+describe('babylon: a texture that fails to load (#185)', () => {
+  const imageAt = (src: string): TextureSource => ({ kind: 'image', element: { src, width: 1, height: 1, naturalWidth: 1, naturalHeight: 1, complete: true } as unknown as HTMLImageElement });
+  const SPEC = { wrap: 'repeat', repeatU: 1, repeatV: 1 } as const;
+  // A 1×1 PNG, as materials.test.ts has it.
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  test('an image that fails to load rejects with its message and leaves no texture', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      await expect(scene.createTexture(imageAt('broken.png'), SPEC)).rejects.toThrow('could not make a texture of broken.png: not found');
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
+  test('an engine that throws while the texture is made: the same rejection, no texture, no ReferenceError', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      const made = scene.createTexture(imageAt('throws.png'), SPEC);
+      await expect(made).rejects.toThrow(/could not make a texture of throws\.png/);
+      await expect(made).rejects.not.toBeInstanceOf(ReferenceError);
+      expect(native.textures).toHaveLength(before);
+    });
+  });
+
+  test('control: an image that loads stays in the scene', async () => {
+    await withScene(async (scene, native) => {
+      const before = native.textures.length;
+      await scene.createTexture(imageAt(PNG), SPEC);
+      expect(native.textures).toHaveLength(before + 1);
+    });
   });
 });

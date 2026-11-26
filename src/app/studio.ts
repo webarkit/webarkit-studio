@@ -5,7 +5,6 @@ import { createStudioEditor, type EditorView } from '../editor/editor';
 import { commitPendingEdit, renderInspector } from '../editor/inspector';
 import type { StudioNode } from '../editor/studio-node';
 import { NODE_CATALOG } from '../nodes/catalog';
-import { addable, CATEGORY_ORDER, searchNodes } from '../editor/node-search';
 import { GraphRuntime, NodeRuntimeError } from '../runtime/runtime';
 import { emptyGraph, type GraphDocument, type GraphNode } from '../core/graph';
 import { loadGraphDocument, loadUnfinishedGraphDocument, upgradeNote, type MigrationResult } from '../core/migrations';
@@ -26,7 +25,10 @@ import type { ScriptHandlers } from '../editor/script-ui';
 import { createScriptPanel } from './script-panel';
 import { askToRunScripts, createScriptTrust } from './script-trust';
 import { loadSavedLibrary, mountMacroLibrary } from './macro-library-ui';
+import { mountPalette } from './palette';
 import { readLibrary } from '../core/macro-library';
+import { DEMOS } from './demos';
+import { rovingIndex } from './keys';
 
 const AUTOSAVE_KEY = 'webarkit-studio:autosave';
 /** Autosave key used while the project was called WebAR-Studio, read once as a fallback. */
@@ -254,51 +256,73 @@ $('btn-arrange').onclick = () => void studio.arrange();
 // Where an asset is used: the graph, and the usable macros of the library (#141), asked before removing it.
 mountAssetsPanel($('assets-panel'), assetStore, log, (id) => ({ graph: usesAsset(studio.toDocument(), id), library: macroLibrary.usesAsset(id) }));
 
-// ---------------------------------------------------------------- palette
-const palette = $('palette');
-const paletteButtons = new Map<string, HTMLButtonElement>();
-for (const category of CATEGORY_ORDER) {
-  const defs = Object.values(NODE_CATALOG).filter((d) => d.category === category && addable(d));
-  if (!defs.length) continue;
-  const group = document.createElement('div');
-  group.className = 'palette-group';
-  group.innerHTML = `<h3>${category}</h3>`;
-  for (const def of defs) {
-    const btn = document.createElement('button');
-    btn.innerHTML = `${def.label}${def.provider !== 'core' ? `<small>${def.provider}</small>` : ''}`;
-    btn.title = def.description;
-    btn.className = `cat-${category}`;
-    btn.onclick = () => void studio.addNode(def.type);
-    group.appendChild(btn);
-    paletteButtons.set(def.type, btn);
+// ---------------------------------------------------------------- tabs (#182)
+// Below 900 px one panel is shown at a time (studio.css); on the desktop nothing reads the tab. Not saved.
+type Tab = 'nodes' | 'graph' | 'properties' | 'preview';
+const TABS: ReadonlySet<string> = new Set<Tab>(['nodes', 'graph', 'properties', 'preview']);
+const layout = document.querySelector<HTMLElement>('main.layout')!;
+const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('nav.tabs [role=tab]')];
+function showTab(tab: string): void {
+  if (!TABS.has(tab)) return;
+  layout.dataset.tab = tab;
+  for (const button of tabButtons) {
+    const selected = button.dataset.tab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1; // only the selected tab is a tab stop; arrows move between them (#190)
   }
-  palette.appendChild(group);
 }
-// The Macros section (#141): the presets, the project's macro library, Import macro…; first in the palette.
-const macroGroup = document.createElement('div');
-macroGroup.className = 'palette-group palette-macros';
-palette.prepend(macroGroup);
+for (const button of tabButtons) button.onclick = () => showTab(button.dataset.tab ?? '');
+showTab(layout.dataset.tab ?? 'graph'); // sets the tab stops for the tab shown at startup
+// Left / Right, Home / End move to a tab and show it (automatic activation); Alt, Ctrl and Meta are the browser's.
+document.querySelector<HTMLElement>('nav.tabs')!.addEventListener('keydown', (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const next = rovingIndex(tabButtons.indexOf(document.activeElement as HTMLButtonElement), e.key, tabButtons.length, 'horizontal');
+  if (next === null) return;
+  e.preventDefault();
+  showTab(tabButtons[next]!.dataset.tab ?? '');
+  tabButtons[next]!.focus();
+});
+
+// ---------------------------------------------------------------- palette
+// Groups that open and close, remembered in this browser (#180); the Macros group (#141) comes first.
+const palette = mountPalette(
+  { search: $<HTMLInputElement>('palette-search'), bar: $('palette-bar'), list: $('palette') },
+  Object.values(NODE_CATALOG),
+  // What was added is in the graph: show it (#182).
+  (type) => {
+    void studio.addNode(type);
+    showTab('graph');
+  },
+);
 const macroLibrary = mountMacroLibrary(
-  macroGroup,
+  palette.macroGroup,
   {
-    studio,
+    // A preset or a macro added from the Macros group shows the graph too (#182), once it is in: after a clash
+    // question has been answered.
+    studio: {
+      macroClash: (...args) => studio.macroClash(...args),
+      replaceMacro: (...args) => studio.replaceMacro(...args),
+      toDocument: () => studio.toDocument(),
+      insertFragment: async (nodes, edges) => {
+        await studio.insertFragment(nodes, edges);
+        showTab('graph');
+      },
+      addMacro: async (...args) => {
+        const added = await studio.addMacro(...args);
+        // False: nothing was added, and the reason is in the log.
+        if (added) showTab('graph');
+        return added;
+      },
+    },
     log,
     hasAsset: (id) => assetStore.get(id) !== undefined,
     dialogs: { clash: $<HTMLDialogElement>('macro-clash'), exportMacro: $<HTMLDialogElement>('macro-export') },
     loadGeneration: () => graphLoads,
+    onFilter: () => palette.refresh(),
   },
   loadSavedLibrary(log),
 );
-// Filter: same ranking as the context menu search; empty groups are hidden.
-const paletteSearch = $<HTMLInputElement>('palette-search');
-paletteSearch.oninput = () => {
-  const shown = new Set(searchNodes(paletteSearch.value, Object.values(NODE_CATALOG)).map((d) => d.type));
-  for (const [type, btn] of paletteButtons) btn.hidden = !shown.has(type);
-  for (const group of palette.querySelectorAll<HTMLElement>('.palette-group:not(.palette-macros)')) {
-    group.hidden = !group.querySelector('button:not([hidden])');
-  }
-  macroLibrary.filter(paletteSearch.value);
-};
+palette.attachMacros((query) => macroLibrary.filter(query));
 
 // ----------------------------------------------------------- graph I/O
 const loads = createLoadQueue();
@@ -330,7 +354,7 @@ async function load(doc: unknown, ticket = loads.begin(), check = loadGraphDocum
   }
 }
 
-async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
+async function loadDemo(ticket = loads.begin(), name: string = DEMOS[0].id) {
   let doc: unknown;
   try {
     const res = await fetch(`graphs/${name}.json`);
@@ -345,8 +369,24 @@ async function loadDemo(ticket = loads.begin(), name = demoSelect.value) {
   if (ticket.current()) await load(doc, ticket);
 }
 
-const demoSelect = $<HTMLSelectElement>('demo-select');
-$('btn-demo').onclick = () => void loadDemo();
+const demosMenu = $<HTMLDetailsElement>('demos-menu');
+const demosItems = $('demos-items');
+for (const demo of DEMOS) {
+  const item = document.createElement('button');
+  const title = document.createElement('strong');
+  title.textContent = demo.title;
+  const description = document.createElement('small');
+  description.textContent = demo.description;
+  item.append(title, description);
+  item.dataset.demo = demo.id;
+  item.onclick = () => {
+    demosMenu.open = false;
+    // The item is hidden with the list: the focus goes back to the summary rather than to the page (#190).
+    menuSummary(demosMenu).focus();
+    void loadDemo(loads.begin(), demo.id);
+  };
+  demosItems.appendChild(item);
+}
 $('btn-new').onclick = () => {
   // An empty graph is not runnable, so it is loaded without validation.
   void loads.run(loads.begin(), () => loadIntoEditor(emptyGraph()));
@@ -360,29 +400,98 @@ for (const exporter of EXPORTERS) {
   item.dataset.exporter = exporter.id;
   item.onclick = async () => {
     exportMenu.open = false;
-    const doc = studio.toDocument();
-    // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
-    if (!(await scriptsAllowed(doc, 'export'))) return;
-    log(`⇩ export: ${exporter.label}`);
-    // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
-    try {
-      // What the exporter would refuse is refused here, before the dialog creates the chosen file.
-      exporter.precheck?.(doc);
-      const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
-      const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore, library: () => macroLibrary.data() }), accept);
-      if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
-      else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
-    } catch (err) {
-      const { message, picked } = err as SaveFailed;
-      // Chromium creates (or empties) the chosen file as soon as it is picked, before the export runs.
-      log(`✗ export failed: ${message}${picked ? `; ${picked} was left empty where you chose to save it` : ''}`);
-    }
+    // The focus goes back to the summary, as the item is hidden with the list (#190). The export starts first so that
+    // nothing awaits before it: the save dialog needs this click's user activation (#118).
+    const done = runExport(exporter);
+    menuSummary(exportMenu).focus();
+    await done;
   };
   exportItems.appendChild(item);
 }
+/** Exports the graph shown with `exporter`: what it refuses, where it is saved, and what happened go to the log. */
+async function runExport(exporter: (typeof EXPORTERS)[number]) {
+  const doc = studio.toDocument();
+  // An exported app runs its graph's scripts without asking: never one the user did not allow (#35).
+  if (!(await scriptsAllowed(doc, 'export'))) return;
+  log(`⇩ export: ${exporter.label}`);
+  // Where it is saved is asked first (the dialog needs this click), then the export runs (#118).
+  try {
+    // What the exporter would refuse is refused here, before the dialog creates the chosen file.
+    exporter.precheck?.(doc);
+    const accept = { suggestedName: defaultFilename(exporter, doc), description: exporter.label, mime: exporter.mime, extensions: [exporter.extension] };
+    const outcome = await saveFile(() => exporter.run(doc, { baseUrl: document.baseURI, log, assets: assetStore, library: () => macroLibrary.data() }), accept);
+    if (!outcome.saved) log('⇩ export cancelled: nothing was saved');
+    else if (outcome.saved === 'picked') log(`✓ saved as ${outcome.name}`);
+  } catch (err) {
+    const { message, picked } = err as SaveFailed;
+    // Chromium creates (or empties) the chosen file as soon as it is picked, before the export runs.
+    log(`✗ export failed: ${message}${picked ? `; ${picked} was left empty where you chose to save it` : ''}`);
+  }
+}
+/** A menu's summary, where the focus goes back when the menu closes from a pick or Escape (#190). */
+function menuSummary(menu: HTMLDetailsElement): HTMLElement {
+  return menu.querySelector('summary')!;
+}
+// A click outside a menu closes it, so opening one closes the other.
 document.addEventListener('click', (e) => {
-  if (!exportMenu.contains(e.target as Node)) exportMenu.open = false;
+  for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+    if (!menu.contains(e.target as Node)) menu.open = false;
+  }
 });
+// Escape closes the open menu and puts the focus on its summary, when the focus is in that menu or nowhere; with no
+// menu open, or the focus elsewhere (a field, the graph, after Tab past the last item), it is left alone (#190).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const menu = document.querySelector<HTMLDetailsElement>('details.menu[open]');
+  const focus = document.activeElement;
+  if (!menu || (focus && focus !== document.body && !menu.contains(focus))) return;
+  menu.open = false;
+  menuSummary(menu).focus();
+  e.preventDefault();
+});
+// Up and Down move between an open menu's items, Home and End to its ends; the items stay tab stops (#190).
+for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+  menu.addEventListener('keydown', (e) => {
+    if (!menu.open || e.altKey || e.ctrlKey || e.metaKey) return;
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('.menu-items > button')];
+    const next = rovingIndex(items.indexOf(document.activeElement as HTMLButtonElement), e.key, items.length, 'vertical');
+    if (next === null) return;
+    items[next].focus();
+    e.preventDefault();
+  });
+}
+// A menu's list is fixed (#182), placed under its summary when it opens. It opens toward the right; one that would
+// leave the window opens toward the left (#179), aligned to the summary's right edge. Either way it keeps 4 px from
+// both edges of the window, even when the summary is cut by one (a toolbar scrolled sideways), and from the left one
+// first when it is wider than the window.
+const toolbar = document.querySelector<HTMLElement>('.toolbar')!;
+/** The toolbar's scroll when each open menu was placed: a scroll since then moves the summary away from its list. */
+const placedAt = new Map<HTMLDetailsElement, number>();
+for (const menu of document.querySelectorAll<HTMLDetailsElement>('details.menu')) {
+  menu.addEventListener('toggle', () => {
+    placedAt.delete(menu);
+    if (!menu.open) return;
+    const items = menu.querySelector<HTMLElement>('.menu-items');
+    const summary = menu.querySelector('summary');
+    if (!items || !summary) return;
+    const at = summary.getBoundingClientRect();
+    const width = items.getBoundingClientRect().width;
+    const end = at.left + width > window.innerWidth;
+    items.classList.toggle('end', end);
+    items.style.setProperty('--menu-top', `${at.bottom + 4}px`);
+    const far = window.innerWidth - width - 4; // the most either side may be from its edge, for 4 px on the other
+    if (end) items.style.setProperty('--menu-right', `${Math.min(Math.max(4, window.innerWidth - at.right), far)}px`);
+    else items.style.setProperty('--menu-left', `${Math.max(4, Math.min(at.left, far))}px`);
+    placedAt.set(menu, toolbar.scrollLeft);
+  });
+}
+// A list does not follow its summary: a scroll of the toolbar or a resize of the window closes it. The scroll that
+// brought a summary into view, delivered a frame later, finds the menu placed after it, at the same scroll.
+const closeMenus = (moved: (menu: HTMLDetailsElement, at: number) => boolean) => {
+  for (const [menu, at] of placedAt) if (moved(menu, at)) menu.open = false;
+};
+toolbar.addEventListener('scroll', () => closeMenus((_, at) => toolbar.scrollLeft !== at), { passive: true });
+window.addEventListener('resize', () => closeMenus(() => true));
 const fileInput = $<HTMLInputElement>('file-import');
 $('btn-import').onclick = () => fileInput.click();
 fileInput.onchange = async () => {

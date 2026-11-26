@@ -6,10 +6,11 @@
  *   player.html?source=studio                    graph handed over by the studio
  *   player.html?graph=graphs/pinball-three.json   any graph URL, without script nodes (#35)
  *   <meta name="webarkit-studio-graph" content="graph.json">  set by "Export → Standalone app"
- *   graphs/pinball-three.json                     default demo
+ *   graphs/<first demo>.json                      default demo (DEMOS[0], src/app/demos.ts)
  */
 import { GraphRuntime } from '../runtime/runtime';
 import { GRAPH_META, HANDOFF_KEY } from './handoff';
+import { DEMOS } from './demos';
 import type { AssetLookup } from '../assets/asset';
 import { loadPlugins, pluginIdsOf } from '../plugins/host';
 import { scriptNodesIn } from '../core/script';
@@ -38,7 +39,7 @@ async function loadGraph(): Promise<{ graph: unknown; linked: string | null }> {
   }
   const meta = document.querySelector<HTMLMetaElement>(`meta[name="${GRAPH_META}"]`)?.content;
   const linked = params.get('graph');
-  const url = linked ?? meta ?? 'graphs/pinball-three.json';
+  const url = linked ?? meta ?? `graphs/${DEMOS[0].id}.json`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Cannot load ${url}: HTTP ${res.status}`);
   return { graph: await res.json(), linked: linked === null ? null : url };

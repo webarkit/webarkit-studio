@@ -54,3 +54,5 @@ Ask the maintainer before editing the issue, then:
 - tick the tasks the PR completed in the issue body;
 - comment with the PR link, what is done and what is left;
 - leave the issue open: the release closes it. Close it earlier only if the maintainer asks.
+
+Then the local branch: PRs are squash-merged, so `git branch -d` refuses it. Check that its tip is the head the PR merged (`gh pr view <n> --json state,headRefOid`: `MERGED`, and the same commit as `git rev-parse <branch>`), then delete it with `git branch -D` (#196).

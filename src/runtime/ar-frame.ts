@@ -43,7 +43,9 @@ export function mountArFrame(
   }
   const wrapper = document.createElement('div');
   wrapper.className = 'ar-view';
-  wrapper.style.cssText = `position:relative;width:100%;aspect-ratio:${video.width}/${video.height};overflow:hidden;background:#000`;
+  // The aspect as a number too, for a layout that bounds the frame's height through its width (the studio's narrow
+  // layout, #182): CSS cannot read it from `aspect-ratio`.
+  wrapper.style.cssText = `position:relative;width:100%;aspect-ratio:${video.width}/${video.height};--ar-frame-aspect:${video.width / video.height};overflow:hidden;background:#000`;
   video.element.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:fill';
   wrapper.appendChild(video.element);
   wrapper.appendChild(canvas);

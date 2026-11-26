@@ -12,16 +12,20 @@ import { INSTALLED_PLUGINS } from '../../plugins/host';
 import { THREE_EMITTERS } from './three';
 import { commentText, literal } from './text';
 import { graphTitle } from '../names';
+import { DEMOS } from '../../app/demos';
 import type { CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from './types';
 
 export type { CodeEmitContext, CodeEmitter, CodeEmitters, CodeTarget, EmittedNode } from './types';
+
+/** The demo whose nodes the first version of the source export writes, named as the Demos menu names it (#190). */
+export const SOURCE_EXPORT_DEMO = DEMOS.find((d) => d.id === 'pinball-three')?.title ?? 'pinball-three';
 
 /** Why a graph cannot be written as source code; its message lists every node at fault. */
 export class CodegenError extends Error {
   constructor(readonly problems: string[]) {
     super(
       `This graph cannot be exported as source code yet:\n${problems.map((p) => `- ${p}`).join('\n')}\n` +
-        'The first version writes the nodes of the "pinball · Three.js" demo. Export a Standalone app (.zip) instead: it runs every node.',
+        `The first version writes the nodes of the "${SOURCE_EXPORT_DEMO}" demo. Export a Standalone app (.zip) instead: it runs every node.`,
     );
     this.name = 'CodegenError';
   }

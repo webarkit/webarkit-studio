@@ -637,7 +637,7 @@ if (time - ${start} >= 500) {
   };
 };
 
-/** The core nodes the first version writes: those of the "pinball · Three.js" demo, and glTF models. */
+/** The core nodes the first version writes: those of the "Pinball · Three.js" demo (`SOURCE_EXPORT_DEMO`), and glTF models. */
 export const THREE_EMITTERS: Record<string, CodeEmitter> = {
   'source.camera': cameraSource,
   'three.renderer': renderer,
