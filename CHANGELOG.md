@@ -6,6 +6,8 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-26
+
 ### Changed
 
 - The demos are in a Demos ▾ menu, like the Export menu, with a short title and a line on each; the demo select and
@@ -20,10 +22,10 @@ The project is in its prototype stage: versions follow SemVer, and 0.x releases 
   stuck out of it (#179).
 - The Demos and Export menus stay inside the window: one near its right edge opens toward the left, and one taller
   than the window scrolls (#179).
-- Babylon.js: a texture or an environment that fails to load is freed at once. A live change of the environment to an
-  .hdr file that does not parse kept the failed texture in the scene until Stop, one more for each try (#185).
 - On a narrow screen (below 900 px) the graph editor had no width: the panels are now tabs, Nodes, Graph, Properties
   and Preview, the toolbar scrolls sideways and the code panel fits the window (#182).
+- Babylon.js: a texture or an environment that fails to load is freed at once. A live change of the environment to an
+  .hdr file that does not parse kept the failed texture in the scene until Stop, one more for each try (#185).
 - On Babylon.js, an environment whose prefiltering fails now reports the error and leaves no texture behind, instead
   of never finishing; an `.hdr` that cannot be read says why rather than "unknown error" (#188).
 - Escape closes the Demos and Export menus, and after a pick or Escape the focus returns to the menu's button; the
