@@ -5,7 +5,7 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/images/webarkit-studio.webp" width="800" alt="WebARKit Studio: the multi NFT demo graph in the node editor, with the live preview tracking two markers (pinball and kuva)">
+  <img src="docs/images/webarkit-studio.webp" width="800" alt="WebARKit Studio: the Two markers demo graph in the node editor, with the live preview tracking two markers (pinball and kuva)">
 </p>
 
 A node-based authoring tool for WebAR experiences. Users wire nodes
